@@ -40,6 +40,14 @@ This starts a MySQL-compatible server on port `3306`.
 -   **Password**: (empty)
 -   **Database**: `grava` (or `dolt_repo` if browsing system tables)
 
+### Client Setup (DataGrip / JDBC)
+For maximum compatibility with GUI clients and drivers, use the dedicated client user:
+-   **Host**: `127.0.0.1`
+-   **Port**: `3306`
+-   **User**: `grava_client`
+-   **Password**: `password`
+-   **Auth Plugin**: `mysql_native_password`
+
 ### Stopping the Server
 To stop the server:
 ```bash

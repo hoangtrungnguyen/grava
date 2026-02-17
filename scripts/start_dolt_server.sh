@@ -19,4 +19,5 @@ echo "Starting Dolt SQL Server on port $PORT..."
 echo "Connection String: mysql://root@127.0.0.1:$PORT/grava"
 
 cd "$DOLT_DIR"
+# Start server (Dolt SQL Server uses the current repository users).
 dolt sql-server --port=$PORT --host=0.0.0.0 --loglevel=info
