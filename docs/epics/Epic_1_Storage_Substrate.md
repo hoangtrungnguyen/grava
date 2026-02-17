@@ -54,10 +54,10 @@
 **So that** I can manually interact with the database during development
 
 **Acceptance Criteria:**
-- `create` command accepts title, description, type, priority
-- `show <id>` displays complete issue details
-- `update <id>` modifies specific fields without overwriting entire row
-- `list` command displays all issues with filtering options
+- `grava create` command accepts title, description, type, priority
+- `grava show <id>` displays complete issue details
+- `grava update <id>` modifies specific fields without overwriting entire row
+- `grava list` command displays all issues with filtering options
 - All commands return proper exit codes and error messages
 - Help documentation available for all commands
 

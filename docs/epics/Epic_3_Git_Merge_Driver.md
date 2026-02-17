@@ -3,7 +3,7 @@
 **Goal:** Transform Git from a text-based version control system into a schema-aware database manager for Grava. The system will automatically resolve conflicts when two users modify different fields of the same issue, or add different issues simultaneously.
 
 **Success Criteria:**
-- Git merge driver `bd merge-slot` implemented and handling JSONL merges
+- Git merge driver `grava merge-slot` implemented and handling JSONL merges
 - 3-way merge logic correctly resolving field-level conflicts
 - Automated installer for `.git/config` and `.gitattributes`
 - Integration tests verifying conflict-free merges across branches
@@ -12,11 +12,11 @@
 
 ### 3.1 Git Merge Driver Command
 **As a** Git user  
-**I want to** have a custom merge driver command `bd merge-slot`  
+**I want to** have a custom merge driver command `grava merge-slot`  
 **So that** Git can delegate JSONL file merging to a schema-aware tool
 
 **Acceptance Criteria:**
-- `bd merge-slot` command accepts `%O` (Ancestor), `%A` (Current), and `%B` (Other) arguments
+- `grava merge-slot` command accepts `%O` (Ancestor), `%A` (Current), and `%B` (Other) arguments
 - Command reads the three provided file paths into memory
 - Command parses JSONL content correctly into internal structures
 - Command handles file read errors gracefully and returns appropriate exit codes
@@ -39,10 +39,10 @@
 **So that** I don't have to manually edit config files
 
 **Acceptance Criteria:**
-- `bd doctor` or install command checks/updates `.git/config`
-- Driver definition added: `[merge "grava"] name = Grava merge driver driver = bd merge-slot --ancestor %O --current %A --other %B --output %A`
+- `grava doctor` or install command checks/updates `.git/config`
+- Driver definition added: `[merge "grava"] name = Grava merge driver driver = grava merge-slot --ancestor %O --current %A --other %B --output %A`
 - `.grava/.gitattributes` checked/updated to encompass `*.jsonl merge=grava`
-- Implementation verifies `bd` binary is in the user's system `$PATH`
+- Implementation verifies `grava` binary is in the user's system `$PATH`
 
 ### 3.4 Integration Testing & Verification
 **As a** QA engineer  

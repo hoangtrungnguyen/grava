@@ -17,7 +17,7 @@
 **Acceptance Criteria:**
 - PageRank algorithm runs on dependency graph
 - Results cached and refreshed every 30 minutes
-- `analytics pagerank --top 10` shows most critical blockers
+- `grava analytics pagerank --top 10` shows most critical blockers
 - Visual output shows PageRank score distribution
 
 ### 7.2 Critical Path Analysis

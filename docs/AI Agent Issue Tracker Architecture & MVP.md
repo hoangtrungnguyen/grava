@@ -38,7 +38,7 @@ The architecture supports several operational modes, adapting to the specific co
 | :---- | :---- | :---- |
 | **Dedicated Sync Server** | Acts as the authoritative Single Source of Truth (SSOT). Handles global replication, authentication, and branch management. | dolt sql-server deployed on centralized infrastructure, exposing the remotesapi on port 50051\.15 |
 | **Local Workspace Replica** | The agent's immediate querying interface. Enables zero-latency graph traversals and offline commits without network overhead. | A local Dolt database clone residing in the .grava/dolt/ directory of the project workspace.16 |
-| **Workspace Daemon** | A localized background process running on the agent's host machine. Batches queries and orchestrates automated syncs. | A Go-based binary utilizing Unix domain sockets (.grava/bd.sock) to communicate with the local replica.17 |
+| **Workspace Daemon** | A localized background process running on the agent's host machine. Batches queries and orchestrates automated syncs. | A Go-based binary utilizing Unix domain sockets (.grava/grava.sock) to communicate with the local replica.17 |
 | **JSONL Bridge** | Maintains human-readable, Git-portable backups of the SQL state for legacy fallback recovery and human code reviews. | Automated Git hooks (pre-commit, post-merge) exporting specific SQL views to an issues.jsonl file.18 |
 
 This topology ensures that the issue tracker resides as close to the codebase as possible. Agents operate against their local replica with sub-millisecond latency, entirely insulated from network instability. The synchronization mechanics are abstracted away by the workspace daemon, which continuously aligns the local state with the dedicated sync server.17
@@ -120,7 +120,7 @@ The discovered-from relationship provides a critical provenance mechanism for th
 
 ### **The Ready Engine Algorithm**
 
-When an agent requires its next objective, it does not rely on probabilistic guessing or semantic searches of a markdown file. Instead, it invokes the Ready Engine (typically via a CLI command like bd ready or an equivalent MCP tool invocation).19 The Ready Engine executes a highly optimized recursive SQL query against the local Dolt database to compute the precise set of actionable tasks.
+When an agent requires its next objective, it does not rely on probabilistic guessing or semantic searches of a markdown file. Instead, it invokes the Ready Engine (typically via a CLI command like grava ready or an equivalent MCP tool invocation).19 The Ready Engine executes a highly optimized recursive SQL query against the local Dolt database to compute the precise set of actionable tasks.
 
 The engine isolates "ready" work by filtering the entirety of the issues table through strict Boolean logic gates: Firstly, the issue's status must evaluate exactly to open. The engine actively filters out any issue currently marked as in\_progress, closed, deferred, or tombstone.17 Secondly, and most importantly, the engine performs a topological analysis of the dependency graph.30 It calculates the indegree of every node specifically along blocks edges. Any issue that possesses an incoming blocks relationship from a node that is *not* closed is mathematically eliminated from the pool of ready work.21
 
@@ -142,7 +142,7 @@ To facilitate flawless multi-agent coordination, the architecture implements a h
 
 ### **The Workspace Daemon and the LSP Model**
 
-The system utilizes a localized background daemon process for every active agent workspace, adopting an architecture heavily inspired by the Language Server Protocol (LSP) model.17 When an agent initializes the tracker within its project directory, the daemon boots and establishes communication via a Unix domain socket (.grava/bd.sock, or a named pipe on Windows environments).17
+The system utilizes a localized background daemon process for every active agent workspace, adopting an architecture heavily inspired by the Language Server Protocol (LSP) model.17 When an agent initializes the tracker within its project directory, the daemon boots and establishes communication via a Unix domain socket (.grava/grava.sock, or a named pipe on Windows environments).17
 
 This daemon functions as an intelligent synchronization broker. It maintains a persistent, open connection to the local Dolt database replica, which drastically minimizes query latency by eliminating the overhead of repeatedly establishing database connections.17 Crucially, the daemon implements sophisticated batching and debouncing logic. When an agent executes a rapid, sequential series of commands—such as updating an issue's description, appending a new dependency link, and finally claiming the issue by altering its assignee status—the daemon absorbs these atomic mutations locally.17
 
@@ -154,7 +154,7 @@ The automated synchronization sequence strictly adheres to distributed version c
 
 First, the daemon initiates a dolt pull operation, retrieving the latest commit graph from the central Dedicated Sync Server to ascertain any mutations executed by other agents across the network.10
 
-Second, if remote changes exist, Dolt performs a cell-level merge into the local branch.9 This is the critical juncture where Dolt's superiority is evident. If Agent A (locally) modified the priority of bd-100 and Agent B (remotely) modified the assignee of bd-100, Dolt mathematically merges both discrete cell alterations without generating a merge conflict.
+Second, if remote changes exist, Dolt performs a cell-level merge into the local branch.9 This is the critical juncture where Dolt's superiority is evident. If Agent A (locally) modified the priority of grava-100 and Agent B (remotely) modified the assignee of grava-100, Dolt mathematically merges both discrete cell alterations without generating a merge conflict.
 
 Third, in the exceedingly rare event of a direct cell collision (e.g., two agents simultaneously updating the status column of the exact same row), the daemon consults predefined semantic conflict resolution strategies (such as prioritizing the newest timestamp, or enforcing a specific hierarchy where a tombstone status universally overrides a closed status).21
 

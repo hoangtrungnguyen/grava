@@ -21,8 +21,8 @@
 - `parent-child` relationship establishes Epic → Task hierarchy
 - `related` relationship creates informational links
 - `discovered-from` relationship tracks issue provenance
-- CLI command `dep add <from_id> <to_id> <type>` functional
-- CLI command `dep remove <from_id> <to_id>` functional
+- CLI command `grava dep add <from_id> <to_id> <type>` functional
+- CLI command `grava dep remove <from_id> <to_id>` functional
 - Validation prevents invalid relationship types
 
 ### 2.2 Ready Engine Core Algorithm
@@ -47,8 +47,8 @@
 - Priority 0 (Critical) tasks returned first
 - Priority 4 (Backlog) tasks returned last
 - Ties broken by creation timestamp (oldest first)
-- `ready` command accepts `--limit N` parameter
-- `ready --priority 0` filters by specific priority level
+- `grava ready` command accepts `--limit N` parameter
+- `grava ready --priority 0` filters by specific priority level
 
 ### 2.4 Blocked Task Analysis
 **As a** project manager  
@@ -56,7 +56,7 @@
 **So that** I can understand and resolve bottlenecks
 
 **Acceptance Criteria:**
-- `blocked` command lists all blocked issues
+- `grava blocked` command lists all blocked issues
 - Output shows blocking issue IDs for each blocked task
 - Supports `--depth` parameter to show transitive blockers
 - Visual indicator of blocker chain length

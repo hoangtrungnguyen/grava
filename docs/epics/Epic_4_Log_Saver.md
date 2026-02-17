@@ -7,7 +7,7 @@
 - Log rotation preventing infinite file growth
 - Global `--debug` flag enabling verbose logging
 - Panic recovery middleware capturing stack traces
-- `bd debug logs` command implemented for viewing and exporting logs
+- `grava debug logs` command implemented for viewing and exporting logs
 - Session artifact storage capturing LLM prompts and responses
 
 ## User Stories
@@ -81,6 +81,6 @@
 **So that** I can troubleshoot issues or report bugs
 
 **Acceptance Criteria:**
-- `bd debug logs` prints path to log file
-- `bd debug logs --last` prints logs from last execution
-- `bd debug logs --export` zips `.grava/logs` into `grava_debug_bundle.zip`
+- `grava debug logs` prints path to log file
+- `grava debug logs --last` prints logs from last execution
+- `grava debug logs --export` zips `.grava/logs` into `grava_debug_bundle.zip`
