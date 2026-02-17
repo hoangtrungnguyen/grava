@@ -23,22 +23,22 @@ Description: Establish the version-controlled Dolt database foundation with core
 - [x] Create documentation for rollback and recovery procedures
 
 ### 1-2 Core Schema Implementation
-- [ ] Create `issues` table with extended columns: `ephemeral`, `await_type`, `await_id`
-- [ ] Create `dependencies` table supporting 19 semantic types
-- [ ] Create `events` table for audit trail
-- [ ] Create `child_counters` table for hierarchical ID suffixes
-- [ ] Create `deletions` table for tombstone tracking
-- [ ] Enforce foreign key constraints
-- [ ] Implement default values and NOT NULL constraints
-- [ ] Validate JSON metadata field functionality
+- [x] Create `issues` table with extended columns: `ephemeral`, `await_type`, `await_id`
+- [x] Create `dependencies` table supporting 19 semantic types
+- [x] Create `events` table for audit trail
+- [x] Create `child_counters` table for hierarchical ID suffixes
+- [x] Create `deletions` table for tombstone tracking
+- [x] Enforce foreign key constraints
+- [x] Implement default values and NOT NULL constraints
+- [x] Validate JSON metadata field functionality
 
 ### 1-3 Hierarchical ID Generator
-- [ ] Implement generator for `grava-XXXX` (hash-based) top-level issues
-- [ ] Implement atomic increment for child issues (`.1`, `.2`) via `child_counters` table
-- [ ] Ensure ID uniqueness across distributed environments
-- [ ] Integrate generator into issue creation flow
-- [ ] Benchmark generation time (<1ms)
-- [ ] Create unit tests for collision scenarios and hierarchy depth
+- [x] Implement generator for `grava-XXXX` (hash-based) top-level issues
+- [x] Implement atomic increment for child issues (`.1`, `.2`) via `child_counters` table
+- [x] Ensure ID uniqueness across distributed environments
+- [x] Integrate generator into issue creation flow
+- [x] Benchmark generation time (<1ms)
+- [x] Create unit tests for collision scenarios and hierarchy depth
 
 ### 1-4 Basic CRUD CLI Tools
 - [ ] Implement `grava create` command (title, description, type, priority)

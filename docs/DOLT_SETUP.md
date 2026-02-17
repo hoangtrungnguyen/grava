@@ -14,54 +14,43 @@ Run the setup script to initialize the Dolt database. This script will configure
 ./scripts/init_dolt.sh
 ```
 
-## Basic Commands
+## Connecting to the Database
 
-### Connect to SQL Shell
+### Method 1: CLI (Interactive Shell)
+The simplest way to query the database is via the `dolt sql` command.
 ```bash
 cd .grava/dolt
 dolt sql
+# or execute a single query:
+dolt sql -q "SELECT * FROM issues;"
 ```
 
-### Check Status
+### Method 2: SQL Server (For Clients/Apps)
+To connect via a GUI client (DBeaver, DataGrip) or application code, start the Dolt SQL server. We've provided a helper script:
+
 ```bash
-cd .grava/dolt
-dolt status
+./scripts/start_dolt_server.sh
 ```
 
-### Commit Changes
-After making changes to the schema or data via SQL:
+This starts a MySQL-compatible server on port `3306`.
+**Connection Details:**
+-   **Host**: `127.0.0.1`
+-   **Port**: `3306`
+-   **User**: `root`
+-   **Password**: (empty)
+-   **Database**: `grava` (or `dolt_repo` if browsing system tables)
+
+### Stopping the Server
+To stop the server:
 ```bash
-cd .grava/dolt
-dolt add .
-dolt commit -m "Your commit message"
+./scripts/stop_dolt_server.sh
 ```
+Or, if you are running it in a terminal foreground, simply press `Ctrl+C`.
 
-## Rollback and Recovery
-
-### Discard Uncommitted Changes
-To discard changes to specific tables:
+### Method 3: MySQL Client
+If you have the `mysql` CLI installed:
 ```bash
-cd .grava/dolt
-dolt checkout <table_name>
-```
-
-To discard all uncommitted changes:
-```bash
-cd .grava/dolt
-dolt reset --hard
-```
-
-### Revert to Previous Commit
-To revert the database to a specific commit hash:
-```bash
-cd .grava/dolt
-dolt checkout <commit_hash>
-```
-
-### Recover Deleted Data (Time Travel)
-You can query data as it existed at a specific point in time using standard SQL:
-```sql
-SELECT * FROM <table_name> AS OF '2023-10-27';
+mysql -h 127.0.0.1 -P 3306 -u root
 ```
 
 ## Directory Structure

@@ -69,7 +69,3 @@ Protocol: Are You Ready?
 **Action:** Ask for the execution mode.
 **Output:**
 > "I am ready to start [Ticket ID]. All dependencies and connections look good."
->
-> **How would you like to proceed?**
-> 1.  **Create a Plan:** I will outline the implementation steps, files to touch, and test strategy.
-> 2.  **Start Coding:** I will begin implementing the solution immediately.
