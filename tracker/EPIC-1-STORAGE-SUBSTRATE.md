@@ -41,9 +41,12 @@ Description: Establish the version-controlled Dolt database foundation with core
 - [x] Create unit tests for collision scenarios and hierarchy depth
 
 ### 1-4 Basic CRUD CLI Tools
+- [ ] Implement `grava init` command (initialize repository)
 - [ ] Implement `grava create` command (title, description, type, priority)
 - [ ] Implement `grava show <id>` command
 - [ ] Implement `grava update <id>` command
+- [ ] Implement `grava close <id>` command
+- [ ] Implement `grava delete <id>` command
 - [ ] Implement `grava list` command with filtering
 - [ ] Ensure proper exit codes and error messages
 - [ ] Generate help documentation for all commands
@@ -61,4 +64,17 @@ Description: Establish the version-controlled Dolt database foundation with core
 - [ ] Implement `grava list --wisp` filter
 - [ ] Create `deletions.jsonl` manifest logic
 - [ ] Update import logic to check `deletions.jsonl`
+
+### 1-7 Advanced Issue Management
+- [ ] Implement `grava comment <id> "text"` command
+- [ ] Implement `grava dep <parent_id> <child_id>` command
+- [ ] Implement `grava label <id> <label>` command
+- [ ] Implement `grava assign <id> <user>` command (implied by create/update but good to have explicit)
+
+### 1-8 Search and Maintenance
+- [ ] Implement `grava search "query"` command
+- [ ] Implement `grava quick` command (list high priority/quick tasks)
+- [ ] Implement `grava doctor` command (diagnose issues)
+- [ ] Implement `grava sync` command (synchronize database)
+- [ ] Implement `grava compact` command (compress history)
 
