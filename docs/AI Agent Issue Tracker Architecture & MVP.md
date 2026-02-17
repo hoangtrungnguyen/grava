@@ -37,8 +37,8 @@ The architecture supports several operational modes, adapting to the specific co
 | Architectural Component | Functional Description | Technical Implementation |
 | :---- | :---- | :---- |
 | **Dedicated Sync Server** | Acts as the authoritative Single Source of Truth (SSOT). Handles global replication, authentication, and branch management. | dolt sql-server deployed on centralized infrastructure, exposing the remotesapi on port 50051\.15 |
-| **Local Workspace Replica** | The agent's immediate querying interface. Enables zero-latency graph traversals and offline commits without network overhead. | A local Dolt database clone residing in the .beads/dolt/ directory of the project workspace.16 |
-| **Workspace Daemon** | A localized background process running on the agent's host machine. Batches queries and orchestrates automated syncs. | A Go-based binary utilizing Unix domain sockets (.beads/bd.sock) to communicate with the local replica.17 |
+| **Local Workspace Replica** | The agent's immediate querying interface. Enables zero-latency graph traversals and offline commits without network overhead. | A local Dolt database clone residing in the .grava/dolt/ directory of the project workspace.16 |
+| **Workspace Daemon** | A localized background process running on the agent's host machine. Batches queries and orchestrates automated syncs. | A Go-based binary utilizing Unix domain sockets (.grava/bd.sock) to communicate with the local replica.17 |
 | **JSONL Bridge** | Maintains human-readable, Git-portable backups of the SQL state for legacy fallback recovery and human code reviews. | Automated Git hooks (pre-commit, post-merge) exporting specific SQL views to an issues.jsonl file.18 |
 
 This topology ensures that the issue tracker resides as close to the codebase as possible. Agents operate against their local replica with sub-millisecond latency, entirely insulated from network instability. The synchronization mechanics are abstracted away by the workspace daemon, which continuously aligns the local state with the dedicated sync server.17
@@ -47,7 +47,7 @@ This topology ensures that the issue tracker resides as close to the codebase as
 
 To facilitate machine cognition and bypass the parsing limitations inherent to unstructured text, the database schema must be rigidly defined, explicitly typed, and highly optimized for recursive graph queries. The architecture mandates a departure from traditional database design patterns—specifically the reliance on auto-incrementing integers for primary keys. In a distributed, offline-first environment where multiple agents generate issues concurrently on separate branches, integer keys inevitably collide upon merging.9
 
-Instead, the architecture employs a hash-based alphanumeric identification protocol (e.g., bd-a1b2). This cryptographic approach mathematically guarantees zero-conflict identifier generation across multiple discrete agent branches, preserving the integrity of the graph during complex multi-agent merges.9
+Instead, the architecture employs a hash-based alphanumeric identification protocol (e.g., grava-a1b2). This cryptographic approach mathematically guarantees zero-conflict identifier generation across multiple discrete agent branches, preserving the integrity of the graph during complex multi-agent merges.9
 
 ### **The Core Entity Tables**
 
@@ -59,7 +59,7 @@ The issues table acts as the primary ledger for all project objectives, bugs, an
 
 | Column Name | Data Type | Structural Constraints | Semantic Description |
 | :---- | :---- | :---- | :---- |
-| id | VARCHAR(16) | PRIMARY KEY | The hash-based unique identifier generated at creation (e.g., bd-x9f2).17 |
+| id | VARCHAR(16) | PRIMARY KEY | The hash-based unique identifier generated at creation (e.g., grava-x9f2).17 |
 | title | VARCHAR(255) | NOT NULL | A concise, semantic summary of the objective, heavily weighted during vector searches. |
 | description | LONGTEXT | NULL | Detailed acceptance criteria, contextual requirements, and necessary code blocks. |
 | status | VARCHAR(32) | DEFAULT 'open' | Operational state constraints. Valid values include: open, in\_progress, blocked, closed, tombstone, deferred, and pinned.17 |
@@ -142,7 +142,7 @@ To facilitate flawless multi-agent coordination, the architecture implements a h
 
 ### **The Workspace Daemon and the LSP Model**
 
-The system utilizes a localized background daemon process for every active agent workspace, adopting an architecture heavily inspired by the Language Server Protocol (LSP) model.17 When an agent initializes the tracker within its project directory, the daemon boots and establishes communication via a Unix domain socket (.beads/bd.sock, or a named pipe on Windows environments).17
+The system utilizes a localized background daemon process for every active agent workspace, adopting an architecture heavily inspired by the Language Server Protocol (LSP) model.17 When an agent initializes the tracker within its project directory, the daemon boots and establishes communication via a Unix domain socket (.grava/bd.sock, or a named pipe on Windows environments).17
 
 This daemon functions as an intelligent synchronization broker. It maintains a persistent, open connection to the local Dolt database replica, which drastically minimizes query latency by eliminating the overhead of repeatedly establishing database connections.17 Crucially, the daemon implements sophisticated batching and debouncing logic. When an agent executes a rapid, sequential series of commands—such as updating an issue's description, appending a new dependency link, and finally claiming the issue by altering its assignee status—the daemon absorbs these atomic mutations locally.17
 
