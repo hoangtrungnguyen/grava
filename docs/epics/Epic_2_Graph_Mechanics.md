@@ -17,13 +17,10 @@
 **So that** the system understands different relationship semantics
 
 **Acceptance Criteria:**
-- `blocks` relationship enforces temporal prerequisites
-- `parent-child` relationship establishes Epic → Task hierarchy
-- `related` relationship creates informational links
-- `discovered-from` relationship tracks issue provenance
-- CLI command `grava dep add <from_id> <to_id> <type>` functional
-- CLI command `grava dep remove <from_id> <to_id>` functional
-- Validation prevents invalid relationship types
+- 19 semantic dependency types implemented (blocks, waits-for, supersedes, etc.)
+- `grava dep` supports extended types
+- Gates (`await_type`) integrated into blocking logic
+- Cycle detection handles all dependency types
 
 ### 2.2 Ready Engine Core Algorithm
 **As an** AI agent  
@@ -33,10 +30,10 @@
 **Acceptance Criteria:**
 - SQL query filters issues by status = 'open'
 - Topological analysis calculates indegree on `blocks` edges
-- Issues with any open blockers excluded from ready list
-- Performance: <10ms query execution time
+- Issues blocked by open "Gate" conditions (`await_type` != NULL) excluded
+- Issues with `waits-for` dependencies de-prioritized but not strictly blocked
 - Returns empty array when no work is ready
-- Handles graphs with 1000+ nodes efficiently
+- Handles graphs with 10k+ nodes efficiently
 
 ### 2.3 Priority-Based Task Sorting
 **As an** AI agent  
@@ -73,3 +70,14 @@
 - Error message clearly identifies the circular path
 - Background job runs nightly to scan for cycles
 - Cycle detection completes in <100ms for graphs with 10,000 nodes
+
+### 2.6 Gate Evaluation Logic
+**As an** AI agent
+**I want to** wait for external events (PRs, Timers) before starting a task
+**So that** I don't waste time polling or failing early
+
+**Acceptance Criteria:**
+- Ready engine checks `await_type='gh:pr'` status via GitHub API (mocked for MVP)
+- Ready engine checks `await_type='timer'` against current timestamp
+- Gates that are "closed" (condition met) unblock dependent tasks
+- `grava gate list` shows pending external dependencies

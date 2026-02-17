@@ -46,6 +46,7 @@ This topology ensures that the issue tracker resides as close to the codebase as
 ## **Structuring Agentic Thought: The Data Schema**
 
 To facilitate machine cognition and bypass the parsing limitations inherent to unstructured text, the database schema must be rigidly defined, explicitly typed, and highly optimized for recursive graph queries. The architecture mandates a departure from traditional database design patterns—specifically the reliance on auto-incrementing integers for primary keys. In a distributed, offline-first environment where multiple agents generate issues concurrently on separate branches, integer keys inevitably collide upon merging.9
+Instead, the architecture employs a hash-based alphanumeric identification protocol (e.g., grava-a1b2), extended by a hierarchical suffixing strategy (grava-a1b2.1, grava-a1b2.1.2) to support atomic sub-task generation without collision.9
 
 Instead, the architecture employs a hash-based alphanumeric identification protocol (e.g., grava-a1b2). This cryptographic approach mathematically guarantees zero-conflict identifier generation across multiple discrete agent branches, preserving the integrity of the graph during complex multi-agent merges.9
 
@@ -59,14 +60,17 @@ The issues table acts as the primary ledger for all project objectives, bugs, an
 
 | Column Name | Data Type | Structural Constraints | Semantic Description |
 | :---- | :---- | :---- | :---- |
-| id | VARCHAR(16) | PRIMARY KEY | The hash-based unique identifier generated at creation (e.g., grava-x9f2).17 |
+| id | VARCHAR(32) | PRIMARY KEY | The hierarchical unique identifier. Hashed prefix + atomic suffix (e.g., grava-x9f2.1.3).17 |
 | title | VARCHAR(255) | NOT NULL | A concise, semantic summary of the objective, heavily weighted during vector searches. |
 | description | LONGTEXT | NULL | Detailed acceptance criteria, contextual requirements, and necessary code blocks. |
 | status | VARCHAR(32) | DEFAULT 'open' | Operational state constraints. Valid values include: open, in\_progress, blocked, closed, tombstone, deferred, and pinned.17 |
+| ephemeral | BOOLEAN | DEFAULT FALSE | If true, the issue is a "Wisp" (temporary memory) and is excluded from JSONL exports. |
 | priority | INT | DEFAULT 4 | A strictly enforced numerical ranking from 0 (Critical priority) to 4 (Backlog priority).17 |
 | issue\_type | VARCHAR(32) | DEFAULT 'task' | Categorization constraints. Valid values include: bug, feature, task, epic, chore, and message.17 |
 | assignee | VARCHAR(128) | NULL | The authenticated identity of the specific agent or human user currently claiming the execution of the task.3 |
 | metadata | JSON | NULL | An extensible, schema-less JSON payload utilized for custom external integrations or specialized tool tracking.22 |
+| await_type | VARCHAR(32) | NULL | For "Gate" issues: The type of external condition being waited on (e.g., gh:pr, timer, human). |
+| await_id | VARCHAR(128) | NULL | For "Gate" issues: The specific identifier of the external condition (e.g., PR number, timestamp). |
 
 **The Dependencies Table**
 
@@ -76,7 +80,7 @@ The true power of the architecture resides in the dependencies table. This table
 | :---- | :---- | :---- | :---- |
 | from\_id | VARCHAR(16) | FOREIGN KEY (issues.id) | The origin node of the relationship edge. |
 | to\_id | VARCHAR(16) | FOREIGN KEY (issues.id) | The destination node of the relationship edge. |
-| type | VARCHAR(32) | NOT NULL | The semantic nature of the edge. Valid values include: blocks, related, parent-child, and discovered-from.17 |
+| type | VARCHAR(32) | NOT NULL | The semantic nature of the edge. Full 19-type spectrum including: blocks, waits-for, conditional-blocks, supersedes, and authored-by.17 |
 
 **The Events (Audit) Table**
 
@@ -100,6 +104,22 @@ The architecture addresses this inherent limitation through a mechanism termed "
 
 This compaction strategy ensures that the active tracking database remains exceptionally lean, maximizing the agent's token efficiency and query velocity without sacrificing the forensic integrity of the project's historical archive.4
 
+### **Advanced Workflows: Rigs, Molecules, and Wisps**
+
+To support enterprise-grade autonomous operations, the architecture adopts three advanced primitives from the Beads paradigm:
+
+**Rigs (Multi-Repository Topology)**
+Large-scale software ecosystems rarely reside in a single repository. A "Rig" represents a collection of related repositories (e.g., `frontend`, `backend`, `infra`) that share a unified issue tracker. The system utilizes a `routes.jsonl` configuration file to map issue ID prefixes (e.g., `fe-`, `be-`) to specific file paths or sub-repositories. This allows a single Grava instance to trace dependencies across the entire technology stack.
+
+**Molecules (Workflow Templates)**
+Agents frequently execute repeatable, multi-step processes such as "Refactor Module" or "Resolving Security Vulnerability". A "Molecule" is a workflow template that automates the generation of a coordinated tree of issues. When an agent creates a molecule (e.g., `mol_type="swarm_refactor"`), the system programmatically spawns the parent objective and all necessary child tasks, essentially "hydrating" a standardized plan into the active graph.
+
+**Wisps (Ephemeral Memory)**
+Not all agent thoughts require permanent archival. "Wisps" are ephemeral issues (`ephemeral: true`) used as scratchpads for intermediate reasoning, self-correction, or temporary state (e.g., "Scanning file for X..."). Wisps exist solely in the local Dolt instance and are strictly excluded from the `issues.jsonl` export to prevent noise from polluting the version control history. They are automatically pruned by a `grava compact` maintenance cycle based on their Time-To-Live (TTL).
+
+**Gates (External Condition Waiting)**
+"Gates" are a specialized type of issue that represents a dependency on an external condition or event outside the immediate control of the agent fleet. For example, an agent might create a "Gate" issue to wait for a human code review (`await_type="human"`, `await_id="PR-123"`), a CI/CD pipeline to complete (`await_type="gh:pr"`, `await_id="PR-456"`), or a specific time to elapse (`await_type="timer"`, `await_id="2026-03-01T00:00:00Z"`). The `await_type` and `await_id` fields in the `issues` table allow the system to monitor these external conditions and automatically transition the "Gate" issue's status once the condition is met, unblocking downstream tasks.
+
 ## **Graph Mechanics: Tracking Blocked Issues and the Ready Engine**
 
 The most critical operational failure point for any autonomous coding agent is the process of task selection. If an agent operates within a traditional issue tracker and inadvertently selects a frontend implementation task that strictly depends on an unwritten backend database schema, the agent will inevitably attempt to hallucinate the missing API endpoints, generate failing test suites, and enter a destructive, looping failure state.2 Therefore, the issue tracker must natively enforce blocking constraints and mathematically guarantee that agents are only ever presented with strictly actionable directives.
@@ -110,7 +130,9 @@ This guarantee is realized through the Directed Acyclic Graph (DAG) formed by th
 
 The schema does not merely link issues; it enforces strict semantic boundaries on those relationships, defining precisely how nodes within the graph interact and constrain one another 24:
 
-The blocks relationship represents a strict temporal and operational prerequisite.24 If Issue A is defined as blocking Issue B, the system algorithmically prevents Issue B from transitioning into a ready or in\_progress state until Issue A achieves an unequivocally closed status. This is the primary constraint vector utilized by the Ready Engine.
+The blocks relationship represents a strict temporal and operational prerequisite.24 If Issue A is defined as blocking Issue B, the system algorithmically prevents Issue B from transitioning into a ready or in\_progress state until Issue A achieves an unequivocally closed status.
+The conditional-blocks relationship offers nuanced control: Issue A blocks Issue B *only* if Issue A fails or is closed with a specific resolution. This supports "Plan B" workflows depending on the outcome of a primary task.
+The waits-for relationship establishes a soft dependency, indicating that Issue B is technically executable but optimally should wait for Issue A. Unlike strict blocking, this does not mathematically remove the task from the ready pool but drastically lowers its sorting priority.
 
 The parent-child relationship establishes a structural composition link.24 An Epic (the parent node) functions as an organizational container for discrete Tasks (the child nodes). Crucially, an Epic does not block its children from execution; rather, the completion state of the Epic is fundamentally a derived function of its children's collective completion. This allows agents to decompose massive requirements into highly granular, executable units.27
 

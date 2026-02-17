@@ -29,24 +29,26 @@
 **So that** we have a structured foundation for task tracking
 
 **Acceptance Criteria:**
-- `issues` table created with all required columns (id, title, description, status, priority, issue_type, assignee, metadata)
-- `dependencies` table created with semantic edge types (from_id, to_id, type)
+- `issues` table created with extended columns: `ephemeral` (BOOLEAN), `await_type` (VARCHAR), `await_id` (VARCHAR)
+- `dependencies` table supports 19 semantic types
 - `events` table created for audit trail (id, issue_id, event_type, actor, old_value, new_value, timestamp)
+- `child_counters` table created to track hierarchical ID suffixes
 - Foreign key constraints properly enforced
 - Default values and NOT NULL constraints working
 - JSON metadata field validated and functional
 
-### 1.3 Hash-Based ID Generator
-**As a** developer  
-**I want to** generate cryptographic hash-based IDs for issues  
-**So that** concurrent issue creation across branches never causes ID collisions
+### 1.3 Hierarchical ID Generator
+   **As a** developer
+   **I want to** generate atomic, hierarchical IDs (e.g., `grava-a1b2.1`)
+   **So that** I can break down tasks recursively without ID collisions
 
-**Acceptance Criteria:**
-- ID generator produces format `grava-XXXX` (alphanumeric)
-- IDs are guaranteed unique across distributed environments
-- Generator integrated into issue creation flow
-- Performance: <1ms generation time
-- Unit tests cover collision scenarios
+   **Acceptance Criteria:**
+   - Generator produces `grava-XXXX` (hash-based) for top-level issues
+   - Generator supports atomic increment for child issues (`.1`, `.2`) via `child_counters` table
+   - IDs are guaranteed unique across distributed environments
+   - Generator integrated into issue creation flow
+   - Performance: <1ms generation time
+   - Unit tests cover collision scenarios and hierarchy depth (parent.child.grandchild)
 
 ### 1.4 Basic CRUD CLI Tools
 **As a** developer  
@@ -71,4 +73,17 @@
 - Integration tests for foreign key relationships
 - Edge case testing (NULL values, boundary conditions)
 - Performance benchmarks documented
+- Performance benchmarks documented
 - Schema migration scripts tested and versioned
+
+### 1.6 Ephemeral "Wisp" Support and Deletion Manifests
+**As an** AI agent
+**I want to** create temporary "scratchpad" issues and safely delete old ones
+**So that** I don't pollute the project history with intermediate reasoning
+
+**Acceptance Criteria:**
+- `create --ephemeral` flag sets `ephemeral=true`
+- Ephemeral issues are excluded from `issues.jsonl` export
+- `grava list --wisp` filters for ephemeral issues
+- `deletions.jsonl` manifest created to track deleted IDs
+- Import logic checks `deletions.jsonl` to prevent resurrection of deleted issues

@@ -30,8 +30,11 @@ The detailed requirements and user stories for each epic are maintained in separ
 ### [Epic 6: MCP Integration and Agent Onboarding](epics/Epic_6_MCP_Integration.md)
 **Goal:** Bridge the database to AI agents via Model Context Protocol and complete end-to-end testing.
 
-### [Epic 7: Advanced Graph Analytics (Optional)](epics/Epic_7_Advanced_Analytics.md)
+### [Epic 7 (Optional): Advanced Graph Analytics](epics/Epic_7_Advanced_Analytics.md)
 **Goal:** Implement sophisticated graph analysis for project optimization (post-MVP enhancement).
+
+### [Epic 8: Advanced Workflows (Rigs, Molecules)](epics/Epic_8_Advanced_Workflows.md)
+**Goal:** Implement enterprise-scale workflow automation, multi-repository support, and database maintenance/compaction.
 
 ---
 
