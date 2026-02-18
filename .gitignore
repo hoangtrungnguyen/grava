@@ -33,3 +33,9 @@ go.work.sum
 
 # Grava local database and config
 .grava/
+
+# Binaries
+grava
+
+# Logs
+*.log
