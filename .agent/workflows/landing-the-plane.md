@@ -1,6 +1,7 @@
 ---
 description: Clean up the session, commit work, and update the issue status using Grava.
 ---
+
 # Protocol: Landing the Plane (Grava Edition)
 
 **Trigger:** When the user says "Let's land the plane" or runs `/landing-the-plane`.
@@ -87,3 +88,7 @@ Present a completion summary:
 - **Grava:** Issue [ID] updated to [Status]
 - **Summary:** [Brief list of changes]
 ```
+
+---
+## Note
+- Do not use `grava clear` and `grava drop` commands without user's permission
