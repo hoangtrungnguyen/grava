@@ -286,6 +286,10 @@ func TestSubtaskCmd(t *testing.T) {
 	parentID := "grava-123"
 	lockName := "grava_cc_" + parentID
 
+	// Reset flags
+	subtaskAffectedFiles = nil
+	subtaskEphemeral = false
+
 	// 1. Verify Parent Exists
 	mock.ExpectQuery(`SELECT 1 FROM issues WHERE id = \?`).
 		WithArgs(parentID).

@@ -45,6 +45,7 @@ grava create [flags]
 - `-p, --priority string`: Priority level. Allowed values: `low`, `medium`, `high`, `critical`. Default: `medium`.
 - `--parent string`: (Optional) Parent Issue ID if creating a direct child manually (prefer `subtask` command for hierarchy).
 - `--ephemeral`: Mark the issue as ephemeral (a **Wisp**). Wisps are excluded from normal `list` output and are intended as temporary scratchpad notes for AI agents or short-lived work items. Default: `false`.
+- `--files strings`: (Optional) Comma-separated list of affected files (e.g., `main.go,pkg/api.go`).
 
 **Examples:**
 ```bash
@@ -125,6 +126,7 @@ grava update <id> [flags]
 - `-d, --desc string`: New description.
 - `--status string`: New status (e.g., `open`, `in_progress`, `closed`, `blocked`).
 - `-p, --priority string`: New priority.
+- `--files strings`: Update the list of affected files.
 
 **Example:**
 ```bash
