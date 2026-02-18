@@ -44,10 +44,16 @@ grava create [flags]
 - `--type string`: Issue type. Allowed values: `task`, `bug`, `epic`, `story`, `feature`. Default: `task`.
 - `-p, --priority string`: Priority level. Allowed values: `low`, `medium`, `high`, `critical`. Default: `medium`.
 - `--parent string`: (Optional) Parent Issue ID if creating a direct child manually (prefer `subtask` command for hierarchy).
+- `--ephemeral`: Mark the issue as ephemeral (a **Wisp**). Wisps are excluded from normal `list` output and are intended as temporary scratchpad notes for AI agents or short-lived work items. Default: `false`.
 
-**Example:**
+**Examples:**
 ```bash
+# Create a normal issue
 grava create --title "Fix login bug" --type bug --priority high
+
+# Create an ephemeral Wisp (temporary scratchpad)
+grava create --title "Investigate flaky test" --ephemeral
+# Output: 👻 Created ephemeral issue (Wisp): grava-abc
 ```
 
 ---
@@ -129,7 +135,7 @@ grava update grava-123.1 --status closed --desc "Completed successfully"
 
 ### `list`
 
-Lists all issues in the tracker, optionally validated by filters.
+Lists issues in the tracker, optionally filtered by status or type. **Ephemeral Wisp issues are excluded by default.** Use `--wisp` to view them instead.
 
 **Usage:**
 ```bash
@@ -138,20 +144,85 @@ grava list [flags]
 
 **Flags:**
 - `-s, --status string`: Filter by status (e.g., `open`, `closed`).
-- `-a, --assignee string`: Filter by assignee (not fully implemented in MVP).
-- `--type string`: Filter by issue type.
+- `-t, --type string`: Filter by issue type.
+- `--wisp`: Show only ephemeral Wisp issues (inverts the default ephemeral filter).
 
-**Example:**
+**Examples:**
 ```bash
+# List all normal (non-ephemeral) issues
+grava list
+
+# Filter by status and type
 grava list --status open --type bug
+
+# List only ephemeral Wisps
+grava list --wisp
 ```
 
 **Output:**
 ```
 ID          Title                  Type     Priority  Status  Created
 grava-123   Fix login              bug      1         open    2026-02-18
-grava-124   Add feature            feature  2         open    2026-02-18
+grava-124   Add feature            task     2         open    2026-02-18
 ```
+
+---
+
+### `compact`
+
+Purges old ephemeral **Wisp** issues from the database and records each deletion in the `deletions` table to prevent resurrection during future imports.
+
+**Usage:**
+```bash
+grava compact [flags]
+```
+
+**Flags:**
+- `--days int`: Delete Wisps older than this many days. Default: `7`. Pass `0` to delete **all** Wisps regardless of age.
+
+**Examples:**
+```bash
+# Purge Wisps older than 7 days (default)
+grava compact
+
+# Purge Wisps older than 30 days
+grava compact --days 30
+
+# Purge ALL Wisps immediately
+grava compact --days 0
+```
+
+**Output:**
+```
+🧹 Compacted 3 Wisp(s) older than 7 day(s). Tombstones recorded in deletions table.
+```
+
+> **Note:** Each purged Wisp ID is written to the `deletions` table with `reason='compact'` and `actor='grava-compact'`. This tombstone prevents a deleted Wisp from being re-imported if the database is ever restored from an older snapshot.
+
+---
+
+## Wisps (Ephemeral Issues)
+
+**Wisps** are temporary, ephemeral issues intended for AI agents or developers who need a short-lived scratchpad that doesn't pollute the permanent project history.
+
+| Behaviour | Normal Issue | Wisp (`--ephemeral`) |
+|---|---|---|
+| Appears in `grava list` | ✅ Yes | ❌ No (hidden by default) |
+| Appears in `grava list --wisp` | ❌ No | ✅ Yes |
+| Stored in DB | ✅ Yes | ✅ Yes |
+| Can be compacted/deleted | ❌ No | ✅ Yes (via `grava compact`) |
+
+Create a Wisp:
+```bash
+grava create --title "Temp: explore approach X" --ephemeral
+```
+
+View all Wisps:
+```bash
+grava list --wisp
+```
+
+---
 
 ## Environment Variables
 

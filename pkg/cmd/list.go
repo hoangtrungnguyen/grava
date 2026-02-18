@@ -11,6 +11,7 @@ import (
 var (
 	listStatus string
 	listType   string
+	listWisp   bool
 )
 
 // listCmd represents the list command
@@ -23,26 +24,16 @@ You can filter by status or type.`,
 		query := "SELECT id, title, issue_type, priority, status, created_at FROM issues"
 		var params []any
 
-		whereClause := ""
-		if listStatus != "" {
-			whereClause += " status = ?"
-			params = append(params, listStatus)
-		}
-		if listType != "" {
-			if whereClause != "" {
-				whereClause += " AND"
-			} else {
-				// Bug fix: if listStatus is empty, we don't need AND, but we need empty check
-				// simpler: construct where clauses list and join with AND
-				// But let's stick to simple logic for now
-			}
-			// wait, above logic is slightly flawed if I just append.
-			// Let's rewrite query construction
-		}
-
-		// Reset logic
+		// Build WHERE clauses
 		whereParts := []string{}
 		params = []any{}
+
+		// Ephemeral filter: by default exclude Wisps; --wisp shows only Wisps
+		if listWisp {
+			whereParts = append(whereParts, "ephemeral = 1")
+		} else {
+			whereParts = append(whereParts, "ephemeral = 0")
+		}
 
 		if listStatus != "" {
 			whereParts = append(whereParts, "status = ?")
@@ -99,4 +90,5 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	listCmd.Flags().StringVarP(&listStatus, "status", "s", "", "Filter by status")
 	listCmd.Flags().StringVarP(&listType, "type", "t", "", "Filter by type")
+	listCmd.Flags().BoolVar(&listWisp, "wisp", false, "Show only ephemeral Wisp issues")
 }

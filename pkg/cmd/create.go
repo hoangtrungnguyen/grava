@@ -14,6 +14,7 @@ var (
 	issueType string
 	priority  string
 	parentID  string
+	ephemeral bool
 )
 
 // createCmd represents the create command
@@ -53,15 +54,24 @@ You can specify title, description, type, and priority.`,
 		// 3. Insert into DB
 		// Note: status 'todo' is NOT allowed by schema check, use 'open'.
 		// Note: column is 'issue_type', not 'type'.
-		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, created_at, updated_at) 
-                  VALUES (?, ?, ?, ?, ?, 'open', ?, ?)`
+		ephemeralVal := 0
+		if ephemeral {
+			ephemeralVal = 1
+		}
 
-		_, err = Store.Exec(query, id, title, desc, issueType, pInt, time.Now(), time.Now())
+		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at)
+                  VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?)`
+
+		_, err = Store.Exec(query, id, title, desc, issueType, pInt, ephemeralVal, time.Now(), time.Now())
 		if err != nil {
 			return fmt.Errorf("failed to insert issue: %w", err)
 		}
 
-		cmd.Printf("✅ Created issue: %s\n", id)
+		if ephemeral {
+			cmd.Printf("👻 Created ephemeral issue (Wisp): %s\n", id)
+		} else {
+			cmd.Printf("✅ Created issue: %s\n", id)
+		}
 
 		return nil
 	},
@@ -75,6 +85,7 @@ func init() {
 	createCmd.Flags().StringVar(&issueType, "type", "task", "Issue type (task, bug, epic, story)")
 	createCmd.Flags().StringVarP(&priority, "priority", "p", "medium", "Issue priority (low, medium, high, critical)")
 	createCmd.Flags().StringVar(&parentID, "parent", "", "Parent Issue ID for sub-tasks")
+	createCmd.Flags().BoolVar(&ephemeral, "ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
 
 	createCmd.MarkFlagRequired("title")
 }
