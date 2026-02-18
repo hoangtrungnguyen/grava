@@ -438,3 +438,287 @@ func TestAssignCmdNotFound(t *testing.T) {
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestSearchCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// Reset flag
+	searchWisp = false
+
+	rows := sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
+		AddRow("grava-1", "Fix login bug", "bug", 1, "open", time.Now())
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
+		WithArgs(0, "%login%", "%login%", "%login%").
+		WillReturnRows(rows)
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "search", "login")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "grava-1")
+	assert.Contains(t, output, "Fix login bug")
+	assert.Contains(t, output, "1 result(s)")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSearchCmdNoResults(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	searchWisp = false
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
+		WithArgs(0, "%xyznotfound%", "%xyznotfound%", "%xyznotfound%").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "search", "xyznotfound")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "No issues found")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestQuickCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// Reset flags to defaults
+	quickPriority = 1
+	quickLimit = 20
+
+	rows := sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
+		AddRow("grava-1", "Critical crash fix", "bug", 0, "open", time.Now()).
+		AddRow("grava-2", "High priority refactor", "task", 1, "open", time.Now())
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
+		WithArgs(1, 20).
+		WillReturnRows(rows)
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "quick")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "grava-1")
+	assert.Contains(t, output, "grava-2")
+	assert.Contains(t, output, "2 high-priority issue(s)")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestQuickCmdAllCaughtUp(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	quickPriority = 1
+	quickLimit = 20
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
+		WithArgs(1, 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "quick")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "all caught up")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSearchCmdWisp(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// --wisp flag should pass ephemeral=1
+	searchWisp = true
+
+	rows := sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
+		AddRow("grava-w1", "Scratch auth note", "task", 4, "open", time.Now())
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
+		WithArgs(1, "%auth%", "%auth%", "%auth%").
+		WillReturnRows(rows)
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "search", "auth", "--wisp")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "grava-w1")
+	assert.Contains(t, output, "1 result(s)")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+
+	// Reset flag
+	searchWisp = false
+}
+
+func TestQuickCmdCustomPriority(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// --priority 2 should include medium issues too
+	quickPriority = 2
+	quickLimit = 20
+
+	rows := sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
+		AddRow("grava-3", "Medium priority task", "task", 2, "open", time.Now())
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
+		WithArgs(2, 20).
+		WillReturnRows(rows)
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "quick", "--priority", "2")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "grava-3")
+	assert.Contains(t, output, "1 high-priority issue(s)")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+
+	// Reset flags
+	quickPriority = 1
+	quickLimit = 20
+}
+
+func TestDoctorCmd(t *testing.T) {
+	// Helper: expect the 4 table-existence checks
+	expectTableChecks := func(mock sqlmock.Sqlmock, tables []string, present bool) {
+		for _, tbl := range tables {
+			count := 1
+			if !present {
+				count = 0
+			}
+			mock.ExpectQuery(regexp.QuoteMeta(
+				"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+			)).WithArgs(tbl).
+				WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(count))
+		}
+	}
+
+	tables := []string{"issues", "dependencies", "deletions", "child_counters"}
+
+	t.Run("all checks pass", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		assert.NoError(t, err)
+		Store = dolt.NewClientFromDB(db)
+
+		// 1. DB connectivity
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT VERSION()")).
+			WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.31"))
+
+		// 2. Table checks — all present
+		expectTableChecks(mock, tables, true)
+
+		// 3. Orphaned dependencies — none
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM dependencies").
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+		// 4. Untitled issues — none
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM issues WHERE title IS NULL OR title = ''")).
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+		// 5. Wisp count — low
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM issues WHERE ephemeral = 1")).
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(3))
+
+		mock.ExpectClose()
+
+		output, err := executeCommand(rootCmd, "doctor")
+		assert.NoError(t, err)
+		assert.Contains(t, output, "All critical checks passed")
+		assert.Contains(t, output, "connected")
+		assert.NotContains(t, output, "FAIL")
+
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("missing table causes failure", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		assert.NoError(t, err)
+		Store = dolt.NewClientFromDB(db)
+
+		// 1. DB connectivity — OK
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT VERSION()")).
+			WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.31"))
+
+		// 2. Table checks — "deletions" is missing
+		for _, tbl := range tables {
+			count := 1
+			if tbl == "deletions" {
+				count = 0
+			}
+			mock.ExpectQuery(regexp.QuoteMeta(
+				"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+			)).WithArgs(tbl).
+				WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(count))
+		}
+
+		// 3. Orphaned deps
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM dependencies").
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+		// 4. Untitled issues
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM issues WHERE title IS NULL OR title = ''")).
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+		// 5. Wisp count
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM issues WHERE ephemeral = 1")).
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+		// No ExpectClose — RunE returns error, PersistentPostRunE is skipped
+
+		_, err = executeCommand(rootCmd, "doctor")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "doctor found critical issues")
+
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("warnings for orphaned deps and high wisp count", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		assert.NoError(t, err)
+		Store = dolt.NewClientFromDB(db)
+
+		// 1. DB connectivity — OK
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT VERSION()")).
+			WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.31"))
+
+		// 2. All tables present
+		expectTableChecks(mock, tables, true)
+
+		// 3. Orphaned deps — 2 found (WARN)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM dependencies").
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(2))
+
+		// 4. Untitled issues — none
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM issues WHERE title IS NULL OR title = ''")).
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+		// 5. Wisp count — 150 (WARN: > 100)
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM issues WHERE ephemeral = 1")).
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(150))
+
+		mock.ExpectClose()
+
+		output, err := executeCommand(rootCmd, "doctor")
+		// Warnings don't cause a non-zero exit
+		assert.NoError(t, err)
+		assert.Contains(t, output, "All critical checks passed")
+		assert.Contains(t, output, "2 edge(s) reference non-existent issues")
+		assert.Contains(t, output, "grava compact")
+
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+}

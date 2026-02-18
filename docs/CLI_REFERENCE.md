@@ -304,6 +304,122 @@ grava assign grava-abc ""
 
 ---
 
+### `doctor`
+
+Runs a series of **read-only** diagnostic checks against the Grava database and prints a health report. Useful for verifying a fresh install or debugging a broken environment.
+
+**Usage:**
+```bash
+grava doctor
+```
+
+**Checks performed:**
+
+| # | Check | Failure mode |
+|---|---|---|
+| 1 | DB connectivity | `FAIL` if the server is unreachable |
+| 2 | Required tables present (`issues`, `dependencies`, `deletions`, `child_counters`) | `FAIL` per missing table |
+| 3 | Orphaned dependency edges | `WARN` if edges reference deleted issues |
+| 4 | Issues missing a title | `WARN` if any untitled rows exist |
+| 5 | Wisp count | `WARN` if > 100 Wisps (suggests running `grava compact`) |
+
+**Exit codes:**
+- `0` — all critical checks passed (warnings are OK)
+- `1` — one or more `FAIL` checks detected
+
+**Example output:**
+```
+🩺 Grava Doctor Report
+──────────────────────────────────────────────────
+✅  DB connectivity                connected (server 8.0.31)
+✅  Table: issues                  exists
+✅  Table: dependencies            exists
+✅  Table: deletions               exists
+✅  Table: child_counters          exists
+✅  Orphaned dependencies          none found
+✅  Untitled issues                none found
+⚠️   Wisp count                    150 Wisp(s) in database — consider running `grava compact`
+──────────────────────────────────────────────────
+✅ All critical checks passed.
+```
+
+---
+
+### `search`
+
+
+Searches for issues whose **title**, **description**, or **metadata** contain the given text. The match is case-insensitive and uses SQL `LIKE` pattern matching. Ephemeral Wisp issues are excluded by default.
+
+**Usage:**
+```bash
+grava search <query> [flags]
+```
+
+**Arguments:**
+- `<query>`: The text to search for (required). Quote multi-word queries.
+
+**Flags:**
+- `--wisp`: Include ephemeral Wisp issues in results (default: `false`).
+
+**Examples:**
+```bash
+# Find all issues mentioning "login"
+grava search "login"
+
+# Search within Wisp scratchpad notes too
+grava search "auth" --wisp
+```
+
+**Output:**
+```
+ID          Title                  Type   Priority  Status  Created
+grava-1     Fix login bug          bug    1         open    2026-02-18
+
+🔍 1 result(s) for "login"
+```
+
+> **Note:** When no results are found, the command exits `0` and prints `No issues found matching "<query>"`.
+
+---
+
+### `quick`
+
+Lists **open** issues at or above a given priority threshold. Useful for a fast daily triage view. Ephemeral Wisp issues are always excluded.
+
+**Usage:**
+```bash
+grava quick [flags]
+```
+
+**Flags:**
+- `--priority int`: Show issues at or above this priority level. Default: `1` (high). Scale: `0`=critical, `1`=high, `2`=medium, `3`=low, `4`=backlog.
+- `--limit int`: Maximum number of results to return. Default: `20`.
+
+**Examples:**
+```bash
+# Show critical + high priority open issues (default)
+grava quick
+
+# Include medium priority issues as well
+grava quick --priority 2
+
+# Cap output at 5 results
+grava quick --limit 5
+```
+
+**Output:**
+```
+ID          Title                    Type   Priority  Status  Created
+grava-1     Critical crash fix       bug    0         open    2026-02-18
+grava-2     High priority refactor   task   1         open    2026-02-18
+
+⚡ 2 high-priority issue(s) need attention.
+```
+
+> **Note:** When no matching issues exist, the command prints `🎉 No high-priority open issues. You're all caught up!` and exits `0`.
+
+---
+
 ## Wisps (Ephemeral Issues)
 
 **Wisps** are temporary, ephemeral issues intended for AI agents or developers who need a short-lived scratchpad that doesn't pollute the permanent project history.
