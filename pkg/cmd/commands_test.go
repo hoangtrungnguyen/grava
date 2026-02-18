@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -721,4 +723,106 @@ func TestDoctorCmd(t *testing.T) {
 
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
+}
+
+func TestDropCmdForce(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// Expect DELETE in FK-safe order
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM dependencies`)).
+		WillReturnResult(sqlmock.NewResult(0, 5))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM events`)).
+		WillReturnResult(sqlmock.NewResult(0, 3))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM deletions`)).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM child_counters`)).
+		WillReturnResult(sqlmock.NewResult(0, 4))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).
+		WillReturnResult(sqlmock.NewResult(0, 10))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "drop", "--force")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "All Grava data has been dropped")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDropCmdConfirmYes(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// Reset --force flag
+	dropForce = false
+
+	// Inject "yes" into stdin reader
+	oldReader := stdinReader
+	stdinReader = strings.NewReader("yes\n")
+	defer func() { stdinReader = oldReader }()
+
+	// Expect all 5 DELETE statements
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM dependencies`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM events`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM deletions`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM child_counters`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "drop")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "All Grava data has been dropped")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDropCmdConfirmNo(t *testing.T) {
+	db, _, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// Reset --force flag
+	dropForce = false
+
+	// Inject "no" into stdin reader
+	oldReader := stdinReader
+	stdinReader = strings.NewReader("no\n")
+	defer func() { stdinReader = oldReader }()
+
+	// No ExpectExec — no deletes should happen
+	// No ExpectClose — RunE returns error so PersistentPostRunE is skipped
+
+	_, err = executeCommand(rootCmd, "drop")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "user cancelled drop operation")
+}
+
+func TestDropCmdDeleteError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// First DELETE succeeds, second fails
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM dependencies`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM events`)).
+		WillReturnError(fmt.Errorf("connection lost"))
+
+	// No ExpectClose — RunE returns error so PersistentPostRunE is skipped
+
+	_, err = executeCommand(rootCmd, "drop", "--force")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to delete from events")
+	assert.Contains(t, err.Error(), "connection lost")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

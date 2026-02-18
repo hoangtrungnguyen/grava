@@ -201,7 +201,49 @@ grava compact --days 0
 
 ---
 
-### `comment`
+### `drop`
+
+**Nuclear reset.** Deletes **ALL data** from every table in the Grava database. This is a destructive, non-reversible operation intended for development resets or clean-slate scenarios.
+
+**Usage:**
+```bash
+grava drop [flags]
+```
+
+**Flags:**
+- `--force`: Skip the interactive confirmation prompt. **Required** for non-interactive / CI use.
+
+**Behaviour:**
+1. Without `--force`, the command prompts for confirmation:
+   ```
+   ⚠️  This will DELETE ALL DATA from the Grava database.
+   Type "yes" to confirm:
+   ```
+   Any answer other than `"yes"` aborts the operation.
+2. Tables are truncated in FK-safe order:
+   1. `dependencies`
+   2. `events`
+   3. `deletions`
+   4. `child_counters`
+   5. `issues`
+
+**Examples:**
+```bash
+# Interactive confirmation
+grava drop
+# Output: ⚠️  This will DELETE ALL DATA from the Grava database.
+#         Type "yes" to confirm: yes
+#         💣 All Grava data has been dropped.
+
+# Skip confirmation (for CI/scripts)
+grava drop --force
+# Output: 💣 All Grava data has been dropped.
+```
+
+**Exit Codes:**
+- `0` — success, all data deleted
+- `1` — user cancelled or DB error
+
 
 Appends a comment to an existing issue. Comments are stored as a JSON array in the issue's `metadata` column. Each entry records the text, timestamp, and actor.
 
