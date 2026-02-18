@@ -13,6 +13,7 @@ import (
 type Store interface {
 	// GetNextChildSequence atomically increments the counter for the given parentID and returns the new sequence number.
 	GetNextChildSequence(parentID string) (int, error)
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 	Exec(query string, args ...any) (sql.Result, error)
 	QueryRow(query string, args ...any) *sql.Row
 	Query(query string, args ...any) (*sql.Rows, error)
@@ -22,6 +23,10 @@ type Store interface {
 // Client implements Store using a SQL database.
 type Client struct {
 	db *sql.DB
+}
+
+func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	return c.db.BeginTx(ctx, opts)
 }
 
 // NewClient establishes a connection to the Dolt database.

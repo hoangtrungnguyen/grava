@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -96,13 +97,17 @@ Example:
 			}
 		}
 
-		// Perform deletions
-		// Ideally this should be in a transaction (Epic 1.1 item 3.1)
-		// but since we are following the "oldest" task first, we'll do it sequentially for now
-		// as per the current state of Store.
+		// Perform deletions in a transaction
+		ctx := context.Background()
+		tx, err := Store.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
+
 		for _, id := range ids {
 			// 1. Record tombstone
-			_, err = Store.Exec(
+			_, err = tx.ExecContext(ctx,
 				"INSERT INTO deletions (id, reason, actor, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)",
 				id, "clear", "grava-clear", actor, actor, agentModel,
 			)
@@ -111,10 +116,14 @@ Example:
 			}
 
 			// 2. Delete issue (cascading FKs handle dependencies and events)
-			_, err = Store.Exec("DELETE FROM issues WHERE id = ?", id)
+			_, err = tx.ExecContext(ctx, "DELETE FROM issues WHERE id = ?", id)
 			if err != nil {
 				return fmt.Errorf("failed to delete issue %s: %w", id, err)
 			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
 
 		cmd.Printf("🗑️  Cleared %d issue(s) from %s to %s. Tombstones recorded.\n", len(ids), clearFrom, clearTo)

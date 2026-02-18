@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -59,11 +60,23 @@ Example:
 			"issues",
 		}
 
+		// Start transaction
+		ctx := context.Background()
+		tx, err := Store.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
+
 		for _, table := range tables {
-			_, err := Store.Exec(fmt.Sprintf("DELETE FROM %s", table))
+			_, err := tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", table))
 			if err != nil {
 				return fmt.Errorf("failed to delete from %s: %w", table, err)
 			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
 
 		cmd.Println("💣 All Grava data has been dropped.")

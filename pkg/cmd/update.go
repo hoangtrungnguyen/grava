@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -8,11 +9,12 @@ import (
 )
 
 var (
-	updateTitle    string
-	updateDesc     string
-	updateType     string
-	updatePriority string
-	updateStatus   string
+	updateTitle         string
+	updateDesc          string
+	updateType          string
+	updatePriority      string
+	updateStatus        string
+	updateAffectedFiles []string
 )
 
 // updateCmd represents the update command
@@ -62,6 +64,11 @@ Only the flags provided will be updated.`,
 			query += ", status = ?"
 			queryParams = append(queryParams, updateStatus)
 		}
+		if cmd.Flags().Changed("files") {
+			query += ", affected_files = ?"
+			b, _ := json.Marshal(updateAffectedFiles)
+			queryParams = append(queryParams, string(b))
+		}
 
 		query += " WHERE id = ?"
 		queryParams = append(queryParams, id)
@@ -93,4 +100,5 @@ func init() {
 	updateCmd.Flags().StringVar(&updateType, "type", "", "Update type")
 	updateCmd.Flags().StringVarP(&updatePriority, "priority", "p", "", "Update priority")
 	updateCmd.Flags().StringVarP(&updateStatus, "status", "s", "", "Update status")
+	updateCmd.Flags().StringSliceVar(&updateAffectedFiles, "files", []string{}, "Update affected files")
 }

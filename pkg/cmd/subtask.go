@@ -58,10 +58,10 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 		}
 
 		// 3. Insert into DB
-		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model) 
-                  VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`
+		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files) 
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-		_, err = Store.Exec(query, id, subtaskTitle, subtaskDesc, subtaskType, pInt, time.Now(), time.Now(), actor, actor, agentModel)
+		_, err = Store.Exec(query, id, subtaskTitle, subtaskDesc, subtaskType, pInt, "open", 0, time.Now(), time.Now(), actor, actor, agentModel, "[]")
 		if err != nil {
 			return fmt.Errorf("failed to insert subtask: %w", err)
 		}

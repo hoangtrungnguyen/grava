@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -9,12 +10,13 @@ import (
 )
 
 var (
-	title     string
-	desc      string
-	issueType string
-	priority  string
-	parentID  string
-	ephemeral bool
+	title         string
+	desc          string
+	issueType     string
+	priority      string
+	parentID      string
+	ephemeral     bool
+	affectedFiles []string
 )
 
 // createCmd represents the create command
@@ -59,10 +61,16 @@ You can specify title, description, type, and priority.`,
 			ephemeralVal = 1
 		}
 
-		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model)
-                  VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)`
+		affectedFilesJSON := "[]"
+		if len(affectedFiles) > 0 {
+			b, _ := json.Marshal(affectedFiles)
+			affectedFilesJSON = string(b)
+		}
 
-		_, err = Store.Exec(query, id, title, desc, issueType, pInt, ephemeralVal, time.Now(), time.Now(), actor, actor, agentModel)
+		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+		_, err = Store.Exec(query, id, title, desc, issueType, pInt, "open", ephemeralVal, time.Now(), time.Now(), actor, actor, agentModel, affectedFilesJSON)
 		if err != nil {
 			return fmt.Errorf("failed to insert issue: %w", err)
 		}
@@ -86,6 +94,7 @@ func init() {
 	createCmd.Flags().StringVarP(&priority, "priority", "p", "medium", "Issue priority (low, medium, high, critical)")
 	createCmd.Flags().StringVar(&parentID, "parent", "", "Parent Issue ID for sub-tasks")
 	createCmd.Flags().BoolVar(&ephemeral, "ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
+	createCmd.Flags().StringSliceVar(&affectedFiles, "files", []string{}, "Affected files (comma separated)")
 
 	createCmd.MarkFlagRequired("title")
 }

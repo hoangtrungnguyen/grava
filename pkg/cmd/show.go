@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -16,7 +17,7 @@ var showCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 
-		query := `SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model 
+		query := `SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files 
                   FROM issues WHERE id = ?`
 
 		var title, desc, iType, status string
@@ -24,8 +25,9 @@ var showCmd = &cobra.Command{
 		var createdAt, updatedAt time.Time
 		var createdBy, updatedBy string
 		var agentModelStr *string
+		var affectedFilesJSON *string
 
-		err := Store.QueryRow(query, id).Scan(&title, &desc, &iType, &priority, &status, &createdAt, &updatedAt, &createdBy, &updatedBy, &agentModelStr)
+		err := Store.QueryRow(query, id).Scan(&title, &desc, &iType, &priority, &status, &createdAt, &updatedAt, &createdBy, &updatedBy, &agentModelStr, &affectedFilesJSON)
 		if err != nil {
 			return fmt.Errorf("failed to fetch issue %s: %w", id, err)
 		}
@@ -52,6 +54,12 @@ var showCmd = &cobra.Command{
 		cmd.Printf("Updated:     %s by %s\n", updatedAt.Format(time.RFC3339), updatedBy)
 		if agentModelStr != nil && *agentModelStr != "" {
 			cmd.Printf("Model:       %s\n", *agentModelStr)
+		}
+		if affectedFilesJSON != nil && *affectedFilesJSON != "" && *affectedFilesJSON != "[]" {
+			var files []string
+			if err := json.Unmarshal([]byte(*affectedFilesJSON), &files); err == nil {
+				cmd.Printf("Files:       %v\n", files)
+			}
 		}
 		cmd.Printf("\nDescription:\n%s\n", desc)
 

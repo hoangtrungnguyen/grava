@@ -11,6 +11,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -33,9 +34,9 @@ func TestCreateCmd(t *testing.T) {
 	// Inject mock
 	Store = dolt.NewClientFromDB(db)
 
-	// Case 1: Base ID — ephemeral defaults to 0
+	// Case 1: Base ID — ephemeral defaults to 0, affected_files defaults to []
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
-		WithArgs(sqlmock.AnyArg(), "Test Issue", "Description", "task", 2, 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "").
+		WithArgs(sqlmock.AnyArg(), "Test Issue", "Description", "task", 2, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Expect Close from PersistentPostRunE
@@ -56,11 +57,11 @@ func TestShowCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	rows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model"}).
-		AddRow("My Issue", "Desc", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", "gemini-pro")
+	rows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files"}).
+		AddRow("My Issue", "Desc", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", "gemini-pro", `["pkg/cmd/root.go","pkg/cmd/show.go"]`)
 
 	// Match query with whitespace flexibility
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
 		WithArgs("grava-123").
 		WillReturnRows(rows)
 
@@ -87,9 +88,9 @@ func TestCreateEphemeralCmd(t *testing.T) {
 	priority = "backlog"
 	issueType = "task"
 
-	// ephemeral=1 must be passed as the 7th arg
+	// ephemeral=1 must be passed as the 7th arg, affected_files last
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
-		WithArgs(sqlmock.AnyArg(), "Scratch Note", "", "task", 4, 1, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "").
+		WithArgs(sqlmock.AnyArg(), "Scratch Note", "", "task", 4, "open", 1, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -222,6 +223,58 @@ func TestUpdateCmd(t *testing.T) {
 	assert.Contains(t, output, "Updated issue grava-1")
 }
 
+func TestUpdateWithFilesCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+
+	Store = dolt.NewClientFromDB(db)
+
+	// Reset flags and their "Changed" state
+	updateTitle = ""
+	updateDesc = ""
+	updateType = ""
+	updatePriority = ""
+	updateStatus = ""
+	updateAffectedFiles = nil
+	updateCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		f.Changed = false
+	})
+
+	mock.ExpectExec(`UPDATE issues SET updated_at = \?, updated_by = \?, agent_model = \?.*`).
+		WithArgs(sqlmock.AnyArg(), "unknown", "", `["f1.go","f2.go"]`, "grava-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "update", "grava-1", "--files", "f1.go,f2.go")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Updated issue grava-1")
+}
+
+func TestCreateWithFilesCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+
+	Store = dolt.NewClientFromDB(db)
+
+	// Reset flags
+	desc = ""
+	ephemeral = false
+	affectedFiles = nil
+	priority = "backlog"
+	issueType = "task"
+
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
+		WithArgs(sqlmock.AnyArg(), "File Issue", "", "task", 4, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", `["f1.go"]`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "create", "--title", "File Issue", "--files", "f1.go")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Created issue:")
+}
+
 func TestSubtaskCmd(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -261,7 +314,7 @@ func TestSubtaskCmd(t *testing.T) {
 
 	// 3. Insert Subtask (after generator returns)
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
-		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 2, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "").
+		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 2, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// 4. Close (PersistentPostRunE)
@@ -730,6 +783,9 @@ func TestDropCmdForce(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// Expect Transaction
+	mock.ExpectBegin()
+
 	// Expect DELETE in FK-safe order
 	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM dependencies`)).
 		WillReturnResult(sqlmock.NewResult(0, 5))
@@ -741,6 +797,8 @@ func TestDropCmdForce(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 4))
 	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).
 		WillReturnResult(sqlmock.NewResult(0, 10))
+
+	mock.ExpectCommit()
 
 	mock.ExpectClose()
 
@@ -764,6 +822,9 @@ func TestDropCmdConfirmYes(t *testing.T) {
 	stdinReader = strings.NewReader("yes\n")
 	defer func() { stdinReader = oldReader }()
 
+	// Expect Transaction
+	mock.ExpectBegin()
+
 	// Expect all 5 DELETE statements
 	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM dependencies`)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
@@ -775,6 +836,8 @@ func TestDropCmdConfirmYes(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	mock.ExpectCommit()
 
 	mock.ExpectClose()
 
@@ -811,11 +874,16 @@ func TestDropCmdDeleteError(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// Expect Transaction
+	mock.ExpectBegin()
+
 	// First DELETE succeeds, second fails
 	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM dependencies`)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM events`)).
 		WillReturnError(fmt.Errorf("connection lost"))
+
+	mock.ExpectRollback()
 
 	// No ExpectClose — RunE returns error so PersistentPostRunE is skipped
 

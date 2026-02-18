@@ -15,16 +15,14 @@ if [ ! -f "$SCHEMA_FILE" ]; then
     exit 1
 fi
 
-echo "Applying schema $SCHEMA_FILE to Dolt database..."
+echo "Applying schemas from scripts/schema to Dolt database..."
 
-# Go to Dolt directory to run commands contextually
-# We use a subshell or pushd/popd to not affect current shell (though this is a script so it's fine)
 (
     cd "$DOLT_DIR"
-    # Execute SQL file
-    # We need to resolve the absolute path or relative path from $DOLT_DIR to $SCHEMA_FILE
-    # Since we are in .grava/dolt, the schema file is at ../../scripts/schema/001_initial_schema.sql
-    dolt sql < "../../$SCHEMA_FILE"
+    for schema in ../../scripts/schema/*.sql; do
+        echo "Applying $(basename "$schema")..."
+        dolt sql < "$schema"
+    done
 )
 
 echo "✅ Schema applied successfully."

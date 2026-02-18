@@ -57,10 +57,12 @@ func TestClearCmd(t *testing.T) {
 		clearForce = true
 		clearIncludeWisp = false
 
-		// 1. SELECT matching IDs
 		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE created_at >= ? AND created_at < ? AND ephemeral = FALSE`)).
 			WithArgs("2026-01-01", "2026-02-01").
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-1").AddRow("grava-2"))
+
+		// Expect Transaction
+		mock.ExpectBegin()
 
 		// 2. Tombstone and Delete grava-1
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions (id, reason, actor, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
@@ -77,6 +79,8 @@ func TestClearCmd(t *testing.T) {
 		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues WHERE id = ?`)).
 			WithArgs("grava-2").
 			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		mock.ExpectCommit()
 
 		mock.ExpectClose()
 
@@ -104,8 +108,12 @@ func TestClearCmd(t *testing.T) {
 			WithArgs("2026-01-01", "2026-02-01").
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-1"))
 
+		mock.ExpectBegin()
+
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions`)).WithArgs("grava-1", "clear", "grava-clear", "unknown", "unknown", "").WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).WithArgs("grava-1").WillReturnResult(sqlmock.NewResult(0, 1))
+
+		mock.ExpectCommit()
 
 		mock.ExpectClose()
 
@@ -155,8 +163,12 @@ func TestClearCmd(t *testing.T) {
 			WithArgs("2026-01-01", "2026-02-01").
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-w1"))
 
+		mock.ExpectBegin()
+
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions`)).WithArgs("grava-w1", "clear", "grava-clear", "unknown", "unknown", "").WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).WillReturnResult(sqlmock.NewResult(0, 1))
+
+		mock.ExpectCommit()
 
 		mock.ExpectClose()
 

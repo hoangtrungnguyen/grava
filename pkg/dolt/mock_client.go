@@ -1,6 +1,7 @@
 package dolt
 
 import (
+	"context"
 	"database/sql"
 )
 
@@ -15,7 +16,12 @@ func NewMockStore() *MockStore {
 	}
 }
 
+func (m *MockStore) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	return nil, nil
+}
+
 func (m *MockStore) Exec(query string, args ...any) (sql.Result, error) {
+
 	return nil, nil
 }
 

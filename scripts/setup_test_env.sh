@@ -35,17 +35,14 @@ echo "📦 Creating/Resetting test database '$TEST_DB_NAME'..."
 echo "✅ Database '$TEST_DB_NAME' created."
 
 # 3. Apply Schema
-echo "📜 Applying schema to '$TEST_DB_NAME'..."
-SCHEMA_FILE="scripts/schema/001_initial_schema.sql"
+echo "📜 Applying schemas to '$TEST_DB_NAME'..."
 
-if [ ! -f "$SCHEMA_FILE" ]; then
-    echo "❌ Schema file not found: $SCHEMA_FILE"
-    exit 1
-fi
+for schema in scripts/schema/*.sql; do
+    echo "Applying $(basename "$schema")..."
+    "$MYSQL_CLIENT" -h "$HOST" -P "$PORT" -u root -D "$TEST_DB_NAME" < "$schema"
+done
 
-"$MYSQL_CLIENT" -h "$HOST" -P "$PORT" -u root -D "$TEST_DB_NAME" < "$SCHEMA_FILE"
-
-echo "✅ Schema applied successfully."
+echo "✅ All schemas applied successfully."
 
 # 4. Create Environment File for Testing
 APP_ENV_FILE=".env.test"
