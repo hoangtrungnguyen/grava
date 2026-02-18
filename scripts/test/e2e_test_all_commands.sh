@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# scripts/e2e_test_all_commands.sh
+# scripts/test/e2e_test_all_commands.sh
 # End-to-end smoke test for ALL grava CLI commands.
 #
 # Prerequisites:
@@ -8,8 +8,8 @@
 #   - mysql client available
 #   - Go toolchain available
 #
-# Usage:
-#   ./scripts/e2e_test_all_commands.sh
+# Usage (run from repo root):
+#   ./scripts/test/e2e_test_all_commands.sh
 #
 # Exit code: 0 = all tests passed, 1 = one or more tests failed
 # =============================================================================
