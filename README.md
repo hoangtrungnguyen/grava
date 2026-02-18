@@ -33,9 +33,52 @@ The project governance and architecture are strictly documented:
 
 ## 🛠️ Getting Started
 
-*Prerequisites: Go 1.21+, Dolt*
+**Prerequisites:** Go 1.21+, [Dolt](https://github.com/dolthub/dolt), mysql-client
 
-*(Coming Soon: Installation instructions during Epic 1 implementation)*
+```bash
+# 1. Start the Dolt SQL server
+./scripts/start_dolt_server.sh
+
+# 2. Initialize the schema
+./scripts/apply_schema.sh
+
+# 3. Build the CLI
+go build -o bin/grava ./cmd/grava/
+
+# 4. Create your first issue
+./bin/grava create --title "Fix login bug" --type bug --priority high
+
+# 5. List issues
+./bin/grava list
+```
+
+## 🖥️ CLI Commands
+
+| Command | Description |
+|---|---|
+| `grava init` | Initialize Grava environment |
+| `grava create` | Create a new issue (`--ephemeral` for Wisps) |
+| `grava subtask <id>` | Create a hierarchical subtask |
+| `grava show <id>` | Show issue details |
+| `grava list` | List issues (`--wisp` for ephemeral) |
+| `grava update <id>` | Update issue fields |
+| `grava comment <id> <text>` | Append a comment |
+| `grava dep <from> <to>` | Create a dependency edge |
+| `grava label <id> <label>` | Add a label |
+| `grava assign <id> <user>` | Assign to a user or agent |
+| `grava compact` | Purge old ephemeral Wisps |
+
+See **[CLI Reference](docs/CLI_REFERENCE.md)** for full documentation.
+
+## 🧪 Testing
+
+```bash
+# Unit tests (no DB required)
+go test ./...
+
+# Full E2E smoke tests (requires Dolt running)
+./scripts/test/e2e_test_all_commands.sh
+```
 
 ## License
 
