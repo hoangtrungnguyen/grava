@@ -35,7 +35,7 @@ func TestCreateCmd(t *testing.T) {
 
 	// Case 1: Base ID — ephemeral defaults to 0
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
-		WithArgs(sqlmock.AnyArg(), "Test Issue", "Description", "task", 2, 0, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WithArgs(sqlmock.AnyArg(), "Test Issue", "Description", "task", 2, 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Expect Close from PersistentPostRunE
@@ -56,11 +56,11 @@ func TestShowCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	rows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at"}).
-		AddRow("My Issue", "Desc", "bug", 1, "open", time.Now(), time.Now())
+	rows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model"}).
+		AddRow("My Issue", "Desc", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", "gemini-pro")
 
 	// Match query with whitespace flexibility
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
 		WithArgs("grava-123").
 		WillReturnRows(rows)
 
@@ -89,7 +89,7 @@ func TestCreateEphemeralCmd(t *testing.T) {
 
 	// ephemeral=1 must be passed as the 7th arg
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
-		WithArgs(sqlmock.AnyArg(), "Scratch Note", "", "task", 4, 1, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WithArgs(sqlmock.AnyArg(), "Scratch Note", "", "task", 4, 1, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -161,7 +161,7 @@ func TestCompactCmd(t *testing.T) {
 
 		// 2a. INSERT into deletions for grava-w1
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions`)).
-			WithArgs("grava-w1", sqlmock.AnyArg(), "compact", "grava-compact").
+			WithArgs("grava-w1", sqlmock.AnyArg(), "compact", "grava-compact", "unknown", "unknown", "").
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		// 2b. DELETE grava-w1
 		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues WHERE id = ?`)).
@@ -170,7 +170,7 @@ func TestCompactCmd(t *testing.T) {
 
 		// 3a. INSERT into deletions for grava-w2
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions`)).
-			WithArgs("grava-w2", sqlmock.AnyArg(), "compact", "grava-compact").
+			WithArgs("grava-w2", sqlmock.AnyArg(), "compact", "grava-compact", "unknown", "unknown", "").
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		// 3b. DELETE grava-w2
 		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues WHERE id = ?`)).
@@ -211,8 +211,8 @@ func TestUpdateCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectExec(`UPDATE issues SET updated_at = \?.*`).
-		WithArgs(sqlmock.AnyArg(), "New Title", "closed", "grava-1").
+	mock.ExpectExec(`UPDATE issues SET updated_at = \?, updated_by = \?, agent_model = \?.*`).
+		WithArgs(sqlmock.AnyArg(), "unknown", "", "New Title", "closed", "grava-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -261,7 +261,7 @@ func TestSubtaskCmd(t *testing.T) {
 
 	// 3. Insert Subtask (after generator returns)
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
-		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 2, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 2, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// 4. Close (PersistentPostRunE)
@@ -287,8 +287,8 @@ func TestCommentCmd(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{}`))
 
 	// 2. UPDATE with new metadata containing the comment
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = ? WHERE id = ?`)).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "grava-123").
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "", "grava-123").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -322,8 +322,8 @@ func TestDepCmd(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type) VALUES (?, ?, ?)`)).
-		WithArgs("grava-abc", "grava-def", "blocks").
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
+		WithArgs("grava-abc", "grava-def", "blocks", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -340,8 +340,8 @@ func TestDepCmdCustomType(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type) VALUES (?, ?, ?)`)).
-		WithArgs("grava-abc", "grava-def", "relates-to").
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
+		WithArgs("grava-abc", "grava-def", "relates-to", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -374,8 +374,8 @@ func TestLabelCmd(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{}`))
 
 	// 2. UPDATE with new metadata containing the label
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = ? WHERE id = ?`)).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "grava-123").
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "", "grava-123").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -411,8 +411,8 @@ func TestAssignCmd(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = ? WHERE id = ?`)).
-		WithArgs("alice", sqlmock.AnyArg(), "grava-123").
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("alice", sqlmock.AnyArg(), "unknown", "", "grava-123").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -429,8 +429,8 @@ func TestAssignCmdNotFound(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = ? WHERE id = ?`)).
-		WithArgs("alice", sqlmock.AnyArg(), "grava-999").
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("alice", sqlmock.AnyArg(), "unknown", "", "grava-999").
 		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
 
 	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped

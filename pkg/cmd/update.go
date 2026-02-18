@@ -26,8 +26,8 @@ Only the flags provided will be updated.`,
 		id := args[0]
 
 		// Build dynamic query
-		query := "UPDATE issues SET updated_at = ?"
-		queryParams := []any{time.Now()}
+		query := "UPDATE issues SET updated_at = ?, updated_by = ?, agent_model = ?"
+		queryParams := []any{time.Now(), actor, agentModel}
 
 		if cmd.Flags().Changed("title") {
 			query += ", title = ?"

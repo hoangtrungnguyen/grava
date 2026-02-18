@@ -59,10 +59,10 @@ You can specify title, description, type, and priority.`,
 			ephemeralVal = 1
 		}
 
-		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?)`
+		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model)
+                  VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)`
 
-		_, err = Store.Exec(query, id, title, desc, issueType, pInt, ephemeralVal, time.Now(), time.Now())
+		_, err = Store.Exec(query, id, title, desc, issueType, pInt, ephemeralVal, time.Now(), time.Now(), actor, actor, agentModel)
 		if err != nil {
 			return fmt.Errorf("failed to insert issue: %w", err)
 		}

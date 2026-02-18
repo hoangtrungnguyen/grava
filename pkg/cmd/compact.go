@@ -55,8 +55,8 @@ Example:
 		for _, id := range ids {
 			// Record tombstone
 			_, err := Store.Exec(
-				`INSERT INTO deletions (id, deleted_at, reason, actor) VALUES (?, ?, ?, ?)`,
-				id, time.Now(), "compact", "grava-compact",
+				`INSERT INTO deletions (id, deleted_at, reason, actor, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				id, time.Now(), "compact", "grava-compact", actor, actor, agentModel,
 			)
 			if err != nil {
 				return fmt.Errorf("failed to record deletion for %s: %w", id, err)

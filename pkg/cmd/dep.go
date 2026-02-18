@@ -30,8 +30,8 @@ Example:
 		}
 
 		_, err := Store.Exec(
-			`INSERT INTO dependencies (from_id, to_id, type) VALUES (?, ?, ?)`,
-			fromID, toID, depType,
+			`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`,
+			fromID, toID, depType, actor, actor, agentModel,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create dependency %s -> %s: %w", fromID, toID, err)

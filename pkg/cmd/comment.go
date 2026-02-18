@@ -39,9 +39,10 @@ Example:
 
 		// 3. Append comment entry
 		comment := map[string]any{
-			"text":      text,
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
-			"actor":     "grava-cli",
+			"text":        text,
+			"timestamp":   time.Now().UTC().Format(time.RFC3339),
+			"actor":       actor,
+			"agent_model": agentModel,
 		}
 
 		var comments []any
@@ -61,8 +62,8 @@ Example:
 
 		// 5. Write back
 		_, err = Store.Exec(
-			`UPDATE issues SET metadata = ?, updated_at = ? WHERE id = ?`,
-			string(updated), time.Now(), id,
+			`UPDATE issues SET metadata = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`,
+			string(updated), time.Now(), actor, agentModel, id,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save comment on %s: %w", id, err)

@@ -67,8 +67,8 @@ Example:
 
 		// 5. Write back
 		_, err = Store.Exec(
-			`UPDATE issues SET metadata = ?, updated_at = ? WHERE id = ?`,
-			string(updated), time.Now(), id,
+			`UPDATE issues SET metadata = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`,
+			string(updated), time.Now(), actor, agentModel, id,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save label on %s: %w", id, err)

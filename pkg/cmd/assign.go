@@ -26,8 +26,8 @@ Example:
 		user := args[1]
 
 		result, err := Store.Exec(
-			`UPDATE issues SET assignee = ?, updated_at = ? WHERE id = ?`,
-			user, time.Now(), id,
+			`UPDATE issues SET assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`,
+			user, time.Now(), actor, agentModel, id,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to assign issue %s: %w", id, err)

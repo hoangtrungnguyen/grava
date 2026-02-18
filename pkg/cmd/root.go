@@ -11,9 +11,11 @@ import (
 )
 
 var (
-	cfgFile string
-	dbURL   string
-	Store   dolt.Store
+	cfgFile    string
+	dbURL      string
+	actor      string
+	agentModel string
+	Store      dolt.Store
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -44,6 +46,14 @@ leveraging the power of a version-controlled database.`,
 			// Default DSN for local Dolt
 			// The database name exposed by `dolt sql-server` inside a repo is `dolt`
 			dbURL = "root@tcp(127.0.0.1:3306)/dolt?parseTime=true"
+		}
+
+		// Sync flags with viper (handles env vars and config)
+		if actor == "unknown" {
+			actor = viper.GetString("actor")
+		}
+		if agentModel == "" {
+			agentModel = viper.GetString("agent_model")
 		}
 
 		Store, err = dolt.NewClient(dbURL)
@@ -78,6 +88,12 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.grava.yaml)")
 	rootCmd.PersistentFlags().StringVar(&dbURL, "db-url", "", "Dolt database connection string")
+	rootCmd.PersistentFlags().StringVar(&actor, "actor", "unknown", "User or agent identity (env: GRAVA_ACTOR)")
+	rootCmd.PersistentFlags().StringVar(&agentModel, "agent-model", "", "AI model identifier (env: GRAVA_AGENT_MODEL)")
+
+	// Bind flags to viper for ENV var support
+	viper.BindPFlag("actor", rootCmd.PersistentFlags().Lookup("actor"))
+	viper.BindPFlag("agent_model", rootCmd.PersistentFlags().Lookup("agent-model"))
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
