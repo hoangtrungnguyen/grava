@@ -76,6 +76,8 @@ description: Clean up the session, commit work, and update the issue status usin
 2.  **Draft Next Session Prompt:**
     Draft a context-rich prompt for the next agent, summarizing what was done and what the immediate goal for the next session is (e.g., "Starting on Issue X-123: Sub-task Y").
 
+Note: Do not proceed next issue without user permission
+
 ---
 
 ### Step 5: Final Verdict
