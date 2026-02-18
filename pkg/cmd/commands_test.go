@@ -273,3 +273,168 @@ func TestSubtaskCmd(t *testing.T) {
 		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 }
+
+func TestCommentCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// 1. SELECT metadata
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{}`))
+
+	// 2. UPDATE with new metadata containing the comment
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = ? WHERE id = ?`)).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "grava-123").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "comment", "grava-123", "This is a test comment")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "💬 Comment added to grava-123")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCommentCmdIssueNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`)).
+		WithArgs("grava-999").
+		WillReturnRows(sqlmock.NewRows([]string{"metadata"})) // empty — no row
+
+	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
+	_, err = executeCommand(rootCmd, "comment", "grava-999", "text")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "grava-999 not found")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDepCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type) VALUES (?, ?, ?)`)).
+		WithArgs("grava-abc", "grava-def", "blocks").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "dep", "grava-abc", "grava-def")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "🔗 Dependency created: grava-abc -[blocks]-> grava-def")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDepCmdCustomType(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type) VALUES (?, ?, ?)`)).
+		WithArgs("grava-abc", "grava-def", "relates-to").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "dep", "grava-abc", "grava-def", "--type", "relates-to")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "-[relates-to]->")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDepCmdSameID(t *testing.T) {
+	db, _, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	_, err = executeCommand(rootCmd, "dep", "grava-abc", "grava-abc")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "from_id and to_id must be different")
+}
+
+func TestLabelCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// 1. SELECT metadata (no existing labels)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{}`))
+
+	// 2. UPDATE with new metadata containing the label
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = ? WHERE id = ?`)).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "grava-123").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "label", "grava-123", "needs-review")
+	assert.NoError(t, err)
+	assert.Contains(t, output, `Label "needs-review" added to grava-123`)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestLabelCmdIdempotent(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// metadata already has the label
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{"labels":["needs-review"]}`))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "label", "grava-123", "needs-review")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "already present")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAssignCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = ? WHERE id = ?`)).
+		WithArgs("alice", sqlmock.AnyArg(), "grava-123").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "assign", "grava-123", "alice")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Assigned grava-123 to alice")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAssignCmdNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = ? WHERE id = ?`)).
+		WithArgs("alice", sqlmock.AnyArg(), "grava-999").
+		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
+
+	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
+	_, err = executeCommand(rootCmd, "assign", "grava-999", "alice")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "grava-999 not found")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

@@ -201,6 +201,109 @@ grava compact --days 0
 
 ---
 
+### `comment`
+
+Appends a comment to an existing issue. Comments are stored as a JSON array in the issue's `metadata` column. Each entry records the text, timestamp, and actor.
+
+**Usage:**
+```bash
+grava comment <id> <text>
+```
+
+**Arguments:**
+- `<id>`: The issue ID to comment on.
+- `<text>`: The comment text (quote if it contains spaces).
+
+**Example:**
+```bash
+grava comment grava-abc "Investigated root cause, see PR #42"
+# Output: 💬 Comment added to grava-abc
+```
+
+---
+
+### `dep`
+
+Creates a directed dependency edge between two issues. The relationship is stored in the `dependencies` table. The default type is `blocks`.
+
+**Usage:**
+```bash
+grava dep <from_id> <to_id> [flags]
+```
+
+**Arguments:**
+- `<from_id>`: The source issue (the one that blocks or relates).
+- `<to_id>`: The target issue (the one being blocked or related to).
+
+**Flags:**
+- `--type string`: Dependency type. Examples: `blocks`, `relates-to`, `duplicates`, `parent-child`. Default: `blocks`.
+
+**Examples:**
+```bash
+# grava-abc blocks grava-def (default)
+grava dep grava-abc grava-def
+
+# Custom relationship type
+grava dep grava-abc grava-def --type relates-to
+# Output: 🔗 Dependency created: grava-abc -[relates-to]-> grava-def
+```
+
+> **Note:** `from_id` and `to_id` must be different issues. The dependency is stored as a directed edge `(from_id, to_id, type)` with a composite primary key, so duplicate edges of the same type are rejected by the database.
+
+---
+
+### `label`
+
+Adds a label to an existing issue. Labels are stored as a JSON array in the issue's `metadata` column. Adding a label that already exists is a **no-op** (idempotent).
+
+**Usage:**
+```bash
+grava label <id> <label>
+```
+
+**Arguments:**
+- `<id>`: The issue ID to label.
+- `<label>`: The label string to add (e.g., `needs-review`, `priority:high`).
+
+**Examples:**
+```bash
+grava label grava-abc "needs-review"
+# Output: 🏷️  Label "needs-review" added to grava-abc
+
+# Adding an existing label is safe
+grava label grava-abc "needs-review"
+# Output: 🏷️  Label "needs-review" already present on grava-abc
+```
+
+---
+
+### `assign`
+
+Sets the `assignee` field on an existing issue. The assignee can be a human username or an agent identity string. Passing an empty string clears the assignee.
+
+**Usage:**
+```bash
+grava assign <id> <user>
+```
+
+**Arguments:**
+- `<id>`: The issue ID to assign.
+- `<user>`: The username or agent identity. Pass `""` to unassign.
+
+**Examples:**
+```bash
+grava assign grava-abc alice
+# Output: 👤 Assigned grava-abc to alice
+
+grava assign grava-abc "agent:planner-v2"
+# Output: 👤 Assigned grava-abc to agent:planner-v2
+
+grava assign grava-abc ""
+# Output: 👤 Assignee cleared on grava-abc
+```
+
+---
+
 ## Wisps (Ephemeral Issues)
 
 **Wisps** are temporary, ephemeral issues intended for AI agents or developers who need a short-lived scratchpad that doesn't pollute the permanent project history.

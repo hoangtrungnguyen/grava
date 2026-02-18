@@ -1,10 +1,10 @@
 ---
 issue: TASK-1-7-ADVANCED-ISSUE-MANAGEMENT
-status: todo
+status: done
 Description: Implement advanced issue management commands including comments, dependencies, and labels.
 ---
 
-**Timestamp:** 2026-02-17 18:30:00
+**Timestamp:** 2026-02-18 15:28:00
 **Affected Modules:**
   - bin/
   - lib/commands/
@@ -19,9 +19,9 @@ Description: Implement advanced issue management commands including comments, de
 **So that** I can enrich the issue tracking data and manage complex relationships
 
 ## Acceptance Criteria
-- [ ] `grava comment <id> "text"` appends a comment to an issue
-- [ ] `grava dep <parent_id> <child_id>` creates a dependency relationship
-- [ ] `grava label <id> <label>` adds a label to an issue
-- [ ] `grava assign <id> <user>` assigns an issue to a user
-- [ ] All commands return proper exit codes and error messages
-- [ ] Help documentation available for all commands
+- [x] `grava comment <id> "text"` appends a comment to an issue
+- [x] `grava dep <parent_id> <child_id>` creates a dependency relationship
+- [x] `grava label <id> <label>` adds a label to an issue
+- [x] `grava assign <id> <user>` assigns an issue to a user
+- [x] All commands return proper exit codes and error messages
+- [x] Help documentation available for all commands
