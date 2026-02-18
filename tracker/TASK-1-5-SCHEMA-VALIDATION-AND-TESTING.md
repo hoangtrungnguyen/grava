@@ -1,13 +1,15 @@
 ---
 issue: TASK-1-5-SCHEMA-VALIDATION-AND-TESTING
-status: todo
+status: in_progress
 Description: Comprehensive test coverage of the schema to guarantee data integrity.
 ---
 
-**Timestamp:** 2026-02-17 17:55:00
+**Timestamp:** 2026-02-18 10:20:00
 **Affected Modules:**
-  - tests/
-  - .grava/dolt/
+  - pkg/cmd/
+  - pkg/dolt/
+  - pkg/idgen/
+  - scripts/
 
 ---
 
@@ -17,8 +19,10 @@ Description: Comprehensive test coverage of the schema to guarantee data integri
 **So that** data integrity is guaranteed
 
 ## Acceptance Criteria
-- [ ] Unit tests for all table constraints
-- [ ] Integration tests for foreign key relationships
-- [ ] Edge case testing (NULL values, boundary conditions)
+- [x] Unit tests for all table constraints (via schema validation tests)
+- [x] Integration tests for foreign key relationships (via client integration tests)
+- [x] Edge case testing (NULL values, boundary conditions)
 - [ ] Performance benchmarks documented
-- [ ] Schema migration scripts tested and versioned
+- [x] Schema migration scripts tested and versioned
+- [x] Automated test runner (`test_all.sh`) created
+- [x] Isolated test environment (`test_grava` database) setup script

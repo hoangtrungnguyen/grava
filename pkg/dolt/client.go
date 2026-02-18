@@ -13,6 +13,9 @@ import (
 type Store interface {
 	// GetNextChildSequence atomically increments the counter for the given parentID and returns the new sequence number.
 	GetNextChildSequence(parentID string) (int, error)
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+	Query(query string, args ...any) (*sql.Rows, error)
 	Close() error
 }
 
@@ -37,8 +40,26 @@ func NewClient(dsn string) (*Client, error) {
 	return &Client{db: db}, nil
 }
 
+// NewClientFromDB creates a Client using an existing sql.DB connection.
+// Useful for testing with sqlmock.
+func NewClientFromDB(db *sql.DB) *Client {
+	return &Client{db: db}
+}
+
 func (c *Client) Close() error {
 	return c.db.Close()
+}
+
+func (c *Client) Exec(query string, args ...any) (sql.Result, error) {
+	return c.db.Exec(query, args...)
+}
+
+func (c *Client) QueryRow(query string, args ...any) *sql.Row {
+	return c.db.QueryRow(query, args...)
+}
+
+func (c *Client) Query(query string, args ...any) (*sql.Rows, error) {
+	return c.db.Query(query, args...)
 }
 
 // GetNextChildSequence uses Advisory Locks (GET_LOCK) on a dedicated connection.

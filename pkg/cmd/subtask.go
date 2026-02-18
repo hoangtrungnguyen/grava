@@ -1,0 +1,84 @@
+package cmd
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/hoangtrungnguyen/grava/pkg/idgen"
+	"github.com/spf13/cobra"
+)
+
+var (
+	subtaskTitle    string
+	subtaskDesc     string
+	subtaskType     string
+	subtaskPriority string
+)
+
+// subtaskCmd represents the subtask command
+var subtaskCmd = &cobra.Command{
+	Use:   "subtask <parent_id>",
+	Short: "Create a subtask",
+	Long: `Create a new subtask for an existing issue.
+The subtask ID will be hierarchical (e.g., parent_id.1).`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		parentID := args[0]
+
+		// 0. Verify Parent Exists
+		// This is critical to ensure the parent ID is valid before creating a subtask
+		var exists int
+		err := Store.QueryRow("SELECT 1 FROM issues WHERE id = ?", parentID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("parent issue %s not found: %w", parentID, err)
+		}
+
+		// 1. Initialize Generator
+		generator := idgen.NewStandardGenerator(Store)
+
+		// 2. Generate Subtask ID
+		id, err := generator.GenerateChildID(parentID)
+		if err != nil {
+			return fmt.Errorf("failed to generate subtask ID: %w", err)
+		}
+
+		// Map priority
+		var pInt int
+		switch subtaskPriority {
+		case "critical":
+			pInt = 0
+		case "high":
+			pInt = 1
+		case "medium":
+			pInt = 2
+		case "low":
+			pInt = 3
+		default:
+			pInt = 4 // backlog/default
+		}
+
+		// 3. Insert into DB
+		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, created_at, updated_at) 
+                  VALUES (?, ?, ?, ?, ?, 'open', ?, ?)`
+
+		_, err = Store.Exec(query, id, subtaskTitle, subtaskDesc, subtaskType, pInt, time.Now(), time.Now())
+		if err != nil {
+			return fmt.Errorf("failed to insert subtask: %w", err)
+		}
+
+		cmd.Printf("✅ Created subtask: %s\n", id)
+
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(subtaskCmd)
+
+	subtaskCmd.Flags().StringVarP(&subtaskTitle, "title", "t", "", "Subtask title (required)")
+	subtaskCmd.Flags().StringVarP(&subtaskDesc, "desc", "d", "", "Subtask description")
+	subtaskCmd.Flags().StringVar(&subtaskType, "type", "task", "Subtask type (task, bug, epic, story)")
+	subtaskCmd.Flags().StringVarP(&subtaskPriority, "priority", "p", "medium", "Subtask priority (low, medium, high, critical)")
+
+	subtaskCmd.MarkFlagRequired("title")
+}

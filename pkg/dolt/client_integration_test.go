@@ -2,6 +2,7 @@ package dolt_test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -12,7 +13,10 @@ import (
 // Set environment variable TEST_INTEGRATION=1 to run (or check if port is open).
 // For simplicity in this session, we run it if connection succeeds.
 func TestClient_GetNextChildSequence_Integration(t *testing.T) {
-	dsn := "root@tcp(127.0.0.1:3306)/dolt" // Using 'dolt' database as verified earlier
+	dsn := os.Getenv("DB_URL")
+	if dsn == "" {
+		dsn = "root@tcp(127.0.0.1:3306)/test_grava?parseTime=true"
+	}
 	client, err := dolt.NewClient(dsn)
 	if err != nil {
 		t.Skipf("Skipping integration test: connection failed: %v", err)
