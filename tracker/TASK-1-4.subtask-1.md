@@ -1,6 +1,6 @@
 ---
 issue: TASK-1-4.subtask-1
-status: todo
+status: done
 Description: Scaffold the CLI application structure.
 ---
 
@@ -10,6 +10,6 @@ Description: Scaffold the CLI application structure.
 **So that** I can run `grava` commands
 
 ## Acceptance Criteria
-- [ ] `cmd/grava/main.go` created
-- [ ] Command parsing library (e.g., Cobra or standard flag) set up
-- [ ] `grava --help` returns usage info
+- [x] `cmd/grava/main.go` created
+- [x] Command parsing library (e.g., Cobra or standard flag) set up
+- [x] `grava --help` returns usage info

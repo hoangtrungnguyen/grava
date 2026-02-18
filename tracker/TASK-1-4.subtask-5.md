@@ -1,6 +1,6 @@
 ---
 issue: TASK-1-4.subtask-5
-status: todo
+status: done
 Description: Implement the 'list' command.
 ---
 
@@ -10,6 +10,6 @@ Description: Implement the 'list' command.
 **So that** I can see all open issues
 
 ## Acceptance Criteria
-- [ ] lists all issues in table format
-- [ ] Supports filtering by status (`--status=open`)
-- [ ] Sorts by priority/created_at
+- [x] lists all issues in table format
+- [x] Supports filtering by status (`--status=open`)
+- [x] Sorts by priority/created_at

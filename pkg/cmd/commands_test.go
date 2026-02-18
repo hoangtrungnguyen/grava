@@ -81,7 +81,7 @@ func TestListCmd(t *testing.T) {
 		AddRow("grava-1", "I1", "task", 2, "open", time.Now()).
 		AddRow("grava-2", "I2", "bug", 0, "closed", time.Now())
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues ORDER BY priority ASC, created_at DESC")).
 		WillReturnRows(rows)
 
 	mock.ExpectClose()

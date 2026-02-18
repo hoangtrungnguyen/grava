@@ -16,7 +16,7 @@ if [ ! -d "$DOLT_DIR" ]; then
 fi
 
 echo "Starting Dolt SQL Server on port $PORT..."
-echo "Connection String: mysql://root@127.0.0.1:$PORT/grava"
+echo "Connection String: mysql://root@127.0.0.1:$PORT/dolt"
 
 cd "$DOLT_DIR"
 # Start server (Dolt SQL Server uses the current repository users).

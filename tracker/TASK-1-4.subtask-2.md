@@ -1,6 +1,6 @@
 ---
 issue: TASK-1-4.subtask-2
-status: todo
+status: done
 Description: Implement the 'create' command.
 ---
 
@@ -10,7 +10,7 @@ Description: Implement the 'create' command.
 **So that** I can add new issues to the database
 
 ## Acceptance Criteria
-- [ ] Accepts title, description, priority, type
-- [ ] Generates ID using `idgen` package
-- [ ] Inserts row into `issues` table
-- [ ] Prints the new ID to stdout
+- [x] Accepts title, description, priority, type
+- [x] Generates ID using `idgen` package
+- [x] Inserts row into `issues` table
+- [x] Prints the new ID to stdout

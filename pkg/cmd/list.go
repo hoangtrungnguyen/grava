@@ -63,7 +63,7 @@ You can filter by status or type.`,
 			}
 		}
 
-		query += " ORDER BY created_at DESC"
+		query += " ORDER BY priority ASC, created_at DESC"
 
 		rows, err := Store.Query(query, params...)
 		if err != nil {

@@ -1,6 +1,6 @@
 ---
 issue: TASK-1-4.subtask-3
-status: todo
+status: done
 Description: Implement the 'show' command.
 ---
 
@@ -10,6 +10,6 @@ Description: Implement the 'show' command.
 **So that** I can see details of a specific issue
 
 ## Acceptance Criteria
-- [ ] Fetches issue by ID
-- [ ] Pretty-prints all fields (Title, status, description, etc.)
-- [ ] Handles "not found" errors gracefully
+- [x] Fetches issue by ID
+- [x] Pretty-prints all fields (Title, status, description, etc.)
+- [x] Handles "not found" errors gracefully
