@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/validation"
 	"github.com/spf13/cobra"
 )
 
@@ -34,22 +34,9 @@ Example:
   grava clear --from 2026-01-01 --to 2026-01-31
   grava clear --from 2026-02-18 --to 2026-02-18 --force --include-wisps`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if clearFrom == "" || clearTo == "" {
-			return fmt.Errorf("--from and --to flags are required")
-		}
-
-		fromDate, err := time.Parse("2006-01-02", clearFrom)
+		fromDate, toDate, err := validation.ValidateDateRange(clearFrom, clearTo)
 		if err != nil {
-			return fmt.Errorf("invalid --from date format (use YYYY-MM-DD): %w", err)
-		}
-
-		toDate, err := time.Parse("2006-01-02", clearTo)
-		if err != nil {
-			return fmt.Errorf("invalid --to date format (use YYYY-MM-DD): %w", err)
-		}
-
-		if fromDate.After(toDate) {
-			return fmt.Errorf("--from date must be before or equal to --to date")
+			return err
 		}
 
 		// Prepare query for matching issues

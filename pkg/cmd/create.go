@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/idgen"
+	"github.com/hoangtrungnguyen/grava/pkg/validation"
 	"github.com/spf13/cobra"
 )
 
@@ -29,28 +30,22 @@ You can specify title, description, type, and priority.`,
 		// 1. Initialize Generator
 		generator := idgen.NewStandardGenerator(Store)
 
+		// Validate inputs
+		if err := validation.ValidateIssueType(issueType); err != nil {
+			return err
+		}
+
+		pInt, err := validation.ValidatePriority(priority)
+		if err != nil {
+			return err
+		}
+
 		// 2. Generate ID
 		var id string
-		var err error
 		if parentID != "" {
 			id, err = generator.GenerateChildID(parentID)
 		} else {
 			id = generator.GenerateBaseID()
-		}
-
-		// Map priority
-		var pInt int
-		switch priority {
-		case "critical":
-			pInt = 0
-		case "high":
-			pInt = 1
-		case "medium":
-			pInt = 2
-		case "low":
-			pInt = 3
-		default:
-			pInt = 4 // backlog/default
 		}
 
 		// 3. Insert into DB

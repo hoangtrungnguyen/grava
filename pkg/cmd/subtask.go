@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/idgen"
+	"github.com/hoangtrungnguyen/grava/pkg/validation"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +36,16 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 			return fmt.Errorf("parent issue %s not found: %w", parentID, err)
 		}
 
+		// Validate inputs
+		if err := validation.ValidateIssueType(subtaskType); err != nil {
+			return err
+		}
+
+		pInt, err := validation.ValidatePriority(subtaskPriority)
+		if err != nil {
+			return err
+		}
+
 		// 1. Initialize Generator
 		generator := idgen.NewStandardGenerator(Store)
 
@@ -42,21 +53,6 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 		id, err := generator.GenerateChildID(parentID)
 		if err != nil {
 			return fmt.Errorf("failed to generate subtask ID: %w", err)
-		}
-
-		// Map priority
-		var pInt int
-		switch subtaskPriority {
-		case "critical":
-			pInt = 0
-		case "high":
-			pInt = 1
-		case "medium":
-			pInt = 2
-		case "low":
-			pInt = 3
-		default:
-			pInt = 4 // backlog/default
 		}
 
 		// 3. Insert into DB

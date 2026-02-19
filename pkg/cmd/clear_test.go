@@ -20,7 +20,7 @@ func TestClearCmd(t *testing.T) {
 		clearTo = ""
 		_, err = executeCommand(rootCmd, "clear")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "required")
+		assert.Contains(t, err.Error(), "invalid 'from' date format")
 	})
 
 	t.Run("invalid date format", func(t *testing.T) {
@@ -32,7 +32,7 @@ func TestClearCmd(t *testing.T) {
 		clearTo = "2026-01-31"
 		_, err = executeCommand(rootCmd, "clear", "--from", "01-01-2026", "--to", "2026-01-31")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid --from date format")
+		assert.Contains(t, err.Error(), "invalid 'from' date format")
 	})
 
 	t.Run("from > to", func(t *testing.T) {
@@ -44,7 +44,7 @@ func TestClearCmd(t *testing.T) {
 		clearTo = "2026-01-31"
 		_, err = executeCommand(rootCmd, "clear", "--from", "2026-02-01", "--to", "2026-01-31")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "must be before or equal")
+		assert.Contains(t, err.Error(), "cannot be after")
 	})
 
 	t.Run("force delete range", func(t *testing.T) {

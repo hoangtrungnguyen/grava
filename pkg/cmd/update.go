@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/validation"
 	"github.com/spf13/cobra"
 )
 
@@ -40,27 +41,24 @@ Only the flags provided will be updated.`,
 			queryParams = append(queryParams, updateDesc)
 		}
 		if cmd.Flags().Changed("type") {
+			if err := validation.ValidateIssueType(updateType); err != nil {
+				return err
+			}
 			query += ", issue_type = ?"
 			queryParams = append(queryParams, updateType)
 		}
 		if cmd.Flags().Changed("priority") {
 			query += ", priority = ?"
-			var pInt int
-			switch updatePriority {
-			case "critical":
-				pInt = 0
-			case "high":
-				pInt = 1
-			case "medium":
-				pInt = 2
-			case "low":
-				pInt = 3
-			default:
-				pInt = 4 // backlog
+			pInt, err := validation.ValidatePriority(updatePriority)
+			if err != nil {
+				return err
 			}
 			queryParams = append(queryParams, pInt)
 		}
 		if cmd.Flags().Changed("status") {
+			if err := validation.ValidateStatus(updateStatus); err != nil {
+				return err
+			}
 			query += ", status = ?"
 			queryParams = append(queryParams, updateStatus)
 		}
