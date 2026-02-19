@@ -47,6 +47,11 @@ description: Clean up the session, commit work, and update the issue status usin
     ```bash
     ./grava comment <issue_id> "Session Summary: [List key changes, decisions, and tests passed]"
     ```
+//update effected files 
+     ```bash
+     grava update <id> --files  <files_path>
+     ```
+
 2.  **Update Issue Status:**
     If the task is complete:
     // turbo
