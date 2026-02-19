@@ -44,27 +44,17 @@ description: Clean up the session, commit work, and update the issue status usin
 
 **Action:** Update the database to reflect the session's achievements.
 
-1.  **Add Completion Summary:**
+1.  **Add Completion Summary & Link Commit:**
     // turbo
     ```bash
-    ./grava comment <issue_id> "Session Summary: [List key changes, decisions, and tests passed]"
+    ./grava comment <issue_id> "Session Summary: [List key changes, decisions, and tests passed]" --last-commit <hash>
     ```
 //update effected files 
      ```bash
-     grava update <id> --files  <files_path>
+     ./grava update <issue_id> --files <files_path> --status [closed|in_progress] --last-commit <hash>
      ```
 
-2.  **Update Issue Status:**
-    If the task is complete:
-    // turbo
-    ```bash
-    ./grava update <issue_id> --status closed
-    ```
-    If work is still in progress:
-    // turbo
-    ```bash
-    ./grava update <issue_id> --status in_progress
-    ```
+2.  **Verify Progress:** Run `./grava show <issue_id>` to ensure everything looks correct.
 
 3.  **Handoff Note:** Update the parent epic if significant milestones were reached.
     // turbo

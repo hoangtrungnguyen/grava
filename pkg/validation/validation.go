@@ -14,6 +14,7 @@ var (
 		"epic":    true,
 		"story":   true,
 		"feature": true,
+		"chore":   true,
 	}
 
 	AllowedStatuses = map[string]bool{

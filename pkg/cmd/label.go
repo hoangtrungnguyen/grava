@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -70,18 +69,8 @@ Example:
 		labels = append(labels, label)
 		meta["labels"] = labels
 
-		// 4. Marshal updated metadata
-		updated, err := json.Marshal(meta)
-		if err != nil {
-			return fmt.Errorf("failed to marshal metadata: %w", err)
-		}
-
-		// 5. Write back
-		_, err = Store.Exec(
-			`UPDATE issues SET metadata = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`,
-			string(updated), time.Now(), actor, agentModel, id,
-		)
-		if err != nil {
+		// 4. Update metadata
+		if err := updateIssueMetadata(id, meta); err != nil {
 			return fmt.Errorf("failed to save label on %s: %w", id, err)
 		}
 

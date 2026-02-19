@@ -10,16 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	title         string
-	desc          string
-	issueType     string
-	priority      string
-	parentID      string
-	ephemeral     bool
-	affectedFiles []string
-)
-
 // createCmd represents the create command
 var createCmd = &cobra.Command{
 	Use:   "create",
@@ -27,6 +17,18 @@ var createCmd = &cobra.Command{
 	Long: `Create a new issue in the Grava tracker.
 You can specify title, description, type, and priority.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Fetch flag values locally to avoid state leakage between test runs
+		title, _ := cmd.Flags().GetString("title")
+		desc, _ := cmd.Flags().GetString("desc")
+		issueType, _ := cmd.Flags().GetString("type")
+		priority, _ := cmd.Flags().GetString("priority")
+		parentID, _ := cmd.Flags().GetString("parent")
+		ephemeral, _ := cmd.Flags().GetBool("ephemeral")
+
+		// Use global slice var (createAffectedFiles) to avoid accumulation issues with pflag StringSlice
+		// Reset slices manually in tests.
+		affectedFiles := createAffectedFiles
+
 		// 1. Initialize Generator
 		generator := idgen.NewStandardGenerator(Store)
 
@@ -49,8 +51,6 @@ You can specify title, description, type, and priority.`,
 		}
 
 		// 3. Insert into DB
-		// Note: status 'todo' is NOT allowed by schema check, use 'open'.
-		// Note: column is 'issue_type', not 'type'.
 		ephemeralVal := 0
 		if ephemeral {
 			ephemeralVal = 1
@@ -93,16 +93,18 @@ You can specify title, description, type, and priority.`,
 	},
 }
 
+var createAffectedFiles []string
+
 func init() {
 	rootCmd.AddCommand(createCmd)
 
-	createCmd.Flags().StringVarP(&title, "title", "t", "", "Issue title (required)")
-	createCmd.Flags().StringVarP(&desc, "desc", "d", "", "Issue description")
-	createCmd.Flags().StringVar(&issueType, "type", "task", "Issue type (task, bug, epic, story)")
-	createCmd.Flags().StringVarP(&priority, "priority", "p", "medium", "Issue priority (low, medium, high, critical)")
-	createCmd.Flags().StringVar(&parentID, "parent", "", "Parent Issue ID for sub-tasks")
-	createCmd.Flags().BoolVar(&ephemeral, "ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
-	createCmd.Flags().StringSliceVar(&affectedFiles, "files", []string{}, "Affected files (comma separated)")
+	createCmd.Flags().StringP("title", "t", "", "Issue title (required)")
+	createCmd.Flags().StringP("desc", "d", "", "Issue description")
+	createCmd.Flags().String("type", "task", "Issue type (task, bug, epic, story)")
+	createCmd.Flags().StringP("priority", "p", "medium", "Issue priority (low, medium, high, critical)")
+	createCmd.Flags().String("parent", "", "Parent Issue ID for sub-tasks")
+	createCmd.Flags().Bool("ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
+	createCmd.Flags().StringSliceVar(&createAffectedFiles, "files", []string{}, "Affected files (comma separated)")
 
 	createCmd.MarkFlagRequired("title")
 }

@@ -78,12 +78,7 @@ func TestListCmdSoftDelete(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		assert.NoError(t, err)
 		Store = dolt.NewClientFromDB(db)
-
-		// Reset flags
-		listStatus = ""
-		listType = ""
-		listWisp = false
-		listSort = ""
+		defer db.Close()
 
 		expectedQuery := regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 0 AND status != 'tombstone' ORDER BY priority ASC, created_at DESC, id ASC`)
 
@@ -103,9 +98,7 @@ func TestListCmdSoftDelete(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		assert.NoError(t, err)
 		Store = dolt.NewClientFromDB(db)
-
-		listWisp = true
-		defer func() { listWisp = false }()
+		defer db.Close()
 
 		expectedQuery := regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 1 AND status != 'tombstone' ORDER BY priority ASC, created_at DESC, id ASC`)
 

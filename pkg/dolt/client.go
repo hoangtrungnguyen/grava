@@ -17,6 +17,8 @@ type Store interface {
 	Exec(query string, args ...any) (sql.Result, error)
 	QueryRow(query string, args ...any) *sql.Row
 	Query(query string, args ...any) (*sql.Rows, error)
+	SetMaxOpenConns(n int)
+	SetMaxIdleConns(n int)
 	Close() error
 }
 
@@ -27,6 +29,14 @@ type Client struct {
 
 func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	return c.db.BeginTx(ctx, opts)
+}
+
+func (c *Client) SetMaxOpenConns(n int) {
+	c.db.SetMaxOpenConns(n)
+}
+
+func (c *Client) SetMaxIdleConns(n int) {
+	c.db.SetMaxIdleConns(n)
 }
 
 // NewClient establishes a connection to the Dolt database.

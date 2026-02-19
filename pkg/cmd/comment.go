@@ -3,10 +3,11 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 )
+
+var commentLastCommit string
 
 // commentCmd represents the comment command
 var commentCmd = &cobra.Command{
@@ -24,49 +25,16 @@ Example:
 		id := args[0]
 		text := args[1]
 
-		// 1. Fetch current metadata
-		row := Store.QueryRow(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`, id)
-		var rawMeta string
-		if err := row.Scan(&rawMeta); err != nil {
-			return fmt.Errorf("issue %s not found: %w", id, err)
+		// Use helper to add comment
+		if err := addCommentToIssue(id, text); err != nil {
+			return err
 		}
 
-		// 2. Unmarshal metadata
-		var meta map[string]any
-		if err := json.Unmarshal([]byte(rawMeta), &meta); err != nil {
-			return fmt.Errorf("failed to parse metadata for %s: %w", id, err)
-		}
-
-		// 3. Append comment entry
-		comment := map[string]any{
-			"text":        text,
-			"timestamp":   time.Now().UTC().Format(time.RFC3339),
-			"actor":       actor,
-			"agent_model": agentModel,
-		}
-
-		var comments []any
-		if existing, ok := meta["comments"]; ok {
-			if arr, ok := existing.([]any); ok {
-				comments = arr
+		// Metadata update (last-commit)
+		if cmd.Flags().Changed("last-commit") {
+			if err := setLastCommit(id, commentLastCommit); err != nil {
+				return err
 			}
-		}
-		comments = append(comments, comment)
-		meta["comments"] = comments
-
-		// 4. Marshal updated metadata
-		updated, err := json.Marshal(meta)
-		if err != nil {
-			return fmt.Errorf("failed to marshal metadata: %w", err)
-		}
-
-		// 5. Write back
-		_, err = Store.Exec(
-			`UPDATE issues SET metadata = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`,
-			string(updated), time.Now(), actor, agentModel, id,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to save comment on %s: %w", id, err)
 		}
 
 		if outputJSON {
@@ -87,4 +55,5 @@ Example:
 
 func init() {
 	rootCmd.AddCommand(commentCmd)
+	commentCmd.Flags().StringVar(&commentLastCommit, "last-commit", "", "Store the last session's commit hash")
 }

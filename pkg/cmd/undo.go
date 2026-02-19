@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -27,17 +27,16 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 			Priority      int
 			Status        string
 			AffectedFiles sql.NullString
-			UpdatedAt     time.Time // Added UpdatedAt field
 		}
 
 		// 1. Get Current State
 		var current IssueState
 		// We query raw SQL to get even tombstoned issues
-		currQuery := `SELECT title, description, issue_type, priority, status, affected_files, updated_at
+		currQuery := `SELECT title, description, issue_type, priority, status, affected_files
 		              FROM issues WHERE id = ?`
 		err := Store.QueryRow(currQuery, id).Scan(
 			&current.Title, &current.Description, &current.Type,
-			&current.Priority, &current.Status, &current.AffectedFiles, &current.UpdatedAt, // Added &current.UpdatedAt
+			&current.Priority, &current.Status, &current.AffectedFiles,
 		)
 		if err != nil {
 			if err == sql.ErrNoRows {
@@ -49,7 +48,7 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 		// 2. Get History (Last 2 commits)
 		// We need full details to restore
 		histQuery := `
-			SELECT title, description, issue_type, priority, status, affected_files, updated_at
+			SELECT title, description, issue_type, priority, status, affected_files
 			FROM dolt_history_issues
 			WHERE id = ?
 			ORDER BY commit_date DESC
@@ -66,7 +65,7 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 			var h IssueState
 			if err := rows.Scan(
 				&h.Title, &h.Description, &h.Type,
-				&h.Priority, &h.Status, &h.AffectedFiles, &h.UpdatedAt, // Added &h.UpdatedAt
+				&h.Priority, &h.Status, &h.AffectedFiles,
 			); err != nil {
 				return fmt.Errorf("failed to scan history: %w", err)
 			}
@@ -95,9 +94,33 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 			targetState = history[1]
 		}
 
-		fmt.Println(actionMsg)
+		fmt.Fprintln(cmd.OutOrStdout(), actionMsg)
 
-		// 4. Apply Revert
+		// 3.5 Check for Session Undo (Git-level Revert)
+		if !isDirty {
+			var rawMeta sql.NullString
+			if err := Store.QueryRow("SELECT metadata FROM issues WHERE id = ?", id).Scan(&rawMeta); err == nil && rawMeta.Valid {
+				var meta map[string]any
+				if err := json.Unmarshal([]byte(rawMeta.String), &meta); err == nil {
+					if lastCommit, ok := meta["last_commit"].(string); ok {
+						fmt.Fprintf(cmd.OutOrStdout(), "Found last session commit: %s\n", lastCommit)
+						fmt.Fprintf(cmd.OutOrStdout(), "Reverting session commit... ")
+						_, err := Store.Exec("CALL DOLT_REVERT(?)", lastCommit)
+						if err != nil {
+							// If revert fails (e.g. conflicts), we might want to fallback to row-level
+							// but for now, let's report it as a fail or just continue.
+							fmt.Fprintf(cmd.OutOrStdout(), "Revert failed: %v. Falling back to row-level undo.\n", err)
+						} else {
+							fmt.Fprintln(cmd.OutOrStdout(), "DONE.")
+							fmt.Fprintf(cmd.OutOrStdout(), "✅ Session undo successful for %v.\n", id)
+							return nil
+						}
+					}
+				}
+			}
+		}
+
+		// 4. Apply Revert (Row-level fallback)
 		// We update the issue with the old values, but set updated_by to us
 		updateQ := `
 			UPDATE issues
@@ -127,10 +150,22 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 			return fmt.Errorf("no rows updated (concurrency issue?)")
 		}
 
+		// 5. Add Comment
+		commentMsg := fmt.Sprintf("Undo: reverted to %s", actionMsg)
+		if isDirty {
+			commentMsg = "Undo: discarded uncommitted changes (reverted to HEAD)"
+		} else {
+			commentMsg = "Undo: reverted to PREVIOUS commit"
+		}
+
+		if err := addCommentToIssue(id, commentMsg); err != nil {
+			return fmt.Errorf("failed to add undo comment: %w", err)
+		}
+
 		// Print summary
-		fmt.Printf("✅ Reverted issue %s.\n", id)
-		fmt.Printf("   Title: %s\n", targetState.Title)
-		fmt.Printf("   Status: %s\n", targetState.Status)
+		fmt.Fprintf(cmd.OutOrStdout(), "✅ Reverted issue %s.\n", id)
+		fmt.Fprintf(cmd.OutOrStdout(), "   Title: %s\n", targetState.Title)
+		fmt.Fprintf(cmd.OutOrStdout(), "   Status: %s\n", targetState.Status)
 
 		return nil
 	},

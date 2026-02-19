@@ -19,15 +19,22 @@ var commitCmd = &cobra.Command{
 		}
 
 		// Run dolt_commit via SQL
-		// We use -a to stage all changes
-		query := "CALL DOLT_COMMIT('-am', ?)"
+		// 1. Stage all changes (including new tables/rows)
+		var err error
+		_, err = Store.Exec("CALL DOLT_ADD('-A')")
+		if err != nil {
+			return fmt.Errorf("failed to stage changes: %w", err)
+		}
+
+		// 2. Commit
+		query := "CALL DOLT_COMMIT('-m', ?)"
 		var hash string
-		err := Store.QueryRow(query, commitMessage).Scan(&hash)
+		err = Store.QueryRow(query, commitMessage).Scan(&hash)
 		if err != nil {
 			return fmt.Errorf("failed to commit: %w", err)
 		}
 
-		fmt.Printf("✅ Committed changes. Hash: %s\n", hash)
+		cmd.Printf("✅ Committed changes. Hash: %s\n", hash)
 		return nil
 	},
 }

@@ -21,8 +21,32 @@ func executeCommand(root *cobra.Command, args ...string) (string, error) {
 	root.SetErr(buf)
 	root.SetArgs(args)
 
+	// Reset flags before execution to avoid state leakage
+	resetFlags(root)
+
 	_, err := root.ExecuteC()
 	return buf.String(), err
+}
+
+func resetFlags(cmd *cobra.Command) {
+	// Reset specific global slice variables that use StringSliceVar
+	createAffectedFiles = nil
+	updateAffectedFiles = nil
+	subtaskAffectedFiles = nil
+
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		f.Changed = false
+		val := f.DefValue
+		// pflag StringSlice default logic fix is still good to have, but vars are primary now
+		if val == "[]" && f.Value.Type() == "stringSlice" {
+			val = ""
+		}
+		f.Value.Set(val)
+		f.Changed = false
+	})
+	for _, child := range cmd.Commands() {
+		resetFlags(child)
+	}
 }
 
 func TestCreateCmd(t *testing.T) {
@@ -82,15 +106,9 @@ func TestCreateEphemeralCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	// Reset package-level flag vars that may have been set by a prior test
-	desc = ""
-	ephemeral = false
-	priority = "backlog"
-	issueType = "task"
-
 	// ephemeral=1 must be passed as the 7th arg, affected_files last
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
-		WithArgs(sqlmock.AnyArg(), "Scratch Note", "", "task", 4, "open", 1, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
+		WithArgs(sqlmock.AnyArg(), "Scratch Note", "", "task", 2, "open", 1, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -234,17 +252,6 @@ func TestUpdateWithFilesCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	// Reset flags and their "Changed" state
-	updateTitle = ""
-	updateDesc = ""
-	updateType = ""
-	updatePriority = ""
-	updateStatus = ""
-	updateAffectedFiles = nil
-	updateCmd.Flags().VisitAll(func(f *pflag.Flag) {
-		f.Changed = false
-	})
-
 	mock.ExpectExec(`UPDATE issues SET updated_at = \?, updated_by = \?, agent_model = \?.*`).
 		WithArgs(sqlmock.AnyArg(), "unknown", "", `["f1.go","f2.go"]`, "grava-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -262,15 +269,8 @@ func TestCreateWithFilesCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	// Reset flags
-	desc = ""
-	ephemeral = false
-	affectedFiles = nil
-	priority = "backlog"
-	issueType = "task"
-
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
-		WithArgs(sqlmock.AnyArg(), "File Issue", "", "task", 4, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", `["f1.go"]`).
+		WithArgs(sqlmock.AnyArg(), "File Issue", "", "task", 2, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", `["f1.go"]`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -287,13 +287,10 @@ func TestSubtaskCmd(t *testing.T) {
 	}
 
 	Store = dolt.NewClientFromDB(db)
+	defer db.Close()
 
 	parentID := "grava-123"
 	lockName := "grava_cc_" + parentID
-
-	// Reset flags
-	subtaskAffectedFiles = nil
-	subtaskEphemeral = false
 
 	// 1. Verify Parent Exists
 	mock.ExpectQuery(`SELECT 1 FROM issues WHERE id = \?`).
@@ -322,14 +319,22 @@ func TestSubtaskCmd(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// 3. Insert Subtask (after generator returns)
-	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issues`)).
-		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 2, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
+	// We use a regex to be flexible with whitespace
+	mock.ExpectExec(`INSERT INTO issues .* VALUES`).
+		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 1, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// 4. Close (PersistentPostRunE)
 	mock.ExpectClose()
 
-	output, err := executeCommand(rootCmd, "subtask", parentID, "--title", "Subtask Title", "--desc", "Subtask Desc")
+	// Capture and restore PersistentPostRunE
+	origPostRun := rootCmd.PersistentPostRunE
+	rootCmd.PersistentPostRunE = func(cmd *cobra.Command, args []string) error {
+		return Store.Close()
+	}
+	defer func() { rootCmd.PersistentPostRunE = origPostRun }()
+
+	output, err := executeCommand(rootCmd, "subtask", "grava-123", "--title", "Subtask Title", "--desc", "Subtask Desc", "--priority", "high")
 	assert.NoError(t, err)
 	assert.Contains(t, output, "Created subtask: grava-123.5")
 
@@ -349,8 +354,8 @@ func TestCommentCmd(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{}`))
 
 	// 2. UPDATE with new metadata containing the comment
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "", "grava-123").
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs(sqlmock.AnyArg(), "unknown", "", "grava-123").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -436,8 +441,8 @@ func TestLabelCmd(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{}`))
 
 	// 2. UPDATE with new metadata containing the label
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "", "grava-123").
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs(sqlmock.AnyArg(), "unknown", "", "grava-123").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -473,8 +478,8 @@ func TestAssignCmd(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
-		WithArgs("alice", sqlmock.AnyArg(), "unknown", "", "grava-123").
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("alice", "unknown", "", "grava-123").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
@@ -491,8 +496,8 @@ func TestAssignCmdNotFound(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
-		WithArgs("alice", sqlmock.AnyArg(), "unknown", "", "grava-999").
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("alice", "unknown", "", "grava-999").
 		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
 
 	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped

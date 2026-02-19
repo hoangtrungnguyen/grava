@@ -10,15 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	subtaskTitle         string
-	subtaskDesc          string
-	subtaskType          string
-	subtaskPriority      string
-	subtaskEphemeral     bool
-	subtaskAffectedFiles []string
-)
-
 // subtaskCmd represents the subtask command
 var subtaskCmd = &cobra.Command{
 	Use:   "subtask <parent_id>",
@@ -28,6 +19,13 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		parentID := args[0]
+		subtaskTitle, _ := cmd.Flags().GetString("title")
+		subtaskDesc, _ := cmd.Flags().GetString("desc")
+		subtaskType, _ := cmd.Flags().GetString("type")
+		subtaskPriority, _ := cmd.Flags().GetString("priority")
+		subtaskEphemeral, _ := cmd.Flags().GetBool("ephemeral")
+		// Use global slice var
+		// subtaskAffectedFiles, _ := cmd.Flags().GetStringSlice("files")
 
 		// 0. Verify Parent Exists
 		var exists int
@@ -99,14 +97,16 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 	},
 }
 
+var subtaskAffectedFiles []string
+
 func init() {
 	rootCmd.AddCommand(subtaskCmd)
 
-	subtaskCmd.Flags().StringVarP(&subtaskTitle, "title", "t", "", "Subtask title (required)")
-	subtaskCmd.Flags().StringVarP(&subtaskDesc, "desc", "d", "", "Subtask description")
-	subtaskCmd.Flags().StringVar(&subtaskType, "type", "task", "Subtask type (task, bug, epic, story)")
-	subtaskCmd.Flags().StringVarP(&subtaskPriority, "priority", "p", "medium", "Subtask priority (low, medium, high, critical)")
-	subtaskCmd.Flags().BoolVar(&subtaskEphemeral, "ephemeral", false, "Mark subtask as ephemeral (Wisp)")
+	subtaskCmd.Flags().StringP("title", "t", "", "Subtask title (required)")
+	subtaskCmd.Flags().StringP("desc", "d", "", "Subtask description")
+	subtaskCmd.Flags().String("type", "task", "Subtask type (task, bug, epic, story)")
+	subtaskCmd.Flags().StringP("priority", "p", "medium", "Subtask priority (low, medium, high, critical)")
+	subtaskCmd.Flags().Bool("ephemeral", false, "Mark subtask as ephemeral (Wisp)")
 	subtaskCmd.Flags().StringSliceVar(&subtaskAffectedFiles, "files", []string{}, "Affected files (comma separated)")
 
 	subtaskCmd.MarkFlagRequired("title")

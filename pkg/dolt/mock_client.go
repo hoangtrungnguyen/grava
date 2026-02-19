@@ -41,3 +41,6 @@ func (m *MockStore) GetNextChildSequence(parentID string) (int, error) {
 func (m *MockStore) Close() error {
 	return nil
 }
+
+func (m *MockStore) SetMaxOpenConns(n int) {}
+func (m *MockStore) SetMaxIdleConns(n int) {}

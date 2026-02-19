@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"database/sql"
+	"regexp"
 	"testing"
 	"time"
 
@@ -21,11 +22,11 @@ func TestHistoryCmd(t *testing.T) {
 	id := "issue-123"
 
 	// Expectation
-	rows := sqlmock.NewRows([]string{"commit_hash", "committer", "commit_date", "title", "status"}).
-		AddRow("hash123456", "Alice", time.Now(), "Fix bug", "open").
-		AddRow("hash654321", "Bob", time.Now().Add(-1*time.Hour), "Init task", "backlog")
+	rows := sqlmock.NewRows([]string{"commit_hash", "committer", "commit_date", "title", "status", "message"}).
+		AddRow("hash123456", "Alice", time.Now(), "Fix bug", "open", "Initial commit").
+		AddRow("hash654321", "Bob", time.Now().Add(-1*time.Hour), "Init task", "backlog", "Second commit")
 
-	mock.ExpectQuery("SELECT commit_hash, committer, commit_date, title, status FROM dolt_history_issues").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT h.commit_hash, h.committer, h.commit_date, h.title, h.status, l.message FROM dolt_history_issues h JOIN dolt_log l ON h.commit_hash = l.commit_hash")).
 		WithArgs(id).
 		WillReturnRows(rows)
 
@@ -48,23 +49,22 @@ func TestUndoCmd_Dirty(t *testing.T) {
 	defer func() { Store = nil }()
 
 	id := "issue-dirty"
-	now := time.Now()
 
 	// 1. Get Current State
 	// Current: Title="Changed Title", UpdatedAt=Now
-	mock.ExpectQuery("SELECT title, description, issue_type, priority, status, affected_files, updated_at FROM issues").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM issues")).
 		WithArgs(id).
-		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files", "updated_at"}).
-			AddRow("Changed Title", "Desc", "task", 1, "open", nil, now))
+		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
+			AddRow("Changed Title", "Desc", "task", 1, "open", nil))
 
 	// 2. Get History
 	// Head (Hist[0]): Title="Original Title", UpdatedAt=Now-1h
 	// Prev (Hist[1]): Title="Old Title", UpdatedAt=Now-2h
-	mock.ExpectQuery("SELECT title, description, issue_type, priority, status, affected_files, updated_at FROM dolt_history_issues").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM dolt_history_issues")).
 		WithArgs(id).
-		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files", "updated_at"}).
-			AddRow("Original Title", "Desc", "task", 1, "open", nil, now.Add(-1*time.Hour)).
-			AddRow("Old Title", "Desc", "task", 1, "open", nil, now.Add(-2*time.Hour)))
+		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
+			AddRow("Original Title", "Desc", "task", 1, "open", nil).
+			AddRow("Old Title", "Desc", "task", 1, "open", nil))
 
 	// 3. Update (Revert to HEAD)
 	// Expect update with "Original Title"
@@ -75,6 +75,16 @@ func TestUndoCmd_Dirty(t *testing.T) {
 			sqlmock.AnyArg(), // agent_model
 			id,
 		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// 4. Add Comment (Select metadata)
+	mock.ExpectQuery("SELECT COALESCE\\(metadata, '\\{}'\\) FROM issues WHERE id = \\?").
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow("{}"))
+
+	// 5. Update Metadata (Add comment)
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), id).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Execute
@@ -96,23 +106,22 @@ func TestUndoCmd_Clean(t *testing.T) {
 	defer func() { Store = nil }()
 
 	id := "issue-clean"
-	now := time.Now()
 
 	// 1. Get Current State
 	// Current: Title="Original Title", UpdatedAt=Now-1h (Same as HEAD)
-	mock.ExpectQuery("SELECT title, description, issue_type, priority, status, affected_files, updated_at FROM issues").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM issues")).
 		WithArgs(id).
-		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files", "updated_at"}).
-			AddRow("Original Title", "Desc", "task", 1, "open", nil, now.Add(-1*time.Hour)))
+		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
+			AddRow("Original Title", "Desc", "task", 1, "open", nil))
 
 	// 2. Get History
 	// Head (Hist[0]): Title="Original Title", UpdatedAt=Now-1h
 	// Prev (Hist[1]): Title="Old Title", UpdatedAt=Now-2h
-	mock.ExpectQuery("SELECT title, description, issue_type, priority, status, affected_files, updated_at FROM dolt_history_issues").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM dolt_history_issues")).
 		WithArgs(id).
-		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files", "updated_at"}).
-			AddRow("Original Title", "Desc", "task", 1, "open", nil, now.Add(-1*time.Hour)).
-			AddRow("Old Title", "Desc", "task", 1, "open", nil, now.Add(-2*time.Hour)))
+		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
+			AddRow("Original Title", "Desc", "task", 1, "open", nil).
+			AddRow("Old Title", "Desc", "task", 1, "open", nil))
 
 	// 3. Update (Revert to HEAD~1)
 	// Expect update with "Old Title"
@@ -123,6 +132,16 @@ func TestUndoCmd_Clean(t *testing.T) {
 			sqlmock.AnyArg(),
 			id,
 		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// 4. Add Comment (Select metadata)
+	mock.ExpectQuery("SELECT COALESCE\\(metadata, '\\{}'\\) FROM issues WHERE id = \\?").
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow("{}"))
+
+	// 5. Update Metadata (Add comment)
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), id).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Execute
@@ -142,20 +161,23 @@ func TestUndoCmd_NoHistory(t *testing.T) {
 
 	id := "issue-new"
 
-	// Current found
-	mock.ExpectQuery("SELECT .* FROM issues").
-		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files", "updated_at"}).
-			AddRow("Title", "Desc", "task", 1, "open", nil, time.Now()))
+	// 1. Get Current State
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM issues")).
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
+			AddRow("Title", "Desc", "task", 1, "open", nil))
 
-	// History empty
-	mock.ExpectQuery("SELECT .* FROM dolt_history_issues").
-		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files", "updated_at"}))
+	// 2. Get History (Only HEAD)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM dolt_history_issues")).
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
+			AddRow("Title", "Desc", "task", 1, "open", nil)) // Only HEAD
 
 	// Execute
 	cmd := undoCmd
 	err = cmd.RunE(cmd, []string{id})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no history found")
+	assert.Contains(t, err.Error(), "initial state")
 }
 
 func TestUndoCmd_NotFound(t *testing.T) {

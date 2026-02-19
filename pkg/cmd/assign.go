@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -27,8 +26,8 @@ Example:
 		user := args[1]
 
 		result, err := Store.Exec(
-			`UPDATE issues SET assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`,
-			user, time.Now(), actor, agentModel, id,
+			`UPDATE issues SET assignee = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`,
+			user, actor, agentModel, id,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to assign issue %s: %w", id, err)
