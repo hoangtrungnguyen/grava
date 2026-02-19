@@ -614,6 +614,74 @@ grava import --file legacy.jsonl --skip-existing
 
 ---
 
+### `history`
+
+Displays the modification history of a specific issue using Dolt's version control capabilities. It shows commit hashes, authors, dates, and status changes.
+
+**Usage:**
+```bash
+grava history <id>
+```
+
+**Example:**
+```bash
+grava history grava-123
+```
+
+**Output:**
+```
+History for Issue grava-123:
+
+COMMIT     AUTHOR               DATE                      STATUS          TITLE
+------------------------------------------------------------------------------------------------
+a1b2c3d4   alice                2026-02-19T14:47:24+07:00 open            Fix bug
+e5f6g7h8   bob                  2026-02-18T10:00:00+07:00 backlog         Init task
+```
+
+---
+
+### `undo`
+
+Reverts the last change to an issue.
+- If the issue has **uncommitted changes**, it reverts to the last committed state (HEAD).
+- If the issue is **clean** (matches HEAD), it reverts to the previous commit (HEAD~1).
+
+**Usage:**
+```bash
+grava undo <id>
+```
+
+**Example:**
+```bash
+# Undo accidental changes
+grava undo grava-123
+# Output:
+# Discarding uncommitted changes (reverting to HEAD)...
+# ✅ Reverted issue grava-123.
+```
+
+---
+
+### `commit`
+
+Commits staged changes in the issue tracker to the Dolt version history. This is required for changes to appear in `grava history`.
+
+**Usage:**
+```bash
+grava commit -m <message>
+```
+
+**Flags:**
+- `-m, --message string`: Commit message (**required**).
+
+**Example:**
+```bash
+grava commit -m "Finish work on login feature"
+# Output: ✅ Committed changes. Hash: a1b2c3d4...
+```
+
+---
+
 ## Wisps (Ephemeral Issues)
 
 **Wisps** are temporary, ephemeral issues intended for AI agents or developers who need a short-lived scratchpad that doesn't pollute the permanent project history.
