@@ -109,7 +109,11 @@ You can filter by status or type.`,
 			}
 		}
 
-		query += " ORDER BY priority ASC, created_at DESC"
+		sortClause, err := parseSortFlag(listSort)
+		if err != nil {
+			return err
+		}
+		query += " ORDER BY " + sortClause
 
 		rows, err := Store.Query(query, params...)
 		if err != nil {
@@ -171,4 +175,5 @@ func init() {
 	listCmd.Flags().StringVarP(&listStatus, "status", "s", "", "Filter by status")
 	listCmd.Flags().StringVarP(&listType, "type", "t", "", "Filter by type")
 	listCmd.Flags().BoolVar(&listWisp, "wisp", false, "Show only ephemeral Wisp issues")
+	listCmd.Flags().StringVar(&listSort, "sort", "", "Sort by fields (e.g. priority:asc,created:desc)")
 }
