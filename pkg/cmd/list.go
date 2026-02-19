@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -13,7 +14,51 @@ var (
 	listStatus string
 	listType   string
 	listWisp   bool
+	listSort   string
 )
+
+var sortColumnMap = map[string]string{
+	"id":       "id",
+	"title":    "title",
+	"type":     "issue_type",
+	"status":   "status",
+	"priority": "priority",
+	"created":  "created_at",
+	"updated":  "updated_at",
+	"assignee": "assignee",
+}
+
+func parseSortFlag(sortStr string) (string, error) {
+	if sortStr == "" {
+		return "priority ASC, created_at DESC, id ASC", nil
+	}
+
+	parts := strings.Split(sortStr, ",")
+	var segments []string
+
+	for _, p := range parts {
+		subparts := strings.Split(p, ":")
+		field := strings.ToLower(strings.TrimSpace(subparts[0]))
+		col, ok := sortColumnMap[field]
+		if !ok {
+			return "", fmt.Errorf("invalid sort field %q", field)
+		}
+
+		order := "ASC"
+		if len(subparts) > 1 {
+			o := strings.ToUpper(strings.TrimSpace(subparts[1]))
+			if o != "ASC" && o != "DESC" {
+				return "", fmt.Errorf("invalid order %q for field %q", subparts[1], field)
+			}
+			order = o
+		}
+		segments = append(segments, fmt.Sprintf("%s %s", col, order))
+	}
+
+	// Always add ID for stable sorting
+	segments = append(segments, "id ASC")
+	return strings.Join(segments, ", "), nil
+}
 
 type IssueListItem struct {
 	ID        string    `json:"id"`
