@@ -66,6 +66,8 @@ go build -o bin/grava ./cmd/grava/
 | `grava dep <from> <to>` | Create a dependency edge |
 | `grava label <id> <label>` | Add a label |
 | `grava assign <id> <user>` | Assign to a user or agent |
+| `grava history <id>` | View revision history for an issue |
+| `grava undo <id>` | Revert the last change to an issue |
 | `grava compact` | Purge old ephemeral Wisps |
 
 See **[CLI Reference](docs/CLI_REFERENCE.md)** for full documentation.
