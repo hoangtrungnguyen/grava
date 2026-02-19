@@ -249,6 +249,31 @@ grava drop --force
 - `0` — success, all data deleted
 - `1` — user cancelled or DB error
 
+---
+
+### `clear`
+
+Deletes issues (and related data) created within a specified date range. Records deletions in the `deletions` table for tombstone tracking.
+
+**Usage:**
+```bash
+grava clear --from <date> --to <date> [flags]
+```
+
+**Flags:**
+- `--from string`: Start date (inclusive), format `YYYY-MM-DD` (**required**).
+- `--to string`: End date (inclusive), format `YYYY-MM-DD` (**required**).
+- `--force`: Skip interactive confirmation.
+- `--include-wisps`: Also delete ephemeral Wisp issues in the range.
+
+**Example:**
+```bash
+grava clear --from 2026-01-01 --to 2026-01-31
+```
+
+---
+
+### `comment`
 
 Appends a comment to an existing issue. Comments are stored as a JSON array in the issue's `metadata` column. Each entry records the text, timestamp, and actor.
 
