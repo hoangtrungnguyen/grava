@@ -180,6 +180,62 @@ grava-124   Add feature            task     2         open    2026-02-18
 
 ---
 
+### `stats`
+
+Displays usage statistics for the Grava project, including issue counts by status, priority, author, and assignee, as well as daily activity trends.
+
+**Usage:**
+```bash
+grava stats [flags]
+```
+
+**Flags:**
+- `--days int`: Number of days to include in the activity history. Default: `7`.
+
+**Examples:**
+```bash
+# Show stats for the last 7 days (default)
+grava stats
+
+# Show activity for the last 30 days
+grava stats --days 30
+
+# Output as JSON for dashboard integration
+grava stats --json
+```
+
+**Output:**
+```
+Total Issues:   42
+Open Issues:    15
+Closed Issues:  27
+
+By Status:
+  open:         12
+  in_progress:  3
+  closed:       27
+
+By Priority:
+  P1:   5
+  P2:   10
+  P3:   27
+
+Top Authors:
+  alice:        20
+  bob:          15
+
+Top Assignees:
+  alice:        10
+  bob:          5
+
+Activity (Last 7 Days):
+  Date          Created Closed
+  2026-02-19    3       1
+  2026-02-18    1       0
+```
+
+---
+
 ### `compact`
 
 **Soft-deletes** old ephemeral **Wisp** issues from the database. Issues are marked with `tombstone` status and recorded in the `deletions` table to prevent resurrection during future imports.
