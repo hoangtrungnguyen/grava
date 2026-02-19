@@ -24,6 +24,8 @@ description: Clean up the session, commit work, and update the issue status usin
     ```
 3.  **Cleanup Artifacts:** Delete any temporary debugging files, print statements, or console logs.
 
+
+4.     If update/create a command, you also document the changes into docs folder
 ---
 
 ### Step 2: Git Hygiene & Persistence
@@ -63,6 +65,7 @@ description: Clean up the session, commit work, and update the issue status usin
     ```bash
     ./grava update <issue_id> --status in_progress
     ```
+
 3.  **Handoff Note:** Update the parent epic if significant milestones were reached.
     // turbo
     ```bash
