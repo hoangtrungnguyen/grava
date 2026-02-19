@@ -74,7 +74,7 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all issues",
 	Long: `List all issues in the Grava tracker.
-You can filter by status or type.`,
+You can filter by status or type, and sort by various criteria.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := "SELECT id, title, issue_type, priority, status, created_at FROM issues"
 		var params []any

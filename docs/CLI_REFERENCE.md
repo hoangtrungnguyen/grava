@@ -151,6 +151,7 @@ grava list [flags]
 - `-s, --status string`: Filter by status (e.g., `open`, `closed`).
 - `-t, --type string`: Filter by issue type.
 - `--wisp`: Show only ephemeral Wisp issues (inverts the default ephemeral filter).
+- `--sort string`: Sort criteria (e.g., `priority:asc,created:desc`). Supported fields: `id`, `title`, `type`, `status`, `priority`, `created`, `updated`, `assignee`. Default: `priority:asc,created:desc`.
 
 **Examples:**
 ```bash
@@ -159,6 +160,12 @@ grava list
 
 # Filter by status and type
 grava list --status open --type bug
+
+# Sort by creation date (newest first)
+grava list --sort created:desc
+
+# Sort by priority (asc) and then updated date (desc)
+grava list --sort priority:asc,updated:desc
 
 # List only ephemeral Wisps
 grava list --wisp
