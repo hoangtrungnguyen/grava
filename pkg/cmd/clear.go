@@ -27,9 +27,9 @@ var (
 // clearCmd represents the clear command
 var clearCmd = &cobra.Command{
 	Use:   "clear",
-	Short: "Delete issues within a date range",
-	Long: `Delete issues (and related data) created within a specified date range.
-Tombstones are recorded in the deletions table for all purged IDs.
+	Short: "Soft-delete issues within a date range",
+	Long: `Soft-delete issues (and related data) created within a specified date range.
+	Issues are marked with 'tombstone' status and recorded in the deletions table.
 
 Example:
   grava clear --from 2026-01-01 --to 2026-01-31
@@ -113,10 +113,10 @@ Example:
 				return fmt.Errorf("failed to record tombstone for %s: %w", id, err)
 			}
 
-			// 2. Delete issue (cascading FKs handle dependencies and events)
-			_, err = tx.ExecContext(ctx, "DELETE FROM issues WHERE id = ?", id)
+			// 2. Soft delete issue
+			_, err = tx.ExecContext(ctx, "UPDATE issues SET status = 'tombstone', updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?", actor, agentModel, id)
 			if err != nil {
-				return fmt.Errorf("failed to delete issue %s: %w", id, err)
+				return fmt.Errorf("failed to soft delete issue %s: %w", id, err)
 			}
 		}
 

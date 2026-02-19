@@ -96,6 +96,9 @@ var showCmd = &cobra.Command{
 		cmd.Printf("Title:       %s\n", title)
 		cmd.Printf("Type:        %s\n", iType)
 		cmd.Printf("Priority:    %s (%d)\n", pStr, priority)
+		if status == "tombstone" {
+			status = "🗑️  DELETED (tombstone)"
+		}
 		cmd.Printf("Status:      %s\n", status)
 		cmd.Printf("Created:     %s by %s\n", createdAt.Format(time.RFC3339), createdBy)
 		cmd.Printf("Updated:     %s by %s\n", updatedAt.Format(time.RFC3339), updatedBy)

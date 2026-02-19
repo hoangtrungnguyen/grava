@@ -21,6 +21,7 @@ var (
 		"in_progress": true,
 		"closed":      true,
 		"blocked":     true,
+		"tombstone":   true,
 	}
 
 	PriorityMap = map[string]int{

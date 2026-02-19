@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -13,10 +14,9 @@ var compactDays int
 // compactCmd represents the compact command
 var compactCmd = &cobra.Command{
 	Use:   "compact",
-	Short: "Purge old ephemeral Wisp issues",
-	Long: `Compact deletes ephemeral Wisp issues that are older than the specified
-number of days and records each deletion in the deletions table to prevent
-resurrection during future imports.
+	Short: "Purge old ephemeral Wisp issues (soft delete)",
+	Long: `Compact soft-deletes ephemeral Wisp issues that are older than the specified
+	number of days. Issues are marked with 'tombstone' and recorded in the deletions table.
 
 Example:
   grava compact --days 7   # delete Wisps older than 7 days (default)
@@ -61,11 +61,17 @@ Example:
 			return nil
 		}
 
-		// 2. For each Wisp: record in deletions, then delete from issues
-		purged := 0
+		// 2. Perform soft deletions in a transaction
+		ctx := context.Background()
+		tx, err := Store.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
+
 		for _, id := range ids {
-			// Record tombstone
-			_, err := Store.Exec(
+			// 1. Record tombstone
+			_, err := tx.ExecContext(ctx,
 				`INSERT INTO deletions (id, deleted_at, reason, actor, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 				id, time.Now(), "compact", "grava-compact", actor, actor, agentModel,
 			)
@@ -73,14 +79,18 @@ Example:
 				return fmt.Errorf("failed to record deletion for %s: %w", id, err)
 			}
 
-			// Delete the issue
-			_, err = Store.Exec(`DELETE FROM issues WHERE id = ?`, id)
+			// 2. Soft delete the issue
+			_, err = tx.ExecContext(ctx, "UPDATE issues SET status = 'tombstone', updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?", actor, agentModel, id)
 			if err != nil {
-				return fmt.Errorf("failed to delete issue %s: %w", id, err)
+				return fmt.Errorf("failed to soft delete issue %s: %w", id, err)
 			}
-
-			purged++
 		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+
+		purged := len(ids)
 
 		if outputJSON {
 			resp := map[string]any{

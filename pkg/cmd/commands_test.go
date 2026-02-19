@@ -115,7 +115,7 @@ func TestListCmd(t *testing.T) {
 		AddRow("grava-2", "I2", "bug", 0, "closed", time.Now())
 
 	// Default list excludes ephemeral (ephemeral = 0)
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 0 ORDER BY priority ASC, created_at DESC")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 0 AND status != 'tombstone' ORDER BY priority ASC, created_at DESC")).
 		WillReturnRows(rows)
 
 	mock.ExpectClose()
@@ -136,7 +136,7 @@ func TestListWispCmd(t *testing.T) {
 		AddRow("grava-w1", "Scratch", "task", 4, "open", time.Now())
 
 	// --wisp filters for ephemeral = 1
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 1 ORDER BY priority ASC, created_at DESC")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 1 AND status != 'tombstone' ORDER BY priority ASC, created_at DESC")).
 		WillReturnRows(rows)
 
 	mock.ExpectClose()
@@ -160,23 +160,28 @@ func TestCompactCmd(t *testing.T) {
 				AddRow("grava-w1").
 				AddRow("grava-w2"))
 
+		// Expect Transaction
+		mock.ExpectBegin()
+
 		// 2a. INSERT into deletions for grava-w1
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions`)).
 			WithArgs("grava-w1", sqlmock.AnyArg(), "compact", "grava-compact", "unknown", "unknown", "").
 			WillReturnResult(sqlmock.NewResult(1, 1))
-		// 2b. DELETE grava-w1
-		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues WHERE id = ?`)).
-			WithArgs("grava-w1").
-			WillReturnResult(sqlmock.NewResult(0, 1))
+		// 2b. Soft delete grava-w1
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = 'tombstone', updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+			WithArgs("unknown", "", "grava-w1").
+			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		// 3a. INSERT into deletions for grava-w2
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions`)).
 			WithArgs("grava-w2", sqlmock.AnyArg(), "compact", "grava-compact", "unknown", "unknown", "").
 			WillReturnResult(sqlmock.NewResult(1, 1))
-		// 3b. DELETE grava-w2
-		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues WHERE id = ?`)).
-			WithArgs("grava-w2").
-			WillReturnResult(sqlmock.NewResult(0, 1))
+		// 3b. Soft delete grava-w2
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = 'tombstone', updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+			WithArgs("unknown", "", "grava-w2").
+			WillReturnResult(sqlmock.NewResult(1, 1))
+
+		mock.ExpectCommit()
 
 		mock.ExpectClose()
 

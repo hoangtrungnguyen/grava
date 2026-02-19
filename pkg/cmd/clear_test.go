@@ -68,17 +68,19 @@ func TestClearCmd(t *testing.T) {
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions (id, reason, actor, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
 			WithArgs("grava-1", "clear", "grava-clear", "unknown", "unknown", "").
 			WillReturnResult(sqlmock.NewResult(1, 1))
-		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues WHERE id = ?`)).
-			WithArgs("grava-1").
-			WillReturnResult(sqlmock.NewResult(0, 1))
+			// 2. Soft delete grava-1
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = 'tombstone', updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+			WithArgs("unknown", "", "grava-1").
+			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		// 3. Tombstone and Delete grava-2
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions (id, reason, actor, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
 			WithArgs("grava-2", "clear", "grava-clear", "unknown", "unknown", "").
 			WillReturnResult(sqlmock.NewResult(1, 1))
-		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues WHERE id = ?`)).
-			WithArgs("grava-2").
-			WillReturnResult(sqlmock.NewResult(0, 1))
+			// 3. Soft delete grava-2
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = 'tombstone', updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+			WithArgs("unknown", "", "grava-2").
+			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		mock.ExpectCommit()
 
@@ -111,7 +113,7 @@ func TestClearCmd(t *testing.T) {
 		mock.ExpectBegin()
 
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions`)).WithArgs("grava-1", "clear", "grava-clear", "unknown", "unknown", "").WillReturnResult(sqlmock.NewResult(1, 1))
-		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).WithArgs("grava-1").WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = 'tombstone'`)).WithArgs("unknown", "", "grava-1").WillReturnResult(sqlmock.NewResult(1, 1))
 
 		mock.ExpectCommit()
 
@@ -166,7 +168,7 @@ func TestClearCmd(t *testing.T) {
 		mock.ExpectBegin()
 
 		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO deletions`)).WithArgs("grava-w1", "clear", "grava-clear", "unknown", "unknown", "").WillReturnResult(sqlmock.NewResult(1, 1))
-		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = 'tombstone'`)).WillReturnResult(sqlmock.NewResult(1, 1))
 
 		mock.ExpectCommit()
 

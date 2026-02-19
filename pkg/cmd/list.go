@@ -90,6 +90,9 @@ You can filter by status or type, and sort by various criteria.`,
 			whereParts = append(whereParts, "ephemeral = 0")
 		}
 
+		// Always exclude tombstones
+		whereParts = append(whereParts, "status != 'tombstone'")
+
 		if listStatus != "" {
 			whereParts = append(whereParts, "status = ?")
 			params = append(params, listStatus)

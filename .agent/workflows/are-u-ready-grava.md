@@ -30,7 +30,7 @@ Protocol: Are You Ready? (Grava Edition)
 **Source of Truth:**
 * **Issue Details:** Query via `grava show <issue_id>` to get full description, status, priority, labels, assignee.
 * **Epic Context:** Read the relevant epic file from `docs/epics/` to understand the broader goal and acceptance criteria.
-* **Past Context:** Read historical data from `tracker/` (Project Root) for session logs and architectural decisions.
+* **Past Context:** Read historical data from `grava list` (Project Root) for session logs and architectural decisions.
 
 **Actions:**
 1.  **Read Issue Details:** Run `./grava show <issue_id>` and analyze the requirements from the description.
@@ -41,9 +41,10 @@ Protocol: Are You Ready? (Grava Edition)
     * Check the issue description for mentions of blocking issues or related IDs.
     * Search related issues: `./grava search "<related_keyword>"`
     * *Critical Check:* For any blocking issue found, run `./grava show <blocking_id>` and verify its status is `closed`. If the blocker is still `open` or `in_progress`, flag it.
+   * Read latest comment from related issues to get the big picture
 4.  **Synthesize Context:** Summarize the "story so far" based on:
     * The epic document from `docs/epics/`
-    * The `tracker/` session logs for related work
+    * The `grava list` session logs for related work
     * The issue descriptions and dependency chain from grava
 
 ### Step 3: Environment & Connectivity Check

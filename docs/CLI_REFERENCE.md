@@ -182,7 +182,7 @@ grava-124   Add feature            task     2         open    2026-02-18
 
 ### `compact`
 
-Purges old ephemeral **Wisp** issues from the database and records each deletion in the `deletions` table to prevent resurrection during future imports.
+**Soft-deletes** old ephemeral **Wisp** issues from the database. Issues are marked with `tombstone` status and recorded in the `deletions` table to prevent resurrection during future imports.
 
 **Usage:**
 ```bash
@@ -260,7 +260,7 @@ grava drop --force
 
 ### `clear`
 
-Deletes issues (and related data) created within a specified date range. Records deletions in the `deletions` table for tombstone tracking.
+**Soft-delete** issues (and related data) created within a specified date range. Issues are marked with `tombstone` status and recorded in the `deletions` table.
 
 **Usage:**
 ```bash
@@ -496,6 +496,65 @@ grava-2     High priority refactor   task   1         open    2026-02-18
 ```
 
 > **Note:** When no matching issues exist, the command prints `🎉 No high-priority open issues. You're all caught up!` and exits `0`.
+
+---
+
+---
+
+### `export`
+
+Exports issues and dependencies to a file (default: stdout) in **JSONL** format (line-delimited JSON). Useful for backups, migrations, or analysis.
+
+**Usage:**
+```bash
+grava export [flags]
+```
+
+**Flags:**
+- `-f, --file string`: Output file path. Defaults to stdout.
+- `--format string`: Output format. Defaults to `jsonl`. (Currently only `jsonl` is supported).
+- `--include-wisps`: Include ephemeral Wisp issues in the export. Default: `false`.
+- `--skip-tombstones`: Exclude soft-deleted (tombstone) issues. Default: `false` (includes them for full backup).
+
+**Examples:**
+```bash
+# Export all issues to a file
+grava export --file backup.jsonl
+
+# Export only active issues (no tombstones) including wisps
+grava export --include-wisps --skip-tombstones > active_backup.jsonl
+
+# Pipe to another tool
+grava export | jq .
+```
+
+---
+
+### `import`
+
+Imports issues and dependencies from a JSONL file. Supports upsert behavior to update existing records.
+
+**Usage:**
+```bash
+grava import --file <path> [flags]
+```
+
+**Flags:**
+- `-f, --file string`: Input file path (**required**).
+- `--overwrite`: Update records if the ID already exists (Upsert).
+- `--skip-existing`: Skip records if the ID already exists (Ignore duplicates).
+
+**Examples:**
+```bash
+# Restore from backup (fails on duplicate IDs)
+grava import --file backup.jsonl
+
+# Update existing issues from an export
+grava import --file changes.jsonl --overwrite
+
+# Import new issues only, ignoring existing ones
+grava import --file legacy.jsonl --skip-existing
+```
 
 ---
 

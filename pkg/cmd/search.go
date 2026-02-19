@@ -38,6 +38,7 @@ Examples:
 		sql := `SELECT id, title, issue_type, priority, status, created_at
 		        FROM issues
 		        WHERE ephemeral = ?
+		          AND status != 'tombstone'
 		          AND (title LIKE ? OR description LIKE ? OR COALESCE(metadata,'') LIKE ?)
 		        ORDER BY priority ASC, created_at DESC`
 
