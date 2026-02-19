@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -39,6 +40,18 @@ Example:
 		}
 		if rowsAffected == 0 {
 			return fmt.Errorf("issue %s not found", id)
+		}
+
+		if outputJSON {
+			resp := map[string]string{
+				"id":       id,
+				"status":   "updated",
+				"field":    "assignee",
+				"assignee": user,
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
 		}
 
 		if user == "" {

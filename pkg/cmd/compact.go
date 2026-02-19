@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -46,6 +47,16 @@ Example:
 		}
 
 		if len(ids) == 0 {
+			if outputJSON {
+				resp := map[string]any{
+					"status":  "unchanged",
+					"count":   0,
+					"message": fmt.Sprintf("No Wisps older than %d day(s) found", compactDays),
+				}
+				b, _ := json.MarshalIndent(resp, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				return nil
+			}
 			cmd.Printf("🧹 No Wisps older than %d day(s) found. Nothing to compact.\n", compactDays)
 			return nil
 		}
@@ -69,6 +80,17 @@ Example:
 			}
 
 			purged++
+		}
+
+		if outputJSON {
+			resp := map[string]any{
+				"status": "compacted",
+				"count":  purged,
+				"ids":    ids,
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
 		}
 
 		cmd.Printf("🧹 Compacted %d Wisp(s) older than %d day(s). Tombstones recorded in deletions table.\n", purged, compactDays)

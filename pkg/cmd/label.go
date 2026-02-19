@@ -52,6 +52,17 @@ Example:
 
 		for _, l := range labels {
 			if l == label {
+				if outputJSON {
+					resp := map[string]string{
+						"id":     id,
+						"status": "unchanged",
+						"field":  "labels",
+						"note":   fmt.Sprintf("Label %q already present", label),
+					}
+					b, _ := json.MarshalIndent(resp, "", "  ")
+					fmt.Fprintln(cmd.OutOrStdout(), string(b))
+					return nil
+				}
 				cmd.Printf("🏷️  Label %q already present on %s\n", label, id)
 				return nil
 			}
@@ -72,6 +83,17 @@ Example:
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save label on %s: %w", id, err)
+		}
+
+		if outputJSON {
+			resp := map[string]string{
+				"id":     id,
+				"status": "updated",
+				"field":  "labels",
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
 		}
 
 		cmd.Printf("🏷️  Label %q added to %s\n", label, id)

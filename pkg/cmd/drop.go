@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -38,7 +39,7 @@ Example:
   grava drop           # prompts for confirmation
   grava drop --force   # skip confirmation (for CI/scripts)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if !dropForce {
+		if !dropForce && !outputJSON {
 			cmd.Print("⚠️  This will DELETE ALL DATA from the Grava database.\nType \"yes\" to confirm: ")
 
 			scanner := bufio.NewScanner(stdinReader)
@@ -77,6 +78,16 @@ Example:
 
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+
+		if outputJSON {
+			resp := map[string]string{
+				"status": "dropped",
+				"note":   "All data deleted from every table",
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
 		}
 
 		cmd.Println("💣 All Grava data has been dropped.")

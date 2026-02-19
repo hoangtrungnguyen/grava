@@ -76,6 +76,19 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 			return fmt.Errorf("failed to insert subtask: %w", err)
 		}
 
+		if outputJSON {
+			resp := map[string]string{
+				"id":     id,
+				"status": "created",
+			}
+			if subtaskEphemeral {
+				resp["ephemeral"] = "true"
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
+		}
+
 		if subtaskEphemeral {
 			cmd.Printf("👻 Created ephemeral subtask (Wisp): %s\n", id)
 		} else {

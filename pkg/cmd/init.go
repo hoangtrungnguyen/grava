@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,7 +23,9 @@ It also checks if the dolt CLI is installed.`,
 		if _, err := exec.LookPath("dolt"); err != nil {
 			return fmt.Errorf("dolt not found: %w\nPlease install Dolt at https://docs.dolthub.com/introduction/installation", err)
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt is installed.")
+		if !outputJSON {
+			fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt is installed.")
+		}
 
 		// 2. Create .grava directory
 		gravaDir := ".grava"
@@ -43,7 +46,19 @@ It also checks if the dolt CLI is installed.`,
 			// If file exists, it might error, but safe to ignore or just print
 			fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Config file already exists or could not be written: %v\n", err)
 		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "✅ Created default configuration.")
+			if !outputJSON {
+				fmt.Fprintln(cmd.OutOrStdout(), "✅ Created default configuration.")
+			}
+		}
+
+		if outputJSON {
+			resp := map[string]string{
+				"status": "initialized",
+				"note":   "Grava initialized successfully",
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "🎉 Grava initialized successfully!")

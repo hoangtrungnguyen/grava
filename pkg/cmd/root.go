@@ -16,6 +16,7 @@ var (
 	actor      string
 	agentModel string
 	Store      dolt.Store
+	outputJSON bool
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -90,6 +91,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&dbURL, "db-url", "", "Dolt database connection string")
 	rootCmd.PersistentFlags().StringVar(&actor, "actor", "unknown", "User or agent identity (env: GRAVA_ACTOR)")
 	rootCmd.PersistentFlags().StringVar(&agentModel, "agent-model", "", "AI model identifier (env: GRAVA_AGENT_MODEL)")
+	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false, "Output in JSON format")
 
 	// Bind flags to viper for ENV var support
 	viper.BindPFlag("actor", rootCmd.PersistentFlags().Lookup("actor"))

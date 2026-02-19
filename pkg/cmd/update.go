@@ -85,6 +85,16 @@ Only the flags provided will be updated.`,
 			return fmt.Errorf("issue %s not found or no changes made", id)
 		}
 
+		if outputJSON {
+			resp := map[string]string{
+				"id":     id,
+				"status": "updated",
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
+		}
+
 		fmt.Fprintf(cmd.OutOrStdout(), "✅ Updated issue %s\n", id)
 		return nil
 	},

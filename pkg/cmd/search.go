@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"text/tabwriter"
@@ -51,8 +52,11 @@ Examples:
 		}
 		defer rows.Close()
 
+		var results []IssueListItem
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
+		if !outputJSON {
+			fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
+		}
 
 		found := 0
 		for rows.Next() {
@@ -62,22 +66,39 @@ Examples:
 			if err := rows.Scan(&id, &title, &iType, &priority, &status, &createdAt); err != nil {
 				return fmt.Errorf("failed to scan row: %w", err)
 			}
-			if len(title) > 50 {
-				title = title[:47] + "..."
+
+			if outputJSON {
+				results = append(results, IssueListItem{
+					ID:        id,
+					Title:     title,
+					Type:      iType,
+					Priority:  priority,
+					Status:    status,
+					CreatedAt: createdAt,
+				})
+			} else {
+				if len(title) > 50 {
+					title = title[:47] + "..."
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
+					id, title, iType, priority, status, createdAt.Format("2006-01-02"))
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
-				id, title, iType, priority, status, createdAt.Format("2006-01-02"))
 			found++
 		}
 		if err := rows.Err(); err != nil {
 			return fmt.Errorf("row iteration error: %w", err)
 		}
-		w.Flush()
 
-		if found == 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "No issues found matching %q\n", query)
+		if outputJSON {
+			b, _ := json.MarshalIndent(results, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "\n🔍 %d result(s) for %q\n", found, query)
+			w.Flush()
+			if found == 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "No issues found matching %q\n", query)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "\n🔍 %d result(s) for %q\n", found, query)
+			}
 		}
 		return nil
 	},

@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -67,11 +68,21 @@ Example:
 		}
 
 		if len(ids) == 0 {
+			if outputJSON {
+				resp := map[string]any{
+					"status":  "unchanged",
+					"count":   0,
+					"message": fmt.Sprintf("No issues found between %s and %s", clearFrom, clearTo),
+				}
+				b, _ := json.MarshalIndent(resp, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				return nil
+			}
 			cmd.Printf("No issues found between %s and %s.\n", clearFrom, clearTo)
 			return nil
 		}
 
-		if !clearForce {
+		if !clearForce && !outputJSON {
 			cmd.Printf("⚠️  Found %d issue(s) created between %s and %s.\nType \"yes\" to delete them: ", len(ids), clearFrom, clearTo)
 
 			scanner := bufio.NewScanner(clearStdinReader)
@@ -111,6 +122,19 @@ Example:
 
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+
+		if outputJSON {
+			resp := map[string]any{
+				"status": "cleared",
+				"count":  len(ids),
+				"ids":    ids,
+				"from":   clearFrom,
+				"to":     clearTo,
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
 		}
 
 		cmd.Printf("🗑️  Cleared %d issue(s) from %s to %s. Tombstones recorded.\n", len(ids), clearFrom, clearTo)

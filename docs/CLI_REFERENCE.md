@@ -15,6 +15,9 @@ The following flags are available for all commands:
 
 - `--config string`: Path to the config file (default is `$HOME/.grava.yaml`).
 - `--db-url string`: Dolt database connection string (e.g., `user:pass@tcp(host:port)/dbname`).
+- `--actor string`: User or agent identity (env: `GRAVA_ACTOR`).
+- `--agent-model string`: AI model identifier (env: `GRAVA_AGENT_MODEL`).
+- `--json`: Output result in machine-readable JSON format.
 
 ## Commands
 

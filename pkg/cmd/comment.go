@@ -69,6 +69,17 @@ Example:
 			return fmt.Errorf("failed to save comment on %s: %w", id, err)
 		}
 
+		if outputJSON {
+			resp := map[string]string{
+				"id":     id,
+				"status": "updated",
+				"field":  "comments",
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
+		}
+
 		cmd.Printf("💬 Comment added to %s\n", id)
 		return nil
 	},

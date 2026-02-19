@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -35,6 +36,18 @@ Example:
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create dependency %s -> %s: %w", fromID, toID, err)
+		}
+
+		if outputJSON {
+			resp := map[string]string{
+				"from_id": fromID,
+				"to_id":   toID,
+				"type":    depType,
+				"status":  "created",
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
 		}
 
 		cmd.Printf("🔗 Dependency created: %s -[%s]-> %s\n", fromID, depType, toID)

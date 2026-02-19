@@ -70,6 +70,19 @@ You can specify title, description, type, and priority.`,
 			return fmt.Errorf("failed to insert issue: %w", err)
 		}
 
+		if outputJSON {
+			resp := map[string]string{
+				"id":     id,
+				"status": "created",
+			}
+			if ephemeral {
+				resp["ephemeral"] = "true"
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
+		}
+
 		if ephemeral {
 			cmd.Printf("👻 Created ephemeral issue (Wisp): %s\n", id)
 		} else {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,13 +10,13 @@ import (
 
 // doctorCheck holds the result of a single diagnostic check.
 type doctorCheck struct {
-	name   string
-	status string // "PASS", "WARN", "FAIL"
-	detail string
+	Name   string `json:"name"`
+	Status string `json:"status"` // "PASS", "WARN", "FAIL"
+	Detail string `json:"detail"`
 }
 
 func (c doctorCheck) icon() string {
-	switch c.status {
+	switch c.Status {
 	case "PASS":
 		return "✅"
 	case "WARN":
@@ -132,11 +133,27 @@ Example:
 			checks = append(checks, doctorCheck{"Wisp count", status, detail})
 		}
 
-		// ── Print report ─────────────────────────────────────────────────────
+		// ── Handle Output ───────────────────────────────────────────────────
+		if outputJSON {
+			resp := map[string]any{
+				"status": "healthy",
+				"checks": checks,
+			}
+			if hasFailure {
+				resp["status"] = "unhealthy"
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			if hasFailure {
+				return fmt.Errorf("doctor found critical issues")
+			}
+			return nil
+		}
+
 		fmt.Fprintln(cmd.OutOrStdout(), "🩺 Grava Doctor Report")
 		fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
 		for _, c := range checks {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %-30s %s\n", c.icon(), c.name, c.detail)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  %-30s %s\n", c.icon(), c.Name, c.Detail)
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
 

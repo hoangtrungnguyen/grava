@@ -8,6 +8,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type IssueDetail struct {
+	ID            string    `json:"id"`
+	Title         string    `json:"title"`
+	Description   string    `json:"description"`
+	Type          string    `json:"type"`
+	Priority      int       `json:"priority"`
+	PriorityLevel string    `json:"priority_level"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	CreatedBy     string    `json:"created_by"`
+	UpdatedBy     string    `json:"updated_by"`
+	AgentModel    string    `json:"agent_model,omitempty"`
+	AffectedFiles []string  `json:"affected_files,omitempty"`
+}
+
 // showCmd represents the show command
 var showCmd = &cobra.Command{
 	Use:   "show <id>",
@@ -32,10 +48,6 @@ var showCmd = &cobra.Command{
 			return fmt.Errorf("failed to fetch issue %s: %w", id, err)
 		}
 
-		cmd.Printf("ID:          %s\n", id)
-		cmd.Printf("Title:       %s\n", title)
-		cmd.Printf("Type:        %s\n", iType)
-
 		// Map priority back via array or switch
 		pStr := "backlog"
 		switch priority {
@@ -48,6 +60,41 @@ var showCmd = &cobra.Command{
 		case 3:
 			pStr = "low"
 		}
+
+		var files []string
+		if affectedFilesJSON != nil && *affectedFilesJSON != "" && *affectedFilesJSON != "[]" {
+			_ = json.Unmarshal([]byte(*affectedFilesJSON), &files)
+		}
+
+		if outputJSON {
+			detail := IssueDetail{
+				ID:            id,
+				Title:         title,
+				Description:   desc,
+				Type:          iType,
+				Priority:      priority,
+				PriorityLevel: pStr,
+				Status:        status,
+				CreatedAt:     createdAt,
+				UpdatedAt:     updatedAt,
+				CreatedBy:     createdBy,
+				UpdatedBy:     updatedBy,
+				AffectedFiles: files,
+			}
+			if agentModelStr != nil {
+				detail.AgentModel = *agentModelStr
+			}
+			b, err := json.MarshalIndent(detail, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return nil
+		}
+
+		cmd.Printf("ID:          %s\n", id)
+		cmd.Printf("Title:       %s\n", title)
+		cmd.Printf("Type:        %s\n", iType)
 		cmd.Printf("Priority:    %s (%d)\n", pStr, priority)
 		cmd.Printf("Status:      %s\n", status)
 		cmd.Printf("Created:     %s by %s\n", createdAt.Format(time.RFC3339), createdBy)
@@ -55,11 +102,8 @@ var showCmd = &cobra.Command{
 		if agentModelStr != nil && *agentModelStr != "" {
 			cmd.Printf("Model:       %s\n", *agentModelStr)
 		}
-		if affectedFilesJSON != nil && *affectedFilesJSON != "" && *affectedFilesJSON != "[]" {
-			var files []string
-			if err := json.Unmarshal([]byte(*affectedFilesJSON), &files); err == nil {
-				cmd.Printf("Files:       %v\n", files)
-			}
+		if len(files) > 0 {
+			cmd.Printf("Files:       %v\n", files)
 		}
 		cmd.Printf("\nDescription:\n%s\n", desc)
 

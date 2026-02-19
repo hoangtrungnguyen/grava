@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"text/tabwriter"
 	"time"
@@ -13,6 +14,15 @@ var (
 	listType   string
 	listWisp   bool
 )
+
+type IssueListItem struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Type      string    `json:"type"`
+	Priority  int       `json:"priority"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 // listCmd represents the list command
 var listCmd = &cobra.Command{
@@ -62,8 +72,12 @@ You can filter by status or type.`,
 		}
 		defer rows.Close()
 
+		var results []IssueListItem
+
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
+		if !outputJSON {
+			fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
+		}
 
 		for rows.Next() {
 			var id, title, iType, status string
@@ -72,15 +86,36 @@ You can filter by status or type.`,
 			if err := rows.Scan(&id, &title, &iType, &priority, &status, &createdAt); err != nil {
 				return fmt.Errorf("failed to scan row: %w", err)
 			}
-			// Truncate title if too long?
-			if len(title) > 50 {
-				title = title[:47] + "..."
-			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
-				id, title, iType, priority, status, createdAt.Format("2006-01-02"))
+			if outputJSON {
+				results = append(results, IssueListItem{
+					ID:        id,
+					Title:     title,
+					Type:      iType,
+					Priority:  priority,
+					Status:    status,
+					CreatedAt: createdAt,
+				})
+			} else {
+				// Truncate title if too long?
+				if len(title) > 50 {
+					title = title[:47] + "..."
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
+					id, title, iType, priority, status, createdAt.Format("2006-01-02"))
+			}
 		}
-		w.Flush()
+
+		if outputJSON {
+			b, err := json.MarshalIndent(results, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+		} else {
+			w.Flush()
+		}
 
 		return nil
 	},
