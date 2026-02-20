@@ -25,6 +25,8 @@ The following flags are available for all commands:
 
 Initializes the Grava environment. This command creates the default configuration and verifies the Dolt installation. It is idempotent and safe to run multiple times.
 
+Note: Database tables are managed by an automatic migration system and are created/updated when you run any command other than `init` or `help`.
+
 **Usage:**
 ```bash
 grava init
@@ -705,6 +707,16 @@ grava list --wisp
 
 ---
 
+## Database Migrations
+
+Grava uses an automated migration system (powered by [goose](https://github.com/pressly/goose)) to manage its database schema.
+
+- **Automatic Updates**: Migrations are bundled with the Grava binary and run automatically whenever you execute a command (except `init` and `help`).
+- **Internal State**: The migration version is tracked in a internal `goose_db_version` table.
+- **Development**: New schema changes are added as `.sql` files in `pkg/migrate/migrations/` and require a rebuild of the CLI.
+
 ## Environment Variables
 
 - `DB_URL`: Sets the database connection string if `--db-url` flag is not provided.
+- `GRAVA_ACTOR`: Sets the default actor name.
+- `GRAVA_AGENT_MODEL`: Sets the default agent model name.
