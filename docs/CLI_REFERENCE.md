@@ -23,14 +23,31 @@ The following flags are available for all commands:
 
 ### `init`
 
-Initializes the Grava environment. This command creates the default configuration and verifies the Dolt installation. It is idempotent and safe to run multiple times.
-
-Note: Database tables are managed by an automatic migration system and are created/updated when you run any command other than `init` or `help`.
+Initializes the Grava environment. This command performs the following actions:
+1. Verifies the Dolt installation.
+2. Creates the `.grava` directory.
+3. Initializes a local Dolt repository in `.grava/dolt` (if not already present).
+4. Finds an available port (starting from 3306) and starts a background Dolt server.
+5. Generates a local `.grava.yaml` configuration file with the correct connection string.
 
 **Usage:**
 ```bash
 grava init
 ```
+
+---
+
+### `config`
+
+Displays the current configuration settings being used by Grava, including the database URL, actor identity, and the path to the active configuration file.
+
+**Usage:**
+```bash
+grava config
+```
+
+**Flags:**
+- `--json`: Output configuration in JSON format.
 
 ---
 
