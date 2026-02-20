@@ -40,3 +40,4 @@ grava
 # Logs
 *.log
 bin/
+.worktrees/
