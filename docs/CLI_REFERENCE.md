@@ -27,7 +27,7 @@ Initializes the Grava environment. This command performs the following actions:
 1. Verifies the Dolt installation.
 2. Creates the `.grava` directory.
 3. Initializes a local Dolt repository in `.grava/dolt` (if not already present).
-4. Finds an available port (starting from 3306) and starts a background Dolt server.
+4. Allocates a mutually exclusive port (persisted to `~/.grava/ports.json`) to prevent conflicts with other projects, and starts a background Dolt server.
 5. Generates a local `.grava.yaml` configuration file with the correct connection string.
 
 **Usage:**

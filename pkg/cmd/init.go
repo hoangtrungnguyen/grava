@@ -52,9 +52,14 @@ It also checks if the dolt CLI is installed.`,
 		}
 
 		// 4. Find Available Port
-		port := utils.FindAvailablePort(3306)
-		if port == -1 {
-			return fmt.Errorf("could not find an available port for Dolt server")
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %w", err)
+		}
+
+		port, err := utils.AllocatePort(cwd, 3306)
+		if err != nil {
+			return err
 		}
 		if !outputJSON && port != 3306 {
 			fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Port 3306 is busy, using port %d\n", port)
