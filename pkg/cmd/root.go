@@ -18,7 +18,7 @@ var (
 	agentModel string
 	Store      dolt.Store
 	outputJSON bool
-	Version    = "dev"
+	Version    = "v0.0.1"
 )
 
 // rootCmd represents the base command when called without any subcommands
