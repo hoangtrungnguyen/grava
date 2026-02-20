@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/hoangtrungnguyen/grava/pkg/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -33,35 +34,84 @@ It also checks if the dolt CLI is installed.`,
 			return fmt.Errorf("failed to create .grava directory: %w", err)
 		}
 
-		// 3. Create default config
-		configFile := filepath.Join(gravaDir, "config.yaml") // Keeping it simple for now, though viper searches for .grava.yaml in home/cwd by default from root.go
-		// Actually root.go looks for .grava.yaml in . or home.
-		// Let's make `grava init` create a local config in .grava/config.yaml or just .grava.yaml in root?
-		// The prompt says "Initialize .grava directory and config".
-		// Let's separate "repo config" from "user config".
-		// For now, let's just create a basic config file if it doesn't exist.
+		// 3. Initialize Dolt Repo in .grava/dolt
+		doltRepoDir := filepath.Join(gravaDir, "dolt")
+		if err := os.MkdirAll(doltRepoDir, 0755); err != nil {
+			return fmt.Errorf("failed to create dolt directory: %w", err)
+		}
 
-		viper.Set("db_url", "root@tcp(127.0.0.1:3306)/dolt?parseTime=true")
-		if err := viper.WriteConfigAs(configFile); err != nil {
-			// If file exists, it might error, but safe to ignore or just print
-			fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Config file already exists or could not be written: %v\n", err)
-		} else {
+		if _, err := os.Stat(filepath.Join(doltRepoDir, ".dolt")); os.IsNotExist(err) {
 			if !outputJSON {
-				fmt.Fprintln(cmd.OutOrStdout(), "✅ Created default configuration.")
+				fmt.Fprintln(cmd.OutOrStdout(), "📦 Initializing Dolt database...")
+			}
+			initCmd := exec.Command("dolt", "init")
+			initCmd.Dir = doltRepoDir
+			if err := initCmd.Run(); err != nil {
+				return fmt.Errorf("failed to initialize dolt: %w", err)
 			}
 		}
 
+		// 4. Find Available Port
+		port := utils.FindAvailablePort(3306)
+		if port == -1 {
+			return fmt.Errorf("could not find an available port for Dolt server")
+		}
+		if !outputJSON && port != 3306 {
+			fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Port 3306 is busy, using port %d\n", port)
+		}
+
+		// 5. Start Dolt Server in background
+		if !outputJSON {
+			fmt.Fprintf(cmd.OutOrStdout(), "🚀 Starting Dolt server on port %d...\n", port)
+		}
+
+		serverCmd := exec.Command("dolt", "sql-server", "--port", fmt.Sprintf("%d", port), "--host", "0.0.0.0")
+		serverCmd.Dir = doltRepoDir
+
+		// Redirect output to log file
+		logFile, err := os.OpenFile(filepath.Join(gravaDir, "dolt.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err == nil {
+			serverCmd.Stdout = logFile
+			serverCmd.Stderr = logFile
+		}
+
+		if err := serverCmd.Start(); err != nil {
+			return fmt.Errorf("failed to start dolt server: %w", err)
+		}
+
+		// 6. Create default config
+		configFile := ".grava.yaml" // Default used by root.go in CWD
+		dbURL := fmt.Sprintf("root@tcp(127.0.0.1:%d)/dolt?parseTime=true", port)
+		viper.Set("db_url", dbURL)
+
+		if err := viper.WriteConfigAs(configFile); err != nil {
+			// If it fails because file exists, we might want to update it
+			if os.IsExist(err) || err.Error() == "file already exists" {
+				// For now just overwrite if we are initializing?
+				// The prompt says "Initialize .grava directory and config"
+				_ = os.Remove(configFile)
+				_ = viper.WriteConfigAs(configFile)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Note: %v\n", err)
+			}
+		}
+
+		if !outputJSON {
+			fmt.Fprintln(cmd.OutOrStdout(), "✅ Created configuration in .grava.yaml")
+		}
+
 		if outputJSON {
-			resp := map[string]string{
+			resp := map[string]interface{}{
 				"status": "initialized",
-				"note":   "Grava initialized successfully",
+				"port":   port,
+				"db_url": dbURL,
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			return nil
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "🎉 Grava initialized successfully!")
+		fmt.Fprintln(cmd.OutOrStdout(), "🎉 Grava initialized successfully and server is running!")
 		return nil
 	},
 }
