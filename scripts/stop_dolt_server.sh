@@ -14,7 +14,7 @@ done
 
 # Find PID of process listening on port (or dolt sql-server specifically)
 # Using lsof to find the PID listening on the port
-PID=$(lsof -t -i:$PORT)
+PID=$(lsof -t -i:$PORT | head -n 1)
 
 if [ -z "$PID" ]; then
     echo "No process found listening on port $PORT."

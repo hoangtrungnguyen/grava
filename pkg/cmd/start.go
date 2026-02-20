@@ -25,14 +25,12 @@ var startCmd = &cobra.Command{
 		}
 
 		port := "3306"
-		if strings.Contains(dbURL, ":") && strings.Contains(dbURL, ")/") {
-			parts := strings.Split(dbURL, ":")
-			if len(parts) > 2 {
-				portPart := parts[2]
-				portParts := strings.Split(portPart, ")/")
-				if len(portParts) > 0 {
-					port = portParts[0]
-				}
+		lastColon := strings.LastIndex(dbURL, ":")
+		if lastColon != -1 {
+			afterColon := dbURL[lastColon+1:]
+			endParen := strings.Index(afterColon, ")")
+			if endParen != -1 {
+				port = afterColon[:endParen]
 			}
 		}
 
