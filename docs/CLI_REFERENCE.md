@@ -36,7 +36,29 @@ grava init
 ```
 
 ---
-
+ 
+### `start`
+ 
+Starts the Dolt SQL server using the configured port in `.grava.yaml`.
+ 
+**Usage:**
+```bash
+grava start
+```
+ 
+---
+ 
+### `stop`
+ 
+Stops the Dolt SQL server running on the configured port. This uses a non-interactive mode (`-y`) to force-stop the process.
+ 
+**Usage:**
+```bash
+grava stop
+```
+ 
+---
+ 
 ### `config`
 
 Displays the current configuration settings being used by Grava, including the database URL, actor identity, and the path to the active configuration file.
