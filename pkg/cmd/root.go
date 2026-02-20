@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
+	"github.com/hoangtrungnguyen/grava/pkg/migrate"
 )
 
 var (
@@ -61,6 +62,12 @@ leveraging the power of a version-controlled database.`,
 		if err != nil {
 			return fmt.Errorf("failed to connect to database: %w", err)
 		}
+
+		// Run pending migrations
+		if err := migrate.Run(Store.DB()); err != nil {
+			return fmt.Errorf("failed to run migrations: %w", err)
+		}
+
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {

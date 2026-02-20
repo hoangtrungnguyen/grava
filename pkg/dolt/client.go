@@ -19,6 +19,7 @@ type Store interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 	SetMaxOpenConns(n int)
 	SetMaxIdleConns(n int)
+	DB() *sql.DB
 	Close() error
 }
 
@@ -63,6 +64,10 @@ func NewClientFromDB(db *sql.DB) *Client {
 
 func (c *Client) Close() error {
 	return c.db.Close()
+}
+
+func (c *Client) DB() *sql.DB {
+	return c.db
 }
 
 func (c *Client) Exec(query string, args ...any) (sql.Result, error) {

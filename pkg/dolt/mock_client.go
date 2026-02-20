@@ -44,3 +44,4 @@ func (m *MockStore) Close() error {
 
 func (m *MockStore) SetMaxOpenConns(n int) {}
 func (m *MockStore) SetMaxIdleConns(n int) {}
+func (m *MockStore) DB() *sql.DB           { return nil }
