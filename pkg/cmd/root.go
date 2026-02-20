@@ -29,7 +29,7 @@ It allows you to manage issues, tasks, and bugs directly from your terminal,
 leveraging the power of a version-controlled database.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Initialize DB connection if not help command or init command
-		if cmd.Name() == "help" || cmd.Name() == "init" {
+		if cmd.Name() == "help" || cmd.Name() == "init" || cmd.Name() == "start" || cmd.Name() == "stop" {
 			return nil
 		}
 
