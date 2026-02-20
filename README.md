@@ -65,6 +65,7 @@ go build -o bin/grava ./cmd/grava/
 | Command | Description |
 |---|---|
 | `grava init` | Initialize Grava environment |
+| `grava version` | Print the version number |
 | `grava create` | Create a new issue (`--ephemeral` for Wisps) |
 | `grava subtask <id>` | Create a hierarchical subtask |
 | `grava show <id>` | Show issue details |

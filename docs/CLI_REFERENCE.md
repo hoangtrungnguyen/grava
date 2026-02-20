@@ -59,6 +59,23 @@ grava stop
  
 ---
  
+### `version`
+ 
+Prints the current version of the Grava CLI.
+ 
+**Usage:**
+```bash
+grava version
+```
+ 
+**Example:**
+```bash
+grava version
+# Output: Grava CLI version v1.2.3
+```
+ 
+---
+ 
 ### `config`
 
 Displays the current configuration settings being used by Grava, including the database URL, actor identity, and the path to the active configuration file.

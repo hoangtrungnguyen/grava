@@ -18,6 +18,7 @@ var (
 	agentModel string
 	Store      dolt.Store
 	outputJSON bool
+	Version    = "dev"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -84,6 +85,13 @@ func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
+	}
+}
+
+// SetVersion sets the version string for the CLI
+func SetVersion(v string) {
+	if v != "" {
+		Version = v
 	}
 }
 
