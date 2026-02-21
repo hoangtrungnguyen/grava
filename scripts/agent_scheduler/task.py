@@ -83,3 +83,18 @@ class Task:
 
     def __hash__(self):
         return hash(self.name)
+
+    def clone(self) -> 'Task':
+        """Create a copy of this task."""
+        task = Task(
+            name=self.name,
+            priority=self.priority,
+            duration=self.duration,
+            estimated_tokens=self.estimated_tokens,
+            await_type=self.await_type,
+            await_id=self.await_id,
+        )
+        task.used_tokens = self.used_tokens
+        task.status = self.status
+        task.created_at = self.created_at
+        return task
