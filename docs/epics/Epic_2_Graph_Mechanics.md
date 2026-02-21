@@ -1,4 +1,4 @@
-# Epic 2: Graph Mechanics and Blocked Issue Tracking
+,# Epic 2: Graph Mechanics and Blocked Issue Tracking
 
 **Goal:** Build the dependency graph engine and "Ready Engine" that computes actionable work.
 
