@@ -47,6 +47,21 @@ func (re *ReadyEngine) ComputeReady(limit int) ([]*ReadyTask, error) {
 	re.dag.mu.RLock()
 	defer re.dag.mu.RUnlock()
 
+	// Check cache
+	if re.dag.cache != nil {
+		re.dag.cache.mu.RLock()
+		if re.dag.cache.readyListValid && time.Now().Before(re.dag.cache.readyListExpiry) {
+			tasks := re.dag.cache.readyList
+			re.dag.cache.mu.RUnlock()
+			// Apply limit to cached result
+			if limit > 0 && len(tasks) > limit {
+				return tasks[:limit], nil
+			}
+			return tasks, nil
+		}
+		re.dag.cache.mu.RUnlock()
+	}
+
 	now := time.Now()
 	readyTasks := []*ReadyTask{}
 
@@ -75,16 +90,8 @@ func (re *ReadyEngine) ComputeReady(limit int) ([]*ReadyTask, error) {
 		}
 
 		// Calculate effective priority
-		effectivePriority := node.Priority
-		priorityBoosted := false
-
-		if re.config.EnablePriorityInheritance {
-			inheritedPriority := re.calculateInheritedPriority(nodeID)
-			if inheritedPriority < effectivePriority {
-				effectivePriority = inheritedPriority
-				priorityBoosted = true
-			}
-		}
+		effectivePriority := re.getEffectivePriority(nodeID)
+		priorityBoosted := effectivePriority != node.Priority
 
 		// Apply aging boost
 		age := now.Sub(node.CreatedAt)
@@ -107,20 +114,61 @@ func (re *ReadyEngine) ComputeReady(limit int) ([]*ReadyTask, error) {
 	// Step 2: Sort by priority using priority queue
 	pq := NewPriorityQueue(readyTasks)
 
-	// Step 3: Extract top N tasks
+	// Step 3: Extract tasks
 	result := []*ReadyTask{}
-	count := 0
-	for pq.Len() > 0 && (limit == 0 || count < limit) {
+	for pq.Len() > 0 {
 		task := pq.PopTask()
 		result = append(result, task)
-		count++
+	}
+
+	// Update cache
+	if re.dag.cache != nil {
+		re.dag.cache.mu.Lock()
+		re.dag.cache.readyList = result
+		re.dag.cache.readyListValid = true
+		re.dag.cache.readyListExpiry = time.Now().Add(re.dag.cache.readyListTTL)
+		re.dag.cache.mu.Unlock()
+	}
+
+	// Apply limit
+	if limit > 0 && len(result) > limit {
+		return result[:limit], nil
 	}
 
 	return result, nil
 }
 
-// getBlockingIndegree calculates indegree considering only blocking edges
+// getEffectivePriority returns the effective priority of a node, using cache if available
+func (re *ReadyEngine) getEffectivePriority(nodeID string) Priority {
+	if re.dag.cache != nil {
+		if p, ok := re.dag.cache.GetPriority(nodeID); ok {
+			return p
+		}
+	}
+
+	effectivePriority := re.dag.nodes[nodeID].Priority
+	if re.config.EnablePriorityInheritance {
+		inheritedPriority := re.calculateInheritedPriority(nodeID)
+		if inheritedPriority < effectivePriority {
+			effectivePriority = inheritedPriority
+		}
+	}
+
+	if re.dag.cache != nil {
+		re.dag.cache.SetPriority(nodeID, effectivePriority)
+	}
+
+	return effectivePriority
+}
+
+// getBlockingIndegree calculates indegree considering only blocking edges, using cache
 func (re *ReadyEngine) getBlockingIndegree(nodeID string) int {
+	if re.dag.cache != nil {
+		if deg, ok := re.dag.cache.GetBlockingIndegree(nodeID); ok {
+			return deg
+		}
+	}
+
 	count := 0
 	for _, edge := range re.dag.incoming[nodeID] {
 		// Only count blocking dependencies from open nodes
@@ -131,6 +179,11 @@ func (re *ReadyEngine) getBlockingIndegree(nodeID string) int {
 			}
 		}
 	}
+
+	if re.dag.cache != nil {
+		re.dag.cache.SetBlockingIndegree(nodeID, count)
+	}
+
 	return count
 }
 

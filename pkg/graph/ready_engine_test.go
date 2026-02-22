@@ -47,7 +47,7 @@ func TestReadyEngine_ComputeReady(t *testing.T) {
 	}
 
 	// Close A, now B and C should be ready
-	dag.nodes["A"].Status = StatusClosed
+	dag.SetNodeStatus("A", StatusClosed)
 	ready, _ = engine.ComputeReady(0)
 	if len(ready) != 2 {
 		t.Fatalf("expected 2 ready tasks (B, C), got %d", len(ready))

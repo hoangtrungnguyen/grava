@@ -69,6 +69,36 @@ func (g *AdjacencyDAG) GetNode(id string) (*Node, error) {
 	return node, nil
 }
 
+// SetNodeStatus updates the status of a node and invalidates relevant caches
+func (g *AdjacencyDAG) SetNodeStatus(id string, status IssueStatus) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	node, exists := g.nodes[id]
+	if !exists {
+		return ErrNodeNotFound
+	}
+
+	if node.Status == status {
+		return nil
+	}
+
+	node.Status = status
+	if g.cache != nil {
+		g.cache.MarkDirty(id)
+		// If status changed to closed, successors' blocking indegrees might change
+		if status != StatusOpen {
+			for toID, edge := range g.outgoing[id] {
+				if edge.Type.IsBlockingType() {
+					g.cache.InvalidateIndegree(toID)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // HasNode checks if a node exists
 func (g *AdjacencyDAG) HasNode(id string) bool {
 	g.mu.RLock()
@@ -116,8 +146,13 @@ func (g *AdjacencyDAG) addEdgeUnsafe(edge *Edge) error {
 	g.incoming[edge.ToID][edge.FromID] = edge
 
 	if g.cache != nil {
+		// When adding an edge A -> B:
+		// 1. B's indegree and blocking indegree change
 		g.cache.InvalidateIndegree(edge.ToID)
-		g.cache.InvalidateReady()
+		// 2. A and A's predecessors' effective priority might change (inheritance)
+		// For simplicity, we mark A as dirty and invalidate the ready list.
+		// A deeper implementation would traverse predecessors.
+		g.cache.MarkDirty(edge.FromID)
 	}
 
 	return nil
@@ -366,7 +401,7 @@ func (g *AdjacencyDAG) RemoveEdge(fromID, toID string, depType DependencyType) e
 			delete(g.incoming[toID], fromID)
 			if g.cache != nil {
 				g.cache.InvalidateIndegree(toID)
-				g.cache.InvalidateReady()
+				g.cache.MarkDirty(fromID)
 			}
 			return nil
 		}
