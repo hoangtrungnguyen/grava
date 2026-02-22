@@ -181,26 +181,19 @@ func (g *AdjacencyDAG) GetTransitiveDependencies(nodeID string, depth int) ([]st
 	visited := make(map[string]bool)
 	result := []string{}
 
-	g.bfsTransitive(nodeID, depth, visited, &result)
-
-	return result, nil
-}
-
-// bfsTransitive performs BFS traversal for transitive dependencies
-func (g *AdjacencyDAG) bfsTransitive(startID string, maxDepth int, visited map[string]bool, result *[]string) {
 	type queueItem struct {
 		nodeID string
 		depth  int
 	}
 
-	queue := []queueItem{{nodeID: startID, depth: 0}}
-	visited[startID] = true
+	queue := []queueItem{{nodeID: nodeID, depth: 0}}
+	visited[nodeID] = true
 
 	for len(queue) > 0 {
 		item := queue[0]
 		queue = queue[1:]
 
-		if item.depth >= maxDepth && maxDepth > 0 {
+		if item.depth >= depth && depth > 0 {
 			continue
 		}
 
@@ -208,11 +201,61 @@ func (g *AdjacencyDAG) bfsTransitive(startID string, maxDepth int, visited map[s
 		for fromID := range g.incoming[item.nodeID] {
 			if !visited[fromID] {
 				visited[fromID] = true
-				*result = append(*result, fromID)
+				result = append(result, fromID)
 				queue = append(queue, queueItem{nodeID: fromID, depth: item.depth + 1})
 			}
 		}
 	}
+
+	return result, nil
+}
+
+// GetTransitiveBlockers returns all open issues that block the given node
+func (g *AdjacencyDAG) GetTransitiveBlockers(nodeID string, depth int) ([]string, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if _, exists := g.nodes[nodeID]; !exists {
+		return nil, ErrNodeNotFound
+	}
+
+	visited := make(map[string]bool)
+	result := []string{}
+
+	type queueItem struct {
+		nodeID string
+		depth  int
+	}
+
+	queue := []queueItem{{nodeID: nodeID, depth: 0}}
+	visited[nodeID] = true
+
+	for len(queue) > 0 {
+		item := queue[0]
+		queue = queue[1:]
+
+		if item.depth >= depth && depth > 0 {
+			continue
+		}
+
+		// Get all incoming blocking edges
+		for fromID, edge := range g.incoming[item.nodeID] {
+			if !edge.Type.IsBlockingType() {
+				continue
+			}
+
+			if !visited[fromID] {
+				visited[fromID] = true
+				fromNode := g.nodes[fromID]
+				if fromNode.Status == StatusOpen {
+					result = append(result, fromID)
+					queue = append(queue, queueItem{nodeID: fromID, depth: item.depth + 1})
+				}
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // RemoveNode removes a node and its associated edges

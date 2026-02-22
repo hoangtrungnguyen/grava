@@ -7,3 +7,5 @@ Alway use grava command for managing issues. Only use different method when user
 Only add issues when using /landing-the-plane.md workflow.
 
 Whenever you try to create an issue, you have to notify user.
+
+Stop workflow when a ticket is finished

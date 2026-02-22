@@ -75,6 +75,7 @@ const (
 // Node represents a graph node (issue)
 type Node struct {
 	ID        string
+	Title     string
 	Status    IssueStatus
 	Priority  Priority
 	CreatedAt time.Time
