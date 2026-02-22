@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/hoangtrungnguyen/grava/pkg/graph"
 	"github.com/spf13/cobra"
 )
 
@@ -110,6 +112,88 @@ var depClearCmd = &cobra.Command{
 	},
 }
 
+var depTreeCmd = &cobra.Command{
+	Use:   "tree <id>",
+	Short: "Show dependency tree (ancestry) for an issue",
+	Long:  `Displays a tree-based visualization of all tasks that the given issue depends on.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id := args[0]
+		dag, err := graph.LoadGraphFromDB(Store)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Dependency ancestry for %s:\n", id)
+		printTree(dag, id, "", true, true, make(map[string]bool))
+		return nil
+	},
+}
+
+var depPathCmd = &cobra.Command{
+	Use:   "path <from> <to>",
+	Short: "Show the blocking path between two issues",
+	Long:  `Finds and displays the specific chain of dependencies blocking a task.`,
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		from, to := args[0], args[1]
+		dag, err := graph.LoadGraphFromDB(Store)
+		if err != nil {
+			return err
+		}
+		path, err := dag.GetBlockingPath(from, to)
+		if err != nil {
+			return err
+		}
+		if path == nil {
+			fmt.Printf("No blocking path found between %s and %s\n", from, to)
+			return nil
+		}
+		fmt.Printf("Blocking path: %s\n", strings.Join(path, " -> "))
+		return nil
+	},
+}
+
+func printTree(dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool, visited map[string]bool) {
+	node, err := dag.GetNode(id)
+	if err != nil {
+		fmt.Printf("%s%s %s [Missing]\n", indent, getMarker(isLast, isRoot), id)
+		return
+	}
+
+	fmt.Printf("%s%s %s: %s [%s]\n", indent, getMarker(isLast, isRoot), node.ID, node.Title, node.Status)
+
+	if visited[id] {
+		fmt.Printf("%s    (cycle/already shown)\n", indent+getFill(isLast, isRoot))
+		return
+	}
+	visited[id] = true
+
+	preds, _ := dag.GetPredecessors(id)
+	for i, predID := range preds {
+		printTree(dag, predID, indent+getFill(isLast, isRoot), i == len(preds)-1, false, visited)
+	}
+}
+
+func getMarker(isLast bool, isRoot bool) string {
+	if isRoot {
+		return ""
+	}
+	if isLast {
+		return "└──"
+	}
+	return "├──"
+}
+
+func getFill(isLast bool, isRoot bool) string {
+	if isRoot {
+		return ""
+	}
+	if isLast {
+		return "    "
+	}
+	return "│   "
+}
+
 func init() {
 	rootCmd.AddCommand(depCmd)
 	depCmd.PersistentFlags().StringVar(&depType, "type", "blocks", "Dependency type (blocks, relates-to, duplicates, parent-child)")
@@ -118,4 +202,6 @@ func init() {
 	depBatchCmd.Flags().StringVarP(&batchFile, "file", "f", "", "JSON file containing dependencies")
 
 	depCmd.AddCommand(depClearCmd)
+	depCmd.AddCommand(depTreeCmd)
+	depCmd.AddCommand(depPathCmd)
 }

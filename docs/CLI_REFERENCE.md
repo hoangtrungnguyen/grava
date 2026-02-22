@@ -417,18 +417,23 @@ grava comment grava-abc "Investigated root cause, see PR #42"
 
 ### `dep`
 
-Manage task dependencies. You can create a single dependency, clear all dependencies for an issue, or batch import dependencies from a JSON file.
+Manage task dependencies. You can create a single dependency, clear all dependencies for an issue, or perform deep dependency analysis with tree and path visualizations.
 
 **Usage:**
 ```bash
 grava dep <from_id> <to_id> [flags]
 grava dep batch --file <json_file>
 grava dep clear <id>
+grava dep tree <id>
+grava dep path <from> <to>
 ```
 
-**Arguments (for single dep):**
-- `<from_id>`: The source issue (the one that blocks or relates).
-- `<to_id>`: The target issue (the one being blocked or related to).
+**Arguments / Commands:**
+- `<from_id> <to_id>`: Create a single dependency (blocks by default).
+- `batch`: Import multiple dependencies from a JSON file.
+- `clear <id>`: Remove all dependencies (incoming and outgoing) for an issue.
+- `tree <id>`: Displays a tree-based visualization of all tasks that the given issue depends on (ancestry).
+- `path <from> <to>`: Finds and displays the specific chain of dependencies blocking a task.
 
 **Flags:**
 - `--type string`: (For single dep) Dependency type. Examples: `blocks`, `relates-to`, `duplicates`, `parent-child`. Default: `blocks`.
@@ -436,11 +441,14 @@ grava dep clear <id>
 
 **Examples:**
 ```bash
-# Create a single dependency
+# Create a blocks dependency
 grava dep grava-abc grava-def
 
-# Batch import dependencies
-grava dep batch --file deps.json
+# Visualize dependency ancestry (what blocks grava-abc)
+grava dep tree grava-abc
+
+# Find the blocking chain between two tasks
+grava dep path grava-abc grava-xyz
 
 # Clear all dependencies for an issue
 grava dep clear grava-abc
