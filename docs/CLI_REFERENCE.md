@@ -417,31 +417,42 @@ grava comment grava-abc "Investigated root cause, see PR #42"
 
 ### `dep`
 
-Creates a directed dependency edge between two issues. The relationship is stored in the `dependencies` table. The default type is `blocks`.
+Manage task dependencies. You can create a single dependency, clear all dependencies for an issue, or batch import dependencies from a JSON file.
 
 **Usage:**
 ```bash
 grava dep <from_id> <to_id> [flags]
+grava dep batch --file <json_file>
+grava dep clear <id>
 ```
 
-**Arguments:**
+**Arguments (for single dep):**
 - `<from_id>`: The source issue (the one that blocks or relates).
 - `<to_id>`: The target issue (the one being blocked or related to).
 
 **Flags:**
-- `--type string`: Dependency type. Examples: `blocks`, `relates-to`, `duplicates`, `parent-child`. Default: `blocks`.
+- `--type string`: (For single dep) Dependency type. Examples: `blocks`, `relates-to`, `duplicates`, `parent-child`. Default: `blocks`.
+- `-f, --file string`: (For batch) JSON file containing dependencies.
 
 **Examples:**
 ```bash
-# grava-abc blocks grava-def (default)
+# Create a single dependency
 grava dep grava-abc grava-def
 
-# Custom relationship type
-grava dep grava-abc grava-def --type relates-to
-# Output: 🔗 Dependency created: grava-abc -[relates-to]-> grava-def
+# Batch import dependencies
+grava dep batch --file deps.json
+
+# Clear all dependencies for an issue
+grava dep clear grava-abc
 ```
 
-> **Note:** `from_id` and `to_id` must be different issues. The dependency is stored as a directed edge `(from_id, to_id, type)` with a composite primary key, so duplicate edges of the same type are rejected by the database.
+**Batch JSON Format:**
+```json
+[
+  {"from": "grava-123", "to": "grava-456", "type": "blocks"},
+  {"from": "grava-789", "to": "grava-abc"}
+]
+```
 
 ---
 
@@ -610,6 +621,60 @@ grava-2     High priority refactor   task   1         open    2026-02-18
 ```
 
 > **Note:** When no matching issues exist, the command prints `🎉 No high-priority open issues. You're all caught up!` and exits `0`.
+
+---
+
+### `ready`
+
+Show tasks that are ready to be worked on. It computes the "Ready" list by checking dependencies (especially blocking ones) and gates (timer, GitHub PR, etc.).
+
+**Usage:**
+```bash
+grava ready [flags]
+```
+
+**Flags:**
+- `-l, --limit int`: Maximum number of tasks to show. Default: `20`.
+- `-p, --priority int`: Filter by priority level.
+- `--show-inherited`: Show if priority was inherited or boosted (indicated by `*`).
+
+---
+
+### `blocked`
+
+Show tasks that are currently blocked. It identifies bottlenecks by listing open issues that are prevented from being "ready".
+
+**Usage:**
+```bash
+grava blocked [flags]
+```
+
+**Flags:**
+- `-d, --depth int`: Depth of transitive blockers to show. Default: `1`.
+
+---
+
+### `graph`
+
+Subcommands for graph analysis and visualization.
+
+**Subcommands:**
+- `stats`: Show graph statistics (nodes, edges, density).
+- `health`: Perform a full graph health check (cycles, orphans).
+- `cycle`: dedicated check for dependency cycles.
+- `visualize`: Export the graph in DOT format for visualization.
+
+**Examples:**
+```bash
+# Show graph statistics
+grava graph stats
+
+# Check for cycles
+grava graph cycle
+
+# Export to DOT for Graphviz
+grava graph visualize > graph.dot
+```
 
 ---
 
