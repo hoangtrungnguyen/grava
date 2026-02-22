@@ -439,6 +439,11 @@ func (g *AdjacencyDAG) IsReachable(fromID, toID string) bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
+	return g.isReachableUnsafe(fromID, toID)
+}
+
+// isReachableUnsafe checks if toID is reachable from fromID without locking
+func (g *AdjacencyDAG) isReachableUnsafe(fromID, toID string) bool {
 	visited := make(map[string]bool)
 	queue := []string{fromID}
 	visited[fromID] = true
@@ -460,4 +465,92 @@ func (g *AdjacencyDAG) IsReachable(fromID, toID string) bool {
 	}
 
 	return false
+}
+
+// GetBlockingPath returns a path from fromID to toID using only blocking edges
+func (g *AdjacencyDAG) GetBlockingPath(fromID, toID string) ([]string, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if !g.HasNode(fromID) || !g.HasNode(toID) {
+		return nil, ErrNodeNotFound
+	}
+
+	visited := make(map[string]bool)
+	parent := make(map[string]string)
+	queue := []string{fromID}
+	visited[fromID] = true
+
+	found := false
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+
+		if curr == toID {
+			found = true
+			break
+		}
+
+		for next, edge := range g.outgoing[curr] {
+			if edge.Type.IsBlockingType() && !visited[next] {
+				visited[next] = true
+				parent[next] = curr
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	if !found {
+		return nil, nil
+	}
+
+	// Reconstruct path
+	path := []string{toID}
+	curr := toID
+	for curr != fromID {
+		curr = parent[curr]
+		path = append([]string{curr}, path...)
+	}
+
+	return path, nil
+}
+
+// TransitiveReduction removes redundant edges from the DAG
+func (g *AdjacencyDAG) TransitiveReduction() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Identify redundant edges
+	redundant := []*Edge{}
+	for fromID, neighbors := range g.outgoing {
+		for toID, edge := range neighbors {
+			// Check if there's another path from fromID to toID
+			// Temporarily remove edge
+			delete(g.outgoing[fromID], toID)
+			delete(g.incoming[toID], fromID)
+
+			if g.isReachableUnsafe(fromID, toID) {
+				redundant = append(redundant, edge)
+			}
+
+			// Restore edge
+			g.outgoing[fromID][toID] = edge
+			g.incoming[toID][fromID] = edge
+		}
+	}
+
+	// Remove redundant edges
+	for _, edge := range redundant {
+		delete(g.outgoing[edge.FromID], edge.ToID)
+		delete(g.incoming[edge.ToID], edge.FromID)
+		if g.cache != nil {
+			g.cache.InvalidateIndegree(edge.ToID)
+		}
+	}
+
+	if len(redundant) > 0 && g.cache != nil {
+		g.cache.InvalidateReady()
+	}
+
+	return nil
 }

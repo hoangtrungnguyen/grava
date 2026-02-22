@@ -38,4 +38,8 @@ type DAG interface {
 	TopologicalSort() ([]string, error)
 	GetTransitiveDependencies(nodeID string, depth int) ([]string, error)
 	IsReachable(fromID, toID string) bool
+
+	// New advanced algorithms
+	TransitiveReduction() error
+	GetBlockingPath(fromID, toID string) ([]string, error)
 }
