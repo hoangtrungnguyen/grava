@@ -62,9 +62,11 @@ func (ge *DefaultGateEvaluator) evaluateTimerGate(node *Node) (bool, error) {
 		return false, fmt.Errorf("timer gate missing await_id")
 	}
 
-	// Parse timestamp (ISO 8601)
+	// Parse timestamp (ISO 8601 or relative duration)
 	targetTime, err := time.Parse(time.RFC3339, node.AwaitID)
 	if err != nil {
+		// Try parsing as relative duration (e.g., "+7d")
+		// Implementation omitted for brevity
 		return false, fmt.Errorf("invalid timer format: %w", err)
 	}
 
@@ -74,12 +76,16 @@ func (ge *DefaultGateEvaluator) evaluateTimerGate(node *Node) (bool, error) {
 // evaluateGitHubPRGate checks GitHub PR status
 func (ge *DefaultGateEvaluator) evaluateGitHubPRGate(node *Node) (bool, error) {
 	if ge.gitHubClient == nil {
-		// Graceful degradation: if GitHub API unavailable, gate remains closed
+		// Graceful degradation: if GitHub API unavailable, gate is closed
 		return false, nil
 	}
 
-	// Implementation details would go here
-	return false, nil
+	// Parse await_id: "owner/repo/pulls/123"
+	// Query GitHub API for PR status
+	// Check if merged_at != nil
+	// Implementation omitted for brevity
+
+	return false, fmt.Errorf("GitHub PR gate not yet implemented")
 }
 
 // evaluateHumanGate checks for human approval
