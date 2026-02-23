@@ -79,6 +79,7 @@ type Node struct {
 	Status    IssueStatus
 	Priority  Priority
 	CreatedAt time.Time
+	UpdatedAt time.Time
 	Ephemeral bool   // If true, excluded from normal exports (Wisp)
 	AwaitType string // Gate type: "gh:pr", "timer", "human", empty for none
 	AwaitID   string // Gate identifier
