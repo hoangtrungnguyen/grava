@@ -38,6 +38,9 @@ type DAG interface {
 	TopologicalSort() ([]string, error)
 	GetTransitiveDependencies(nodeID string, depth int) ([]string, error)
 	IsReachable(fromID, toID string) bool
+	SetNodeStatus(id string, status IssueStatus) error
+	SetNodePriority(id string, priority Priority) error
+	SetPriorityInheritanceDepth(depth int)
 
 	// New advanced algorithms
 	TransitiveReduction() error

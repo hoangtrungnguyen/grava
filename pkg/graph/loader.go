@@ -11,7 +11,7 @@ func LoadGraphFromDB(store dolt.Store) (*AdjacencyDAG, error) {
 	dag := NewAdjacencyDAG(true) // Enable cache
 
 	// Load all issues
-	rows, err := store.Query("SELECT id, title, status, priority, created_at, await_type, await_id FROM issues")
+	rows, err := store.Query("SELECT id, title, status, priority, created_at, await_type, await_id FROM issues WHERE deleted_at IS NULL")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query issues: %w", err)
 	}

@@ -86,6 +86,9 @@ func (g *AdjacencyDAG) SetNodeStatus(id string, status IssueStatus) error {
 	node.Status = status
 	if g.cache != nil {
 		g.cache.MarkDirty(id)
+		// Propagate priority change as status can affect inheritance (e.g. closing a task)
+		g.cache.PropagatePriorityChange(id)
+
 		// If status changed to closed, successors' blocking indegrees might change
 		if status != StatusOpen {
 			for toID, edge := range g.outgoing[id] {
@@ -97,6 +100,35 @@ func (g *AdjacencyDAG) SetNodeStatus(id string, status IssueStatus) error {
 	}
 
 	return nil
+}
+
+// SetNodePriority updates the priority of a node and propagates the change
+func (g *AdjacencyDAG) SetNodePriority(id string, priority Priority) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	node, exists := g.nodes[id]
+	if !exists {
+		return ErrNodeNotFound
+	}
+
+	if node.Priority == priority {
+		return nil
+	}
+
+	node.Priority = priority
+	if g.cache != nil {
+		g.cache.PropagatePriorityChange(id)
+	}
+
+	return nil
+}
+
+// SetPriorityInheritanceDepth updates the depth limit for priority inheritance in the cache
+func (g *AdjacencyDAG) SetPriorityInheritanceDepth(depth int) {
+	if g.cache != nil {
+		g.cache.SetPriorityInheritanceDepth(depth)
+	}
 }
 
 // HasNode checks if a node exists
@@ -149,10 +181,8 @@ func (g *AdjacencyDAG) addEdgeUnsafe(edge *Edge) error {
 		// When adding an edge A -> B:
 		// 1. B's indegree and blocking indegree change
 		g.cache.InvalidateIndegree(edge.ToID)
-		// 2. A and A's predecessors' effective priority might change (inheritance)
-		// For simplicity, we mark A as dirty and invalidate the ready list.
-		// A deeper implementation would traverse predecessors.
-		g.cache.MarkDirty(edge.FromID)
+		// 2. A and A's predecessors' effective priority might change (inheritance from B)
+		g.cache.PropagatePriorityChange(edge.FromID)
 	}
 
 	return nil
@@ -401,7 +431,8 @@ func (g *AdjacencyDAG) RemoveEdge(fromID, toID string, depType DependencyType) e
 			delete(g.incoming[toID], fromID)
 			if g.cache != nil {
 				g.cache.InvalidateIndegree(toID)
-				g.cache.MarkDirty(fromID)
+				// Removing a blocking edge might change effective priority of fromID
+				g.cache.PropagatePriorityChange(fromID)
 			}
 			return nil
 		}

@@ -73,7 +73,9 @@ leveraging the power of a version-controlled database.`,
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
 		if Store != nil {
-			return Store.Close()
+			err := Store.Close()
+			Store = nil
+			return err
 		}
 		return nil
 	},

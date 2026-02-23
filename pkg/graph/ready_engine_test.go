@@ -111,6 +111,7 @@ func TestReadyEngine_InheritanceLimit(t *testing.T) {
 	dag := NewAdjacencyDAG(true)
 	config := DefaultReadyEngineConfig()
 	config.PriorityInheritanceDepth = 1 // Limit to immediate children
+	dag.SetPriorityInheritanceDepth(1)
 	engine := NewReadyEngine(dag, config)
 
 	// A -> B -> C (Priority Critical)

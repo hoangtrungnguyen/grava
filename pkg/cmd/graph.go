@@ -96,15 +96,23 @@ var graphHealthCmd = &cobra.Command{
 	},
 }
 
+var graphFormat string
+
 var graphVisualizeCmd = &cobra.Command{
 	Use:   "visualize",
-	Short: "Export graph to DOT format",
+	Short: "Export graph to DOT or Mermaid format",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dag, err := graph.LoadGraphFromDB(Store)
 		if err != nil {
 			return err
 		}
 
+		if graphFormat == "mermaid" {
+			fmt.Fprintln(cmd.OutOrStdout(), graph.ToMermaid(dag))
+			return nil
+		}
+
+		// Default: DOT format
 		fmt.Fprintln(cmd.OutOrStdout(), "digraph G {")
 		fmt.Fprintln(cmd.OutOrStdout(), "  rankdir=LR;")
 		fmt.Fprintln(cmd.OutOrStdout(), "  node [shape=box, style=rounded];")
@@ -133,6 +141,8 @@ var graphVisualizeCmd = &cobra.Command{
 }
 
 func init() {
+	graphVisualizeCmd.Flags().StringVarP(&graphFormat, "format", "f", "dot", "Output format (dot, mermaid)")
+
 	rootCmd.AddCommand(graphCmd)
 	graphCmd.AddCommand(graphStatsCmd)
 	graphCmd.AddCommand(graphCycleCmd)

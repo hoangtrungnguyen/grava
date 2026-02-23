@@ -38,13 +38,39 @@ func addDependency(cmd *cobra.Command, fromID, toID string) error {
 		return fmt.Errorf("from_id and to_id must be different issues")
 	}
 
-	_, err := Store.Exec(
+	// Load graph to validate and check for cycles
+	dag, err := graph.LoadGraphFromDB(Store)
+	if err != nil {
+		return fmt.Errorf("failed to load graph for validation: %w", err)
+	}
+
+	dt := graph.DependencyType(depType)
+	edge := &graph.Edge{FromID: fromID, ToID: toID, Type: dt}
+
+	if dt.IsBlockingType() {
+		if err := dag.AddEdgeWithCycleCheck(edge); err != nil {
+			return fmt.Errorf("invalid dependency: %w", err)
+		}
+	} else {
+		// Even non-blocking edges should be validated for existence and self-loops
+		if err := dag.AddEdge(edge); err != nil {
+			return fmt.Errorf("invalid dependency: %w", err)
+		}
+	}
+
+	_, err = Store.Exec(
 		`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`,
 		fromID, toID, depType, actor, actor, agentModel,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create dependency %s -> %s: %w", fromID, toID, err)
+		return fmt.Errorf("failed to commit dependency to database: %w", err)
 	}
+
+	// Audit Log
+	_ = Store.LogEvent(fromID, "dependency_add", actor, agentModel, nil, map[string]interface{}{
+		"to_id": toID,
+		"type":  depType,
+	})
 
 	fmt.Fprintf(cmd.OutOrStdout(), "🔗 Dependency created: %s -[%s]-> %s\n", fromID, depType, toID)
 	return nil
@@ -78,17 +104,43 @@ Example JSON:
 			return fmt.Errorf("failed to decode JSON: %w", err)
 		}
 
+		dag, err := graph.LoadGraphFromDB(Store)
+		if err != nil {
+			return fmt.Errorf("failed to load graph for validation: %w", err)
+		}
+
 		for _, d := range deps {
 			if d.Type == "" {
 				d.Type = "blocks"
 			}
+			dt := graph.DependencyType(d.Type)
+			edge := &graph.Edge{FromID: d.From, ToID: d.To, Type: dt}
+
+			// Validate against graph state (cycle check, existence)
+			var valErr error
+			if dt.IsBlockingType() {
+				valErr = dag.AddEdgeWithCycleCheck(edge)
+			} else {
+				valErr = dag.AddEdge(edge)
+			}
+
+			if valErr != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "⚠️ Skipping %s -> %s: %v\n", d.From, d.To, valErr)
+				continue
+			}
+
 			_, err := Store.Exec(
 				`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`,
 				d.From, d.To, d.Type, actor, actor, agentModel,
 			)
 			if err != nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "⚠️ Failed to create %s -> %s: %v\n", d.From, d.To, err)
+				fmt.Fprintf(cmd.OutOrStdout(), "⚠️ Database failure for %s -> %s: %v\n", d.From, d.To, err)
 			} else {
+				// Audit Log
+				_ = Store.LogEvent(d.From, "dependency_add", actor, agentModel, nil, map[string]interface{}{
+					"to_id": d.To,
+					"type":  d.Type,
+				})
 				fmt.Fprintf(cmd.OutOrStdout(), "🔗 Created: %s -[%s]-> %s\n", d.From, d.Type, d.To)
 			}
 		}
@@ -153,6 +205,23 @@ var depPathCmd = &cobra.Command{
 	},
 }
 
+var depImpactCmd = &cobra.Command{
+	Use:   "impact <id>",
+	Short: "Show downstream impact (successors) for an issue",
+	Long:  `Displays a tree-based visualization of all tasks that depend on the given issue (the "blast radius" of a delay).`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id := args[0]
+		dag, err := graph.LoadGraphFromDB(Store)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Downstream impact of %s:\n", id)
+		printImpactTree(dag, id, "", true, true, make(map[string]bool))
+		return nil
+	},
+}
+
 func printTree(dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool, visited map[string]bool) {
 	node, err := dag.GetNode(id)
 	if err != nil {
@@ -171,6 +240,27 @@ func printTree(dag *graph.AdjacencyDAG, id string, indent string, isLast bool, i
 	preds, _ := dag.GetPredecessors(id)
 	for i, predID := range preds {
 		printTree(dag, predID, indent+getFill(isLast, isRoot), i == len(preds)-1, false, visited)
+	}
+}
+
+func printImpactTree(dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool, visited map[string]bool) {
+	node, err := dag.GetNode(id)
+	if err != nil {
+		fmt.Printf("%s%s %s [Missing]\n", indent, getMarker(isLast, isRoot), id)
+		return
+	}
+
+	fmt.Printf("%s%s %s: %s [%s]\n", indent, getMarker(isLast, isRoot), node.ID, node.Title, node.Status)
+
+	if visited[id] {
+		fmt.Printf("%s    (cycle/already shown)\n", indent+getFill(isLast, isRoot))
+		return
+	}
+	visited[id] = true
+
+	successors, _ := dag.GetSuccessors(id)
+	for i, succID := range successors {
+		printImpactTree(dag, succID, indent+getFill(isLast, isRoot), i == len(successors)-1, false, visited)
 	}
 }
 
@@ -204,4 +294,5 @@ func init() {
 	depCmd.AddCommand(depClearCmd)
 	depCmd.AddCommand(depTreeCmd)
 	depCmd.AddCommand(depPathCmd)
+	depCmd.AddCommand(depImpactCmd)
 }

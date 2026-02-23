@@ -433,6 +433,7 @@ grava dep path <from> <to>
 - `batch`: Import multiple dependencies from a JSON file.
 - `clear <id>`: Remove all dependencies (incoming and outgoing) for an issue.
 - `tree <id>`: Displays a tree-based visualization of all tasks that the given issue depends on (ancestry).
+- `impact <id>`: Displays a tree-based visualization of all tasks that depend on the given issue (the "blast radius" of a delay).
 - `path <from> <to>`: Finds and displays the specific chain of dependencies blocking a task.
 
 **Flags:**
@@ -446,6 +447,9 @@ grava dep grava-abc grava-def
 
 # Visualize dependency ancestry (what blocks grava-abc)
 grava dep tree grava-abc
+
+# Visualize downstream impact (what is blocked by grava-abc)
+grava dep impact grava-abc
 
 # Find the blocking chain between two tasks
 grava dep path grava-abc grava-xyz
@@ -670,7 +674,10 @@ Subcommands for graph analysis and visualization.
 - `stats`: Show graph statistics (nodes, edges, density).
 - `health`: Perform a full graph health check (cycles, orphans).
 - `cycle`: dedicated check for dependency cycles.
-- `visualize`: Export the graph in DOT format for visualization.
+- `visualize`: Export the graph in DOT or Mermaid format for visualization.
+
+**Flags (visualize):**
+- `-f, --format string`: Output format (`dot`, `mermaid`). Default: `dot`.
 
 **Examples:**
 ```bash
@@ -682,6 +689,9 @@ grava graph cycle
 
 # Export to DOT for Graphviz
 grava graph visualize > graph.dot
+
+# Export to Mermaid for GitHub README
+grava graph visualize --format mermaid > graph.mmd
 ```
 
 ---

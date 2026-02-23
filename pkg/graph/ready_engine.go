@@ -45,6 +45,10 @@ func NewReadyEngine(dag *AdjacencyDAG, config *ReadyEngineConfig) *ReadyEngine {
 // ComputeReady returns ready tasks sorted by priority
 func (re *ReadyEngine) ComputeReady(limit int) ([]*ReadyTask, error) {
 	re.dag.mu.RLock()
+	// Sync cache depth if existing
+	if re.dag.cache != nil {
+		re.dag.SetPriorityInheritanceDepth(re.config.PriorityInheritanceDepth)
+	}
 	defer re.dag.mu.RUnlock()
 
 	// Check cache

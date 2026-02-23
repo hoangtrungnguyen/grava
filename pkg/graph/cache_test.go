@@ -90,3 +90,76 @@ func TestReadyEngine_IncrementalPriority(t *testing.T) {
 		}
 	}
 }
+
+func TestPriorityPropagation(t *testing.T) {
+	dag := NewAdjacencyDAG(true)
+	now := time.Now()
+
+	// A -> B -> C
+	dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityBacklog, CreatedAt: now})
+	dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityBacklog, CreatedAt: now})
+	dag.AddNode(&Node{ID: "C", Status: StatusOpen, Priority: PriorityLow, CreatedAt: now})
+
+	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
+
+	// Initial calculation (lazy population of cache)
+	engine := NewReadyEngine(dag, DefaultReadyEngineConfig())
+	engine.ComputeReady(0)
+
+	// Verify initial effective priorities in cache
+	// Note: Only A is guaranteed to be in cache because it was the only ready task
+	// But bubbling from edges might have partially populated it.
+	effA, okA := dag.cache.GetPriority("A")
+	if !okA || effA != PriorityLow {
+		t.Errorf("Initial priority A wrong: val=%v, ok=%v", effA, okA)
+	}
+
+	// Now update C's priority to Critical
+	dag.SetNodePriority("C", PriorityCritical)
+
+	// Verify that C, B, and A are updated proactively in the cache
+	effA, okA = dag.cache.GetPriority("A")
+	effB, okB := dag.cache.GetPriority("B")
+	effC, okC := dag.cache.GetPriority("C")
+
+	t.Logf("After update: A=%v(ok:%v), B=%v(ok:%v), C=%v(ok:%v)", effA, okA, effB, okB, effC, okC)
+
+	if !okC || effC != PriorityCritical {
+		t.Errorf("C priority not updated: val=%v, ok=%v", effC, okC)
+	}
+	if !okB || effB != PriorityCritical {
+		t.Errorf("B priority not bubbled: val=%v, ok=%v", effB, okB)
+	}
+	if !okA || effA != PriorityCritical {
+		t.Errorf("A priority not bubbled: val=%v, ok=%v", effA, okA)
+	}
+}
+
+func TestPriorityPropagation_Rollback(t *testing.T) {
+	dag := NewAdjacencyDAG(true)
+	now := time.Now()
+
+	// A -> B
+	dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityBacklog, CreatedAt: now})
+	dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityCritical, CreatedAt: now})
+	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+
+	// Initial calculation
+	engine := NewReadyEngine(dag, DefaultReadyEngineConfig())
+	engine.ComputeReady(0)
+
+	effA, _ := dag.cache.GetPriority("A")
+	if effA != PriorityCritical {
+		t.Errorf("Expected A to inherit Critical, got %v", effA)
+	}
+
+	// Now close B
+	dag.SetNodeStatus("B", StatusClosed)
+
+	// A should no longer inherit from B
+	effA, _ = dag.cache.GetPriority("A")
+	if effA != PriorityBacklog {
+		t.Errorf("Expected A to revert to Backlog after B closed, got %v", effA)
+	}
+}
