@@ -3,8 +3,8 @@ set -e
 
 echo "🔨 Building Grava..."
 
-# Ensure we are in the root of the project
-# (assuming the script is run from project root or via its path)
-go build -o grava ./cmd/grava
+VERSION=${1:-$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}
 
-echo "✅ Grava build successful. Binary created at: ./grava"
+go build -ldflags "-X main.Version=$VERSION" -o grava ./cmd/grava
+
+echo "✅ Grava build successful (version: $VERSION). Binary created at: ./grava"
