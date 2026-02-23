@@ -44,3 +44,24 @@ func (m *MockStore) Close() error {
 
 func (m *MockStore) SetMaxOpenConns(n int) {}
 func (m *MockStore) SetMaxIdleConns(n int) {}
+func (m *MockStore) DB() *sql.DB           { return nil }
+
+func (m *MockStore) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return nil, nil
+}
+
+func (m *MockStore) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return nil
+}
+
+func (m *MockStore) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return nil, nil
+}
+
+func (m *MockStore) LogEvent(issueID, eventType, actor, agentModel string, oldValue, newValue any) error {
+	return nil
+}
+
+func (m *MockStore) LogEventTx(ctx context.Context, tx *sql.Tx, issueID, eventType, actor, agentModel string, oldValue, newValue any) error {
+	return nil
+}

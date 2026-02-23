@@ -35,8 +35,19 @@ go.work.sum
 .grava/
 
 # Binaries
-grava
+/grava
 
 # Logs
 *.log
 bin/
+.worktrees/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.pytest_cache/
+
+# Benchmark results
+scripts/benchmark_results.json

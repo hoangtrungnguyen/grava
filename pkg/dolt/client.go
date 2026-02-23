@@ -3,6 +3,7 @@ package dolt
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -15,11 +16,19 @@ type Store interface {
 	GetNextChildSequence(parentID string) (int, error)
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 	Exec(query string, args ...any) (sql.Result, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryRow(query string, args ...any) *sql.Row
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	Query(query string, args ...any) (*sql.Rows, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	SetMaxOpenConns(n int)
 	SetMaxIdleConns(n int)
+	DB() *sql.DB
 	Close() error
+
+	// Audit logging
+	LogEvent(issueID, eventType, actor, agentModel string, oldValue, newValue any) error
+	LogEventTx(ctx context.Context, tx *sql.Tx, issueID, eventType, actor, agentModel string, oldValue, newValue any) error
 }
 
 // Client implements Store using a SQL database.
@@ -65,16 +74,32 @@ func (c *Client) Close() error {
 	return c.db.Close()
 }
 
+func (c *Client) DB() *sql.DB {
+	return c.db
+}
+
 func (c *Client) Exec(query string, args ...any) (sql.Result, error) {
 	return c.db.Exec(query, args...)
+}
+
+func (c *Client) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return c.db.ExecContext(ctx, query, args...)
 }
 
 func (c *Client) QueryRow(query string, args ...any) *sql.Row {
 	return c.db.QueryRow(query, args...)
 }
 
+func (c *Client) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return c.db.QueryRowContext(ctx, query, args...)
+}
+
 func (c *Client) Query(query string, args ...any) (*sql.Rows, error) {
 	return c.db.Query(query, args...)
+}
+
+func (c *Client) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return c.db.QueryContext(ctx, query, args...)
 }
 
 // GetNextChildSequence uses Advisory Locks (GET_LOCK) on a dedicated connection.
@@ -132,4 +157,40 @@ func (c *Client) GetNextChildSequence(parentID string) (int, error) {
 	}
 
 	return current, nil
+}
+
+// LogEvent implementation for Client
+func (c *Client) LogEvent(issueID, eventType, actor, agentModel string, oldValue, newValue any) error {
+	return c.LogEventTx(context.Background(), nil, issueID, eventType, actor, agentModel, oldValue, newValue)
+}
+
+// LogEventTx implementation for Client, optionally using a transaction
+func (c *Client) LogEventTx(ctx context.Context, tx *sql.Tx, issueID, eventType, actor, agentModel string, oldValue, newValue any) error {
+	oldJSON := "{}"
+	if oldValue != nil {
+		b, err := json.Marshal(oldValue)
+		if err == nil {
+			oldJSON = string(b)
+		}
+	}
+
+	newJSON := "{}"
+	if newValue != nil {
+		b, err := json.Marshal(newValue)
+		if err == nil {
+			newJSON = string(b)
+		}
+	}
+
+	query := `INSERT INTO events (issue_id, event_type, actor, old_value, new_value, created_by, updated_by, agent_model, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	var err error
+	if tx != nil {
+		_, err = tx.ExecContext(ctx, query, issueID, eventType, actor, oldJSON, newJSON, actor, actor, agentModel, time.Now())
+	} else {
+		_, err = c.db.ExecContext(ctx, query, issueID, eventType, actor, oldJSON, newJSON, actor, actor, agentModel, time.Now())
+	}
+
+	return err
 }

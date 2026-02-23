@@ -2,7 +2,7 @@
 set -e
 
 DOLT_DIR=".grava/dolt"
-PORT=3306
+PORT=${1:-3306}
 
 # Check dolt installation
 if ! command -v dolt &> /dev/null; then

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -27,14 +28,11 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 		// Use global slice var
 		// subtaskAffectedFiles, _ := cmd.Flags().GetStringSlice("files")
 
-		// 0. Verify Parent Exists
-		var exists int
-		err := Store.QueryRow("SELECT 1 FROM issues WHERE id = ?", parentID).Scan(&exists)
-		if err != nil {
-			return fmt.Errorf("parent issue %s not found: %w", parentID, err)
-		}
+		// 1. Initialize Generator and start Transaction
+		generator := idgen.NewStandardGenerator(Store)
+		ctx := context.Background()
 
-		// Validate inputs
+		// Validate inputs before starting transaction
 		if err := validation.ValidateIssueType(subtaskType); err != nil {
 			return err
 		}
@@ -44,16 +42,26 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 			return err
 		}
 
-		// 1. Initialize Generator
-		generator := idgen.NewStandardGenerator(Store)
+		tx, err := Store.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
 
-		// 2. Generate Subtask ID
+		// 2. Verify Parent Exists (within transaction)
+		var exists int
+		err = tx.QueryRowContext(ctx, "SELECT 1 FROM issues WHERE id = ?", parentID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("parent issue %s not found: %w", parentID, err)
+		}
+
+		// 3. Generate Subtask ID
 		id, err := generator.GenerateChildID(parentID)
 		if err != nil {
 			return fmt.Errorf("failed to generate subtask ID: %w", err)
 		}
 
-		// 3. Insert into DB
+		// 4. Insert into DB (with Audit Log)
 		ephemeralVal := 0
 		if subtaskEphemeral {
 			ephemeralVal = 1
@@ -65,13 +73,43 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 			affectedFilesJSON = string(b)
 		}
 
-		// Arguments: 1=id, 2=title, 3=desc, 4=type, 5=priority, 6=status, 7=ephemeral, 8=created_at, 9=updated_at, 10=created_by, 11=updated_by, 12=agent_model, 13=affected_files
 		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files) 
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-		_, err = Store.Exec(query, id, subtaskTitle, subtaskDesc, subtaskType, pInt, "open", ephemeralVal, time.Now(), time.Now(), actor, actor, agentModel, affectedFilesJSON)
+		_, err = tx.ExecContext(ctx, query, id, subtaskTitle, subtaskDesc, subtaskType, pInt, "open", ephemeralVal, time.Now(), time.Now(), actor, actor, agentModel, affectedFilesJSON)
 		if err != nil {
 			return fmt.Errorf("failed to insert subtask: %w", err)
+		}
+
+		// 5. Add parent-child dependency
+		depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
+		_, err = tx.ExecContext(ctx, depQuery, parentID, id, "parent-child", actor, actor, agentModel)
+		if err != nil {
+			return fmt.Errorf("failed to create parent-child dependency: %w", err)
+		}
+
+		// Audit Log
+		err = Store.LogEventTx(ctx, tx, id, "create", actor, agentModel, nil, map[string]interface{}{
+			"title":     subtaskTitle,
+			"type":      subtaskType,
+			"priority":  pInt,
+			"parent_id": parentID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to log event: %w", err)
+		}
+
+		// Audit Log for the edge
+		err = Store.LogEventTx(ctx, tx, parentID, "dependency_add", actor, agentModel, nil, map[string]interface{}{
+			"to_id": id,
+			"type":  "parent-child",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to log dependency event: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
 
 		if outputJSON {

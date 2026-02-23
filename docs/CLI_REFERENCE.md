@@ -23,12 +23,70 @@ The following flags are available for all commands:
 
 ### `init`
 
-Initializes the Grava environment. This command creates the default configuration and verifies the Dolt installation. It is idempotent and safe to run multiple times.
+Initializes the Grava environment. This command performs the following actions:
+1. Verifies the Dolt installation.
+2. Creates the `.grava` directory.
+3. Initializes a local Dolt repository in `.grava/dolt` (if not already present).
+4. Allocates a mutually exclusive port (persisted to `~/.grava/ports.json`) to prevent conflicts with other projects, and starts a background Dolt server.
+5. Generates a local `.grava.yaml` configuration file with the correct connection string.
 
 **Usage:**
 ```bash
 grava init
 ```
+
+---
+ 
+### `start`
+ 
+Starts the Dolt SQL server using the configured port in `.grava.yaml`.
+ 
+**Usage:**
+```bash
+grava start
+```
+ 
+---
+ 
+### `stop`
+ 
+Stops the Dolt SQL server running on the configured port. This uses a non-interactive mode (`-y`) to force-stop the process.
+ 
+**Usage:**
+```bash
+grava stop
+```
+ 
+---
+ 
+### `version`
+ 
+Prints the current version of the Grava CLI.
+ 
+**Usage:**
+```bash
+grava version
+```
+ 
+**Example:**
+```bash
+grava version
+# Output: Grava CLI version v1.2.3
+```
+ 
+---
+ 
+### `config`
+
+Displays the current configuration settings being used by Grava, including the database URL, actor identity, and the path to the active configuration file.
+
+**Usage:**
+```bash
+grava config
+```
+
+**Flags:**
+- `--json`: Output configuration in JSON format.
 
 ---
 
@@ -359,31 +417,54 @@ grava comment grava-abc "Investigated root cause, see PR #42"
 
 ### `dep`
 
-Creates a directed dependency edge between two issues. The relationship is stored in the `dependencies` table. The default type is `blocks`.
+Manage task dependencies. You can create a single dependency, clear all dependencies for an issue, or perform deep dependency analysis with tree and path visualizations.
 
 **Usage:**
 ```bash
 grava dep <from_id> <to_id> [flags]
+grava dep batch --file <json_file>
+grava dep clear <id>
+grava dep tree <id>
+grava dep path <from> <to>
 ```
 
-**Arguments:**
-- `<from_id>`: The source issue (the one that blocks or relates).
-- `<to_id>`: The target issue (the one being blocked or related to).
+**Arguments / Commands:**
+- `<from_id> <to_id>`: Create a single dependency (blocks by default).
+- `batch`: Import multiple dependencies from a JSON file.
+- `clear <id>`: Remove all dependencies (incoming and outgoing) for an issue.
+- `tree <id>`: Displays a tree-based visualization of all tasks that the given issue depends on (ancestry).
+- `impact <id>`: Displays a tree-based visualization of all tasks that depend on the given issue (the "blast radius" of a delay).
+- `path <from> <to>`: Finds and displays the specific chain of dependencies blocking a task.
 
 **Flags:**
-- `--type string`: Dependency type. Examples: `blocks`, `relates-to`, `duplicates`, `parent-child`. Default: `blocks`.
+- `--type string`: (For single dep) Dependency type. Examples: `blocks`, `relates-to`, `duplicates`, `parent-child`. Default: `blocks`.
+- `-f, --file string`: (For batch) JSON file containing dependencies.
 
 **Examples:**
 ```bash
-# grava-abc blocks grava-def (default)
+# Create a blocks dependency
 grava dep grava-abc grava-def
 
-# Custom relationship type
-grava dep grava-abc grava-def --type relates-to
-# Output: 🔗 Dependency created: grava-abc -[relates-to]-> grava-def
+# Visualize dependency ancestry (what blocks grava-abc)
+grava dep tree grava-abc
+
+# Visualize downstream impact (what is blocked by grava-abc)
+grava dep impact grava-abc
+
+# Find the blocking chain between two tasks
+grava dep path grava-abc grava-xyz
+
+# Clear all dependencies for an issue
+grava dep clear grava-abc
 ```
 
-> **Note:** `from_id` and `to_id` must be different issues. The dependency is stored as a directed edge `(from_id, to_id, type)` with a composite primary key, so duplicate edges of the same type are rejected by the database.
+**Batch JSON Format:**
+```json
+[
+  {"from": "grava-123", "to": "grava-456", "type": "blocks"},
+  {"from": "grava-789", "to": "grava-abc"}
+]
+```
 
 ---
 
@@ -555,6 +636,66 @@ grava-2     High priority refactor   task   1         open    2026-02-18
 
 ---
 
+### `ready`
+
+Show tasks that are ready to be worked on. It computes the "Ready" list by checking dependencies (especially blocking ones) and gates (timer, GitHub PR, etc.).
+
+**Usage:**
+```bash
+grava ready [flags]
+```
+
+**Flags:**
+- `-l, --limit int`: Maximum number of tasks to show. Default: `20`.
+- `-p, --priority int`: Filter by priority level.
+- `--show-inherited`: Show if priority was inherited or boosted (indicated by `*`).
+
+---
+
+### `blocked`
+
+Show tasks that are currently blocked. It identifies bottlenecks by listing open issues that are prevented from being "ready".
+
+**Usage:**
+```bash
+grava blocked [flags]
+```
+
+**Flags:**
+- `-d, --depth int`: Depth of transitive blockers to show. Default: `1`.
+
+---
+
+### `graph`
+
+Subcommands for graph analysis and visualization.
+
+**Subcommands:**
+- `stats`: Show graph statistics (nodes, edges, density).
+- `health`: Perform a full graph health check (cycles, orphans).
+- `cycle`: dedicated check for dependency cycles.
+- `visualize`: Export the graph in DOT or Mermaid format for visualization.
+
+**Flags (visualize):**
+- `-f, --format string`: Output format (`dot`, `mermaid`). Default: `dot`.
+
+**Examples:**
+```bash
+# Show graph statistics
+grava graph stats
+
+# Check for cycles
+grava graph cycle
+
+# Export to DOT for Graphviz
+grava graph visualize > graph.dot
+
+# Export to Mermaid for GitHub README
+grava graph visualize --format mermaid > graph.mmd
+```
+
+---
+
 ---
 
 ### `export`
@@ -705,6 +846,16 @@ grava list --wisp
 
 ---
 
+## Database Migrations
+
+Grava uses an automated migration system (powered by [goose](https://github.com/pressly/goose)) to manage its database schema.
+
+- **Automatic Updates**: Migrations are bundled with the Grava binary and run automatically whenever you execute a command (except `init` and `help`).
+- **Internal State**: The migration version is tracked in a internal `goose_db_version` table.
+- **Development**: New schema changes are added as `.sql` files in `pkg/migrate/migrations/` and require a rebuild of the CLI.
+
 ## Environment Variables
 
 - `DB_URL`: Sets the database connection string if `--db-url` flag is not provided.
+- `GRAVA_ACTOR`: Sets the default actor name.
+- `GRAVA_AGENT_MODEL`: Sets the default agent model name.

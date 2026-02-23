@@ -31,9 +31,17 @@ The project governance and architecture are strictly documented:
 6.  **[MCP Integration](docs/epics/Epic_6_MCP_Integration.md)**: The interface for AI agents.
 7.  **[Advanced Analytics](docs/epics/Epic_7_Advanced_Analytics.md)**: PageRank and critical path analysis (Optional).
 
-## 🛠️ Getting Started
+## � Installation
 
-**Prerequisites:** Go 1.21+, [Dolt](https://github.com/dolthub/dolt), mysql-client
+To install Grava to your `/usr/local/bin`, run:
+
+```bash
+curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh | bash
+```
+
+## 🛠️ Development Setup
+
+**Prerequisites:** Go 1.25+, [Dolt](https://github.com/dolthub/dolt), mysql-client
 
 ```bash
 # 1. Start the Dolt SQL server
@@ -57,6 +65,7 @@ go build -o bin/grava ./cmd/grava/
 | Command | Description |
 |---|---|
 | `grava init` | Initialize Grava environment |
+| `grava version` | Print the version number |
 | `grava create` | Create a new issue (`--ephemeral` for Wisps) |
 | `grava subtask <id>` | Create a hierarchical subtask |
 | `grava show <id>` | Show issue details |

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -50,7 +51,7 @@ You can specify title, description, type, and priority.`,
 			id = generator.GenerateBaseID()
 		}
 
-		// 3. Insert into DB
+		// 3. Insert into DB (with Transaction and Audit Log)
 		ephemeralVal := 0
 		if ephemeral {
 			ephemeralVal = 1
@@ -62,12 +63,54 @@ You can specify title, description, type, and priority.`,
 			affectedFilesJSON = string(b)
 		}
 
+		ctx := context.Background()
+		tx, err := Store.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
+
 		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-		_, err = Store.Exec(query, id, title, desc, issueType, pInt, "open", ephemeralVal, time.Now(), time.Now(), actor, actor, agentModel, affectedFilesJSON)
+		_, err = tx.ExecContext(ctx, query, id, title, desc, issueType, pInt, "open", ephemeralVal, time.Now(), time.Now(), actor, actor, agentModel, affectedFilesJSON)
 		if err != nil {
 			return fmt.Errorf("failed to insert issue: %w", err)
+		}
+
+		// 4. Add parent-child dependency if parent is specified
+		if parentID != "" {
+			depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
+			_, err = tx.ExecContext(ctx, depQuery, parentID, id, "parent-child", actor, actor, agentModel)
+			if err != nil {
+				return fmt.Errorf("failed to create parent-child dependency: %w", err)
+			}
+		}
+
+		// Audit Log
+		err = Store.LogEventTx(ctx, tx, id, "create", actor, agentModel, nil, map[string]interface{}{
+			"title":    title,
+			"type":     issueType,
+			"priority": pInt,
+			"status":   "open",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to log event: %w", err)
+		}
+
+		if parentID != "" {
+			// Audit Log for the edge
+			err = Store.LogEventTx(ctx, tx, parentID, "dependency_add", actor, agentModel, nil, map[string]interface{}{
+				"to_id": id,
+				"type":  "parent-child",
+			})
+			if err != nil {
+				return fmt.Errorf("failed to log dependency event: %w", err)
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
 
 		if outputJSON {

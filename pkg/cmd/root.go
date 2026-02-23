@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
+	"github.com/hoangtrungnguyen/grava/pkg/migrate"
 )
 
 var (
@@ -17,6 +18,7 @@ var (
 	agentModel string
 	Store      dolt.Store
 	outputJSON bool
+	Version    = "v0.0.1"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -28,7 +30,7 @@ It allows you to manage issues, tasks, and bugs directly from your terminal,
 leveraging the power of a version-controlled database.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Initialize DB connection if not help command or init command
-		if cmd.Name() == "help" || cmd.Name() == "init" {
+		if cmd.Name() == "help" || cmd.Name() == "init" || cmd.Name() == "start" || cmd.Name() == "stop" {
 			return nil
 		}
 
@@ -61,11 +63,19 @@ leveraging the power of a version-controlled database.`,
 		if err != nil {
 			return fmt.Errorf("failed to connect to database: %w", err)
 		}
+
+		// Run pending migrations
+		if err := migrate.Run(Store.DB()); err != nil {
+			return fmt.Errorf("failed to run migrations: %w", err)
+		}
+
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
 		if Store != nil {
-			return Store.Close()
+			err := Store.Close()
+			Store = nil
+			return err
 		}
 		return nil
 	},
@@ -77,6 +87,13 @@ func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
+	}
+}
+
+// SetVersion sets the version string for the CLI
+func SetVersion(v string) {
+	if v != "" {
+		Version = v
 	}
 }
 
