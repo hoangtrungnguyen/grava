@@ -10,6 +10,7 @@ import (
 // LoadGraphFromDB loads the entire graph structure from the database
 func LoadGraphFromDB(store dolt.Store) (*AdjacencyDAG, error) {
 	dag := NewAdjacencyDAG(true) // Enable cache
+	dag.store = store
 
 	// Load all issues
 	rows, err := store.Query("SELECT id, title, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")

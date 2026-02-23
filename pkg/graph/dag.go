@@ -2,6 +2,8 @@ package graph
 
 import (
 	"sync"
+
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 )
 
 // AdjacencyDAG implements DAG using adjacency lists
@@ -15,6 +17,11 @@ type AdjacencyDAG struct {
 
 	// Cached computations
 	cache *GraphCache
+
+	// Persistence & Session
+	store      dolt.Store
+	actor      string
+	agentModel string
 }
 
 // NewAdjacencyDAG creates a new DAG
@@ -30,6 +37,14 @@ func NewAdjacencyDAG(enableCache bool) *AdjacencyDAG {
 	}
 
 	return dag
+}
+
+// SetSession updates the session metadata for auditing
+func (g *AdjacencyDAG) SetSession(actor, model string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.actor = actor
+	g.agentModel = model
 }
 
 // AddNode adds a node to the graph
