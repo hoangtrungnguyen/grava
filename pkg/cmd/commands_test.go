@@ -350,12 +350,22 @@ func TestSubtaskCmd(t *testing.T) {
 		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 1, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// 5. Audit Log
+	// 5. Add parent-child dependency
+	mock.ExpectExec(`INSERT INTO dependencies .* VALUES`).
+		WithArgs("grava-123", "grava-123.5", "parent-child", "unknown", "unknown", "").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// 6. Audit Log (create)
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
 		WithArgs("grava-123.5", "create", "unknown", "{}", sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// 6. Transaction Commit
+	// 7. Audit Log (dependency_add)
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs("grava-123", "dependency_add", "unknown", "{}", sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// 8. Transaction Commit
 	mock.ExpectCommit()
 
 	// 7. Close (PersistentPostRunE and conn.Close match this?)
@@ -418,10 +428,10 @@ func TestDepCmd(t *testing.T) {
 	Store = dolt.NewClientFromDB(db)
 
 	// Graph load for validation
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id FROM issues")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id"}).
-			AddRow("grava-abc", "T1", "open", 2, time.Now(), nil, nil).
-			AddRow("grava-def", "T2", "open", 2, time.Now(), nil, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id, ephemeral FROM issues WHERE deleted_at IS NULL")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id", "ephemeral"}).
+			AddRow("grava-abc", "T1", "open", 2, time.Now(), nil, nil, 0).
+			AddRow("grava-def", "T2", "open", 2, time.Now(), nil, nil, 0))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type FROM dependencies")).
 		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type"}))
 
@@ -449,10 +459,10 @@ func TestDepCmdCustomType(t *testing.T) {
 	Store = dolt.NewClientFromDB(db)
 
 	// Graph load for validation
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id FROM issues")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id"}).
-			AddRow("grava-abc", "T1", "open", 2, time.Now(), nil, nil).
-			AddRow("grava-def", "T2", "open", 2, time.Now(), nil, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id, ephemeral FROM issues WHERE deleted_at IS NULL")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id", "ephemeral"}).
+			AddRow("grava-abc", "T1", "open", 2, time.Now(), nil, nil, 0).
+			AddRow("grava-def", "T2", "open", 2, time.Now(), nil, nil, 0))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type FROM dependencies")).
 		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type"}))
 

@@ -71,6 +71,9 @@ Priority levels:
 			}
 
 			title := task.Node.Title
+			if task.Node.Ephemeral {
+				title = "👻 " + title
+			}
 			if len(title) > 50 {
 				title = title[:47] + "..."
 			}

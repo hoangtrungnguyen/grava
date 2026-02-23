@@ -17,10 +17,10 @@ func TestReadyCmd(t *testing.T) {
 	defer db.Close()
 
 	// Mock issues query
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id FROM issues")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id"}).
-			AddRow("grava-1", "Ready Task", "open", 1, time.Now(), nil, nil).
-			AddRow("grava-2", "Blocked Task", "open", 1, time.Now(), nil, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id, ephemeral FROM issues WHERE deleted_at IS NULL")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id", "ephemeral"}).
+			AddRow("grava-1", "Ready Task", "open", 1, time.Now(), nil, nil, 0).
+			AddRow("grava-2", "Blocked Task", "open", 1, time.Now(), nil, nil, 0))
 
 	// Mock dependencies query
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type FROM dependencies")).
@@ -44,10 +44,10 @@ func TestBlockedCmd(t *testing.T) {
 	defer db.Close()
 
 	// Mock issues query
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id FROM issues")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id"}).
-			AddRow("grava-1", "Ready Task", "open", 1, time.Now(), nil, nil).
-			AddRow("grava-2", "Blocked Task", "open", 1, time.Now(), nil, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id, ephemeral FROM issues WHERE deleted_at IS NULL")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id", "ephemeral"}).
+			AddRow("grava-1", "Ready Task", "open", 1, time.Now(), nil, nil, 0).
+			AddRow("grava-2", "Blocked Task", "open", 1, time.Now(), nil, nil, 0))
 
 	// Mock dependencies query
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type FROM dependencies")).

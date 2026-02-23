@@ -78,6 +78,15 @@ You can specify title, description, type, and priority.`,
 			return fmt.Errorf("failed to insert issue: %w", err)
 		}
 
+		// 4. Add parent-child dependency if parent is specified
+		if parentID != "" {
+			depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
+			_, err = tx.ExecContext(ctx, depQuery, parentID, id, "parent-child", actor, actor, agentModel)
+			if err != nil {
+				return fmt.Errorf("failed to create parent-child dependency: %w", err)
+			}
+		}
+
 		// Audit Log
 		err = Store.LogEventTx(ctx, tx, id, "create", actor, agentModel, nil, map[string]interface{}{
 			"title":    title,
@@ -87,6 +96,17 @@ You can specify title, description, type, and priority.`,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to log event: %w", err)
+		}
+
+		if parentID != "" {
+			// Audit Log for the edge
+			err = Store.LogEventTx(ctx, tx, parentID, "dependency_add", actor, agentModel, nil, map[string]interface{}{
+				"to_id": id,
+				"type":  "parent-child",
+			})
+			if err != nil {
+				return fmt.Errorf("failed to log dependency event: %w", err)
+			}
 		}
 
 		if err := tx.Commit(); err != nil {
