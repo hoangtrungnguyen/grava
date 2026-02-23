@@ -41,6 +41,7 @@ type DAG interface {
 	SetNodeStatus(id string, status IssueStatus) error
 	SetNodePriority(id string, priority Priority) error
 	SetPriorityInheritanceDepth(depth int)
+	SetSession(actor, model string)
 
 	// New advanced algorithms
 	TransitiveReduction() error

@@ -81,6 +81,13 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 			return fmt.Errorf("failed to insert subtask: %w", err)
 		}
 
+		// 5. Add parent-child dependency
+		depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
+		_, err = tx.ExecContext(ctx, depQuery, parentID, id, "parent-child", actor, actor, agentModel)
+		if err != nil {
+			return fmt.Errorf("failed to create parent-child dependency: %w", err)
+		}
+
 		// Audit Log
 		err = Store.LogEventTx(ctx, tx, id, "create", actor, agentModel, nil, map[string]interface{}{
 			"title":     subtaskTitle,
@@ -90,6 +97,15 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to log event: %w", err)
+		}
+
+		// Audit Log for the edge
+		err = Store.LogEventTx(ctx, tx, parentID, "dependency_add", actor, agentModel, nil, map[string]interface{}{
+			"to_id": id,
+			"type":  "parent-child",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to log dependency event: %w", err)
 		}
 
 		if err := tx.Commit(); err != nil {

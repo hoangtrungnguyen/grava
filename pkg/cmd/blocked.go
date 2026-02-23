@@ -54,6 +54,7 @@ Use --depth to see transitive blockers.`,
 					Blockers:    blockers,
 					GateBlocked: gateBlocked,
 					AwaitType:   node.AwaitType,
+					Ephemeral:   node.Ephemeral,
 				})
 			}
 		}
@@ -78,6 +79,9 @@ Use --depth to see transitive blockers.`,
 			}
 
 			title := info.Title
+			if info.Ephemeral {
+				title = "👻 " + title
+			}
 			if len(title) > 40 {
 				title = title[:37] + "..."
 			}
@@ -105,6 +109,7 @@ type blockedInfo struct {
 	Blockers    []string `json:"blockers"`
 	GateBlocked bool     `json:"gate_blocked"`
 	AwaitType   string   `json:"await_type,omitempty"`
+	Ephemeral   bool     `json:"ephemeral"`
 }
 
 func init() {

@@ -17,15 +17,15 @@ func TestReadyCmd(t *testing.T) {
 	defer db.Close()
 
 	// Mock issues query
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id FROM issues")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id"}).
-			AddRow("grava-1", "Ready Task", "open", 1, time.Now(), nil, nil).
-			AddRow("grava-2", "Blocked Task", "open", 1, time.Now(), nil, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
+			AddRow("grava-1", "Ready Task", "open", 1, time.Now(), nil, nil, 0, nil).
+			AddRow("grava-2", "Blocked Task", "open", 1, time.Now(), nil, nil, 0, nil))
 
 	// Mock dependencies query
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type FROM dependencies")).
-		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type"}).
-			AddRow("grava-1", "grava-2", "blocks"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
+		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}).
+			AddRow("grava-1", "grava-2", "blocks", nil))
 
 	mock.ExpectClose()
 
@@ -44,15 +44,15 @@ func TestBlockedCmd(t *testing.T) {
 	defer db.Close()
 
 	// Mock issues query
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id FROM issues")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id"}).
-			AddRow("grava-1", "Ready Task", "open", 1, time.Now(), nil, nil).
-			AddRow("grava-2", "Blocked Task", "open", 1, time.Now(), nil, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
+			AddRow("grava-1", "Ready Task", "open", 1, time.Now(), nil, nil, 0, nil).
+			AddRow("grava-2", "Blocked Task", "open", 1, time.Now(), nil, nil, 0, nil))
 
 	// Mock dependencies query
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type FROM dependencies")).
-		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type"}).
-			AddRow("grava-1", "grava-2", "blocks"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
+		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}).
+			AddRow("grava-1", "grava-2", "blocks", nil))
 
 	mock.ExpectClose()
 

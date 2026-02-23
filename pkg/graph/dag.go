@@ -1,7 +1,11 @@
 package graph
 
 import (
+	"fmt"
 	"sync"
+	"time"
+
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 )
 
 // AdjacencyDAG implements DAG using adjacency lists
@@ -15,6 +19,11 @@ type AdjacencyDAG struct {
 
 	// Cached computations
 	cache *GraphCache
+
+	// Persistence & Session
+	store      dolt.Store
+	actor      string
+	agentModel string
 }
 
 // NewAdjacencyDAG creates a new DAG
@@ -30,6 +39,14 @@ func NewAdjacencyDAG(enableCache bool) *AdjacencyDAG {
 	}
 
 	return dag
+}
+
+// SetSession updates the session metadata for auditing
+func (g *AdjacencyDAG) SetSession(actor, model string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.actor = actor
+	g.agentModel = model
 }
 
 // AddNode adds a node to the graph
@@ -83,7 +100,29 @@ func (g *AdjacencyDAG) SetNodeStatus(id string, status IssueStatus) error {
 		return nil
 	}
 
+	if g.store != nil {
+		actor := g.actor
+		if actor == "" {
+			actor = "unknown"
+		}
+
+		query := "UPDATE issues SET status = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?"
+		_, err := g.store.Exec(query, string(status), time.Now(), actor, g.agentModel, id)
+		if err != nil {
+			return fmt.Errorf("failed to update issue status in DB: %w", err)
+		}
+
+		err = g.store.LogEvent(id, "status_change", actor, g.agentModel, node.Status, status)
+		if err != nil {
+			// We log but don't fail the operation if only audit log fails?
+			// Actually, plan says "log audit events". If it fails, maybe we should know.
+			// Given it's local DB, let's be strict.
+			return fmt.Errorf("failed to log status change event: %w", err)
+		}
+	}
+
 	node.Status = status
+	node.UpdatedAt = time.Now()
 	if g.cache != nil {
 		g.cache.MarkDirty(id)
 		// Propagate priority change as status can affect inheritance (e.g. closing a task)
@@ -116,7 +155,26 @@ func (g *AdjacencyDAG) SetNodePriority(id string, priority Priority) error {
 		return nil
 	}
 
+	if g.store != nil {
+		actor := g.actor
+		if actor == "" {
+			actor = "unknown"
+		}
+
+		query := "UPDATE issues SET priority = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?"
+		_, err := g.store.Exec(query, int(priority), time.Now(), actor, g.agentModel, id)
+		if err != nil {
+			return fmt.Errorf("failed to update issue priority in DB: %w", err)
+		}
+
+		err = g.store.LogEvent(id, "priority_change", actor, g.agentModel, int(node.Priority), int(priority))
+		if err != nil {
+			return fmt.Errorf("failed to log priority change event: %w", err)
+		}
+	}
+
 	node.Priority = priority
+	node.UpdatedAt = time.Now()
 	if g.cache != nil {
 		g.cache.PropagatePriorityChange(id)
 	}
