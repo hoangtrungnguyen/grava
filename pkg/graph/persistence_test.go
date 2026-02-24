@@ -175,3 +175,83 @@ func TestRemoveEdge_Persistence(t *testing.T) {
 	assert.Equal(t, 0, dag.EdgeCount())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestStatusBubbling_Persistence(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
+
+	store := dolt.NewClientFromDB(db)
+	dag := NewAdjacencyDAG(true)
+	dag.store = store
+	dag.SetSession("test-actor", "test-model")
+
+	// Setup hierarchy: Parent -> Child 1, Parent -> Child 2
+	dag.AddNode(&Node{ID: "parent", Status: StatusOpen})
+	dag.AddNode(&Node{ID: "child1", Status: StatusOpen})
+	dag.AddNode(&Node{ID: "child2", Status: StatusOpen})
+	// child1 --subtask-of--> parent
+	dag.AddEdge(&Edge{FromID: "child1", ToID: "parent", Type: DependencySubtaskOf})
+	// child2 --subtask-of--> parent
+	dag.AddEdge(&Edge{FromID: "child2", ToID: "parent", Type: DependencySubtaskOf})
+
+	// 1. Mark child1 as In Progress -> Parent should become In Progress
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET status = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?")).
+		WithArgs(string(StatusInProgress), sqlmock.AnyArg(), "test-actor", "test-model", "child1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WithArgs("child1", "status_change", "test-actor", "\"open\"", "\"in_progress\"", "test-actor", "test-actor", "test-model", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Automated update for parent (actor='system')
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET status = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?")).
+		WithArgs(string(StatusInProgress), sqlmock.AnyArg(), "system", "test-model", "parent").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WithArgs("parent", "status_change", "system", "\"open\"", "\"in_progress\"", "system", "system", "test-model", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err = dag.SetNodeStatus("child1", StatusInProgress)
+	assert.NoError(t, err)
+
+	pNode, _ := dag.GetNode("parent")
+	assert.Equal(t, StatusInProgress, pNode.Status)
+
+	// 2. Mark child1 closed, child2 still open -> Parent stays In Progress
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET status")).
+		WithArgs(string(StatusClosed), sqlmock.AnyArg(), "test-actor", "test-model", "child1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WithArgs("child1", "status_change", "test-actor", "\"in_progress\"", "\"closed\"", "test-actor", "test-actor", "test-model", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err = dag.SetNodeStatus("child1", StatusClosed)
+	assert.NoError(t, err)
+
+	pNode, _ = dag.GetNode("parent")
+	assert.Equal(t, StatusInProgress, pNode.Status)
+
+	// 3. Mark child2 closed -> Parent becomes Closed
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET status")).
+		WithArgs(string(StatusClosed), sqlmock.AnyArg(), "test-actor", "test-model", "child2").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WithArgs("child2", "status_change", "test-actor", "\"open\"", "\"closed\"", "test-actor", "test-actor", "test-model", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Automated update for parent to Closed
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET status")).
+		WithArgs(string(StatusClosed), sqlmock.AnyArg(), "system", "test-model", "parent").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WithArgs("parent", "status_change", "system", "\"in_progress\"", "\"closed\"", "system", "system", "test-model", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err = dag.SetNodeStatus("child2", StatusClosed)
+	assert.NoError(t, err)
+
+	pNode, _ = dag.GetNode("parent")
+	assert.Equal(t, StatusClosed, pNode.Status)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

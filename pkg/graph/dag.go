@@ -86,11 +86,23 @@ func (g *AdjacencyDAG) GetNode(id string) (*Node, error) {
 	return node, nil
 }
 
-// SetNodeStatus updates the status of a node and invalidates relevant caches
+// SetNodeStatus updates the status of a node and invalidates relevant caches.
+// It also triggers hierarchical status bubbling.
 func (g *AdjacencyDAG) SetNodeStatus(id string, status IssueStatus) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	err := g.setNodeStatusUnsafe(id, status, g.actor)
+	if err != nil {
+		return err
+	}
+
+	// Trigger bubbling
+	g.bubbleStatusUnsafe(id, status)
+	return nil
+}
+
+func (g *AdjacencyDAG) setNodeStatusUnsafe(id string, status IssueStatus, actor string) error {
 	node, exists := g.nodes[id]
 	if !exists {
 		return ErrNodeNotFound
@@ -101,7 +113,6 @@ func (g *AdjacencyDAG) SetNodeStatus(id string, status IssueStatus) error {
 	}
 
 	if g.store != nil {
-		actor := g.actor
 		if actor == "" {
 			actor = "unknown"
 		}
@@ -114,9 +125,6 @@ func (g *AdjacencyDAG) SetNodeStatus(id string, status IssueStatus) error {
 
 		err = g.store.LogEvent(id, "status_change", actor, g.agentModel, node.Status, status)
 		if err != nil {
-			// We log but don't fail the operation if only audit log fails?
-			// Actually, plan says "log audit events". If it fails, maybe we should know.
-			// Given it's local DB, let's be strict.
 			return fmt.Errorf("failed to log status change event: %w", err)
 		}
 	}
@@ -139,6 +147,54 @@ func (g *AdjacencyDAG) SetNodeStatus(id string, status IssueStatus) error {
 	}
 
 	return nil
+}
+
+func (g *AdjacencyDAG) bubbleStatusUnsafe(id string, status IssueStatus) {
+	// Find parent via subtask-of edge
+	// Direction: child --subtask-of--> parent
+	var parentID string
+	for targetID, edge := range g.outgoing[id] {
+		if edge.Type == DependencySubtaskOf {
+			parentID = targetID
+			break
+		}
+	}
+
+	if parentID == "" {
+		return
+	}
+
+	parent, exists := g.nodes[parentID]
+	if !exists {
+		return
+	}
+
+	if status == StatusClosed {
+		// Check all siblings (everything that has a subtask-of edge to parentID)
+		allClosed := true
+		for childID, edge := range g.incoming[parentID] {
+			if edge.Type == DependencySubtaskOf {
+				if g.nodes[childID].Status != StatusClosed {
+					allClosed = false
+					break
+				}
+			}
+		}
+
+		if allClosed {
+			// Auto-close parent
+			_ = g.setNodeStatusUnsafe(parentID, StatusClosed, "system")
+			// Recurse up the tree
+			g.bubbleStatusUnsafe(parentID, StatusClosed)
+		}
+	} else if status == StatusInProgress {
+		// If child is active, parent should be in progress if it was open
+		if parent.Status == StatusOpen {
+			_ = g.setNodeStatusUnsafe(parentID, StatusInProgress, "system")
+			// Recurse up the tree
+			g.bubbleStatusUnsafe(parentID, StatusInProgress)
+		}
+	}
 }
 
 // SetNodePriority updates the priority of a node and propagates the change
