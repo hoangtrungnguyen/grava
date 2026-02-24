@@ -76,6 +76,7 @@ const (
 type Node struct {
 	ID        string
 	Title     string
+	Type      string // epic, task, bug, etc.
 	Status    IssueStatus
 	Priority  Priority
 	CreatedAt time.Time

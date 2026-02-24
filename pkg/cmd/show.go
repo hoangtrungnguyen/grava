@@ -3,8 +3,10 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/graph"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +26,10 @@ type IssueDetail struct {
 	AffectedFiles []string  `json:"affected_files,omitempty"`
 }
 
+var (
+	showTree bool
+)
+
 // showCmd represents the show command
 var showCmd = &cobra.Command{
 	Use:   "show <id>",
@@ -33,8 +39,13 @@ var showCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 
+		if showTree {
+			return showTreeVisualization(id)
+		}
+
 		query := `SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files 
                   FROM issues WHERE id = ?`
+		// ... rest of details logic ...
 
 		var title, desc, iType, status string
 		var priority int
@@ -116,4 +127,86 @@ var showCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(showCmd)
+	showCmd.Flags().BoolVar(&showTree, "tree", false, "Show hierarchical tree visualization")
+}
+
+func showTreeVisualization(rootID string) error {
+	dag, err := graph.LoadGraphFromDB(Store)
+	if err != nil {
+		return fmt.Errorf("failed to load graph: %w", err)
+	}
+
+	if !dag.HasNode(rootID) {
+		return fmt.Errorf("issue %s not found in graph", rootID)
+	}
+
+	fmt.Printf("Hierarchical Tree for %s:\n\n", rootID)
+	renderTreeNode(dag, rootID, "", true, true)
+	fmt.Println()
+	return nil
+}
+
+func renderTreeNode(dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool) {
+	node, _ := dag.GetNode(id)
+	children := dag.GetTreeChildren(id)
+
+	marker := ""
+	if !isRoot {
+		marker = "├── "
+		if isLast {
+			marker = "└── "
+		}
+	}
+
+	// Status glyph and color
+	glyph := "●"
+	color := "\033[90m" // Gray (open)
+	switch node.Status {
+	case graph.StatusClosed:
+		glyph = "✔"
+		color = "\033[32m" // Green
+	case graph.StatusInProgress:
+		glyph = "▶"
+		color = "\033[34m" // Blue
+	case graph.StatusBlocked:
+		glyph = "✖"
+		color = "\033[31m" // Red
+	}
+	reset := "\033[0m"
+
+	// Progress
+	progress := ""
+	if len(children) > 0 {
+		total := len(children)
+		closed := 0
+		for _, cid := range children {
+			cn, _ := dag.GetNode(cid)
+			if cn.Status == graph.StatusClosed {
+				closed++
+			}
+		}
+		percentage := (closed * 100) / total
+
+		// Small progress bar
+		barWidth := 5
+		filled := (percentage * barWidth) / 100
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+		progress = fmt.Sprintf(" [%s] %d%%", bar, percentage)
+	}
+
+	fmt.Printf("%s%s%s%s%s %s (%s)%s %s\n",
+		indent, marker, color, glyph, reset, id, node.Type, progress, node.Title)
+
+	newIndent := indent
+	if !isRoot {
+		if isLast {
+			newIndent += "    "
+		} else {
+			newIndent += "│   "
+		}
+	}
+
+	for i, cid := range children {
+		renderTreeNode(dag, cid, newIndent, i == len(children)-1, false)
+	}
 }

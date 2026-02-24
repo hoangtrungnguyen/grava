@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/graph"
 	"github.com/hoangtrungnguyen/grava/pkg/validation"
 	"github.com/spf13/cobra"
 )
@@ -51,12 +52,24 @@ Only the flags provided will be updated.`,
 			queryParams = append(queryParams, pInt)
 		}
 		if cmd.Flags().Changed("status") {
-			val, _ := cmd.Flags().GetString("status")
-			if err := validation.ValidateStatus(val); err != nil {
+			statusVal, _ := cmd.Flags().GetString("status")
+			if err := validation.ValidateStatus(statusVal); err != nil {
 				return err
 			}
-			query += ", status = ?"
-			queryParams = append(queryParams, val)
+
+			// Use graph logic for status changes to trigger bubbling
+			dag, err := graph.LoadGraphFromDB(Store)
+			if err != nil {
+				return fmt.Errorf("failed to load graph for status propagation: %w", err)
+			}
+			dag.SetSession(actor, agentModel)
+
+			err = dag.SetNodeStatus(id, graph.IssueStatus(statusVal))
+			if err != nil {
+				return fmt.Errorf("failed to update status via graph: %w", err)
+			}
+			// Status is now updated in DB and events are logged.
+			// No need to add it to queryParams.
 		}
 		if cmd.Flags().Changed("files") {
 			query += ", affected_files = ?"

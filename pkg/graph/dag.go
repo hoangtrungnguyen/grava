@@ -197,6 +197,26 @@ func (g *AdjacencyDAG) bubbleStatusUnsafe(id string, status IssueStatus) {
 	}
 }
 
+// GetTreeChildren returns the IDs of all children (subtasks) for a given node.
+// It looks for incoming edges of type 'subtask-of' or 'parent-child'.
+func (g *AdjacencyDAG) GetTreeChildren(parentID string) []string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var children []string
+	incoming, exists := g.incoming[parentID]
+	if !exists {
+		return children
+	}
+
+	for childID, edge := range incoming {
+		if edge.Type == DependencySubtaskOf || edge.Type == DependencyParentChild {
+			children = append(children, childID)
+		}
+	}
+	return children
+}
+
 // SetNodePriority updates the priority of a node and propagates the change
 func (g *AdjacencyDAG) SetNodePriority(id string, priority Priority) error {
 	g.mu.Lock()
