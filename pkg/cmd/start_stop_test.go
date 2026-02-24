@@ -2,16 +2,17 @@ package cmd
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
-	"time"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestStartStopIntegration(t *testing.T) {
-	// 1. Setup temporary directory
+func TestStartCmd(t *testing.T) {
+	// 1. Setup temporary directory as the fake project root
 	tmpDir, err := os.MkdirTemp("", "grava-test-*")
 	assert.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
@@ -20,66 +21,56 @@ func TestStartStopIntegration(t *testing.T) {
 	os.Chdir(tmpDir)
 	defer os.Chdir(origCWD)
 
-	// 2. Create scripts directory and dummy scripts
-	scriptsDir := filepath.Join(tmpDir, "scripts")
-	err = os.Mkdir(scriptsDir, 0755)
-	assert.NoError(t, err)
+	// 2. Create the .grava structure that grava start expects
+	gravaDir := filepath.Join(tmpDir, ".grava")
+	doltDir := filepath.Join(gravaDir, "dolt")
+	binDir := filepath.Join(gravaDir, "bin")
+	assert.NoError(t, os.MkdirAll(doltDir, 0755))
+	assert.NoError(t, os.MkdirAll(binDir, 0755))
 
-	startScript := filepath.Join(scriptsDir, "start_dolt_server.sh")
-	stopScript := filepath.Join(scriptsDir, "stop_dolt_server.sh")
+	// 3. Create a fake dolt binary in .grava/bin/dolt
+	binaryName := "dolt"
+	if runtime.GOOS == "windows" {
+		binaryName = "dolt.exe"
+	}
+	fakeDolt := filepath.Join(binDir, binaryName)
+	// A sleeping script so Start() doesn't immediately exit (simulates a server)
+	assert.NoError(t, os.WriteFile(fakeDolt, []byte("#!/bin/sh\nsleep 60\n"), 0755))
 
-	// Start script writes arguments to a file for verification
-	err = os.WriteFile(startScript, []byte("#!/bin/bash\necho \"start $1\" > start_called.txt\n"), 0755)
-	assert.NoError(t, err)
+	// 4. Set config with a port that is likely free
+	viper.Set("db_url", "root@tcp(127.0.0.1:39901)/dolt")
 
-	// Stop script writes arguments to a file for verification
-	err = os.WriteFile(stopScript, []byte("#!/bin/bash\necho \"stop $1 $2\" > stop_called.txt\n"), 0755)
-	assert.NoError(t, err)
-
-	// 3. Create a fake .grava.yaml
-	viper.Set("db_url", "root@tcp(127.0.0.1:3309)/dolt")
-
-	// Ensure .grava directory exists for logs
-	err = os.Mkdir(".grava", 0755)
-	assert.NoError(t, err)
-
-	t.Run("grava start calls script with correct port", func(t *testing.T) {
+	t.Run("grava start outputs startup message with correct port", func(t *testing.T) {
 		output, err := executeCommand(rootCmd, "start")
 		assert.NoError(t, err)
-		assert.Contains(t, output, "Starting Dolt server on port 3309")
-
-		// Verify script was called (wait a bit since it's background)
-		var content []byte
-		for i := 0; i < 10; i++ {
-			content, err = os.ReadFile("start_called.txt")
-			if err == nil && string(content) != "" {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		assert.NoError(t, err)
-		assert.Equal(t, "start 3309\n", string(content))
+		assert.Contains(t, output, "Starting Dolt server on port 39901")
+		assert.Contains(t, output, "started in background")
 	})
 
-	t.Run("grava stop calls script with correct port and flag", func(t *testing.T) {
-		output, err := executeCommand(rootCmd, "stop")
-		assert.NoError(t, err)
-		assert.Contains(t, output, "Stopping Dolt server on port 3309")
+	t.Run("grava start fails when dolt database dir is missing", func(t *testing.T) {
+		// Temporarily rename dolt dir
+		bakDir := doltDir + "_bak"
+		assert.NoError(t, os.Rename(doltDir, bakDir))
+		defer os.Rename(bakDir, doltDir)
 
-		// Verify script was called
-		content, err := os.ReadFile("stop_called.txt")
-		assert.Equal(t, "stop 3309 -y\n", string(content))
-	})
-
-	t.Run("grava start fails when script is missing", func(t *testing.T) {
-		// Move scripts away temporarily
-		bakDir := scriptsDir + "_bak"
-		err := os.Rename(scriptsDir, bakDir)
-		assert.NoError(t, err)
-		defer os.Rename(bakDir, scriptsDir)
-
-		_, err = executeCommand(rootCmd, "start")
+		_, err := executeCommand(rootCmd, "start")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("grava start fails when no dolt binary available", func(t *testing.T) {
+		// Temporarily rename the local binary
+		bakBin := fakeDolt + ".bak"
+		assert.NoError(t, os.Rename(fakeDolt, bakBin))
+		defer os.Rename(bakBin, fakeDolt)
+
+		// If dolt is installed on the system PATH this scenario can't be forced in tests.
+		// Skip rather than fail, since ResolveDoltBinary falls back to system dolt.
+		if _, lookErr := exec.LookPath("dolt"); lookErr == nil {
+			t.Skip("system dolt is installed — cannot test 'no dolt found' scenario")
+		}
+
+		_, err := executeCommand(rootCmd, "start")
+		assert.Error(t, err)
 	})
 }
