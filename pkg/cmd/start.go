@@ -37,26 +37,37 @@ var startCmd = &cobra.Command{
 		// 2. Check if port is already in use
 		ln, err := net.Listen("tcp", ":"+port)
 		if err == nil {
-			// Port is free, so server is NOT running (or at least not on this port)
+			// Port is free, so server is NOT running
 			ln.Close()
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Server appears to be already running on port %s\n", port)
 			return nil
 		}
 
-		// 3. Find start script
-		scriptPath, err := utils.FindScript("start_dolt_server.sh")
+		// 3. Resolve dolt binary (local .grava/bin/dolt preferred, system fallback)
+		cwd, err := os.Getwd()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+
+		doltBin, err := utils.ResolveDoltBinary(cwd)
+		if err != nil {
+			return fmt.Errorf("dolt not found: run 'grava init' first to install dolt: %w", err)
+		}
+
+		doltRepoDir := filepath.Join(cwd, ".grava", "dolt")
+		if _, statErr := os.Stat(doltRepoDir); os.IsNotExist(statErr) {
+			return fmt.Errorf("dolt database not found at %s — run 'grava init' first", doltRepoDir)
 		}
 
 		// 4. Start in background
 		fmt.Fprintf(cmd.OutOrStdout(), "🚀 Starting Dolt server on port %s...\n", port)
 
-		serverCmd := exec.Command(scriptPath, port)
+		serverCmd := exec.Command(doltBin, "sql-server", "--port", port, "--host", "0.0.0.0")
+		serverCmd.Dir = doltRepoDir
 
 		// Redirect output to log file
-		gravaDir := ".grava"
+		gravaDir := filepath.Join(cwd, ".grava")
 		_ = os.MkdirAll(gravaDir, 0755)
 		logFile, err := os.OpenFile(filepath.Join(gravaDir, "dolt.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err == nil {
@@ -68,7 +79,6 @@ var startCmd = &cobra.Command{
 			return fmt.Errorf("failed to start dolt server: %w", err)
 		}
 
-		// We don't wait for it to finish as its a server
 		fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt server started in background. Check .grava/dolt.log for details.")
 		return nil
 	},
