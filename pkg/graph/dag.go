@@ -390,6 +390,41 @@ func (g *AdjacencyDAG) RemoveNode(id string) error {
 		return ErrNodeNotFound
 	}
 
+	// Persist: tombstone in DB, delete dependencies, log audit event
+	if g.store != nil {
+		actor := g.actor
+		if actor == "" {
+			actor = "unknown"
+		}
+
+		// 1. Record deletion entry
+		_, err := g.store.Exec(
+			"INSERT INTO deletions (id, reason, actor, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)",
+			id, "remove_node", actor, actor, actor, g.agentModel,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to record deletion for %s: %w", id, err)
+		}
+
+		// 2. Tombstone the issue
+		_, err = g.store.Exec(
+			"UPDATE issues SET status = 'tombstone', updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?",
+			time.Now(), actor, g.agentModel, id,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to tombstone issue %s: %w", id, err)
+		}
+
+		// 3. Remove all dependencies involving this node
+		_, err = g.store.Exec("DELETE FROM dependencies WHERE from_id = ? OR to_id = ?", id, id)
+		if err != nil {
+			return fmt.Errorf("failed to delete dependencies for %s: %w", id, err)
+		}
+
+		// 4. Audit log
+		_ = g.store.LogEvent(id, "node_removed", actor, g.agentModel, nil, nil)
+	}
+
 	// Remove outgoing edges
 	for toID := range g.outgoing[id] {
 		delete(g.incoming[toID], id)
@@ -485,6 +520,29 @@ func (g *AdjacencyDAG) RemoveEdge(fromID, toID string, depType DependencyType) e
 
 	if edge, exists := g.outgoing[fromID][toID]; exists {
 		if depType == "" || edge.Type == depType {
+			// Persist: delete dependency row from DB
+			if g.store != nil {
+				actor := g.actor
+				if actor == "" {
+					actor = "unknown"
+				}
+
+				query := "DELETE FROM dependencies WHERE from_id = ? AND to_id = ?"
+				args := []any{fromID, toID}
+				if depType != "" {
+					query += " AND type = ?"
+					args = append(args, string(depType))
+				}
+
+				_, err := g.store.Exec(query, args...)
+				if err != nil {
+					return fmt.Errorf("failed to delete dependency %s->%s from DB: %w", fromID, toID, err)
+				}
+
+				_ = g.store.LogEvent(fromID, "edge_removed", actor, g.agentModel,
+					map[string]string{"to_id": toID, "type": string(edge.Type)}, nil)
+			}
+
 			delete(g.outgoing[fromID], toID)
 			delete(g.incoming[toID], fromID)
 			if g.cache != nil {

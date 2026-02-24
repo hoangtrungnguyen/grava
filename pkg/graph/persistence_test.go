@@ -109,3 +109,69 @@ func TestUpdate_CacheConsistency(t *testing.T) {
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestRemoveNode_Persistence(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
+
+	store := dolt.NewClientFromDB(db)
+	dag := NewAdjacencyDAG(true)
+	dag.store = store
+	dag.SetSession("test-actor", "test-model")
+
+	dag.AddNode(&Node{ID: "grava-1", Status: StatusOpen})
+
+	// Expect INSERT INTO deletions
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO deletions")).
+		WithArgs("grava-1", "remove_node", "test-actor", "test-actor", "test-actor", "test-model").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Expect tombstone UPDATE
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET status = 'tombstone'")).
+		WithArgs(sqlmock.AnyArg(), "test-actor", "test-model", "grava-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Expect DELETE dependencies
+	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM dependencies WHERE from_id = ? OR to_id = ?")).
+		WithArgs("grava-1", "grava-1").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	// Expect audit log
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err = dag.RemoveNode("grava-1")
+	assert.NoError(t, err)
+	assert.False(t, dag.HasNode("grava-1"))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRemoveEdge_Persistence(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
+
+	store := dolt.NewClientFromDB(db)
+	dag := NewAdjacencyDAG(true)
+	dag.store = store
+	dag.SetSession("test-actor", "test-model")
+
+	dag.AddNode(&Node{ID: "A", Status: StatusOpen})
+	dag.AddNode(&Node{ID: "B", Status: StatusOpen})
+	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+
+	// Expect DELETE FROM dependencies with type filter
+	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM dependencies WHERE from_id = ? AND to_id = ? AND type = ?")).
+		WithArgs("A", "B", "blocks").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	// Expect audit log
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err = dag.RemoveEdge("A", "B", DependencyBlocks)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, dag.EdgeCount())
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
