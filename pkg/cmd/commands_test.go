@@ -251,13 +251,46 @@ func TestUpdateCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
+	// Phase 1: graph load for status propagation
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
+			AddRow("grava-1", "Old Title", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
+		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}))
+
+	// Phase 1b: SetNodeStatus → UPDATE + audit event
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET status = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?")).
+		WithArgs("closed", sqlmock.AnyArg(), "unknown", "", "grava-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Phase 2: regular UPDATE for remaining fields (title only, status is excluded)
 	mock.ExpectExec(`UPDATE issues SET updated_at = \?, updated_by = \?, agent_model = \?.*`).
-		WithArgs(sqlmock.AnyArg(), "unknown", "", "New Title", "closed", "grava-1").
+		WithArgs(sqlmock.AnyArg(), "unknown", "", "New Title", "grava-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectClose()
 
 	output, err := executeCommand(rootCmd, "update", "grava-1", "--title", "New Title", "--status", "closed")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Updated issue grava-1")
+}
+
+func TestUpdateTitleCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+
+	Store = dolt.NewClientFromDB(db)
+
+	// Title-only update: no graph load needed
+	mock.ExpectExec(`UPDATE issues SET updated_at = \?, updated_by = \?, agent_model = \?.*`).
+		WithArgs(sqlmock.AnyArg(), "unknown", "", "New Title", "grava-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "update", "grava-1", "--title", "New Title")
 	assert.NoError(t, err)
 	assert.Contains(t, output, "Updated issue grava-1")
 }
@@ -428,10 +461,10 @@ func TestDepCmd(t *testing.T) {
 	Store = dolt.NewClientFromDB(db)
 
 	// Graph load for validation
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
-			AddRow("grava-abc", "T1", "open", 2, time.Now(), nil, nil, 0, nil).
-			AddRow("grava-def", "T2", "open", 2, time.Now(), nil, nil, 0, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
+			AddRow("grava-abc", "T1", "task", "open", 2, time.Now(), nil, nil, 0, nil).
+			AddRow("grava-def", "T2", "task", "open", 2, time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
 		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}))
 
@@ -459,10 +492,10 @@ func TestDepCmdCustomType(t *testing.T) {
 	Store = dolt.NewClientFromDB(db)
 
 	// Graph load for validation
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
-			AddRow("grava-abc", "T1", "open", 2, time.Now(), nil, nil, 0, nil).
-			AddRow("grava-def", "T2", "open", 2, time.Now(), nil, nil, 0, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
+			AddRow("grava-abc", "T1", "task", "open", 2, time.Now(), nil, nil, 0, nil).
+			AddRow("grava-def", "T2", "task", "open", 2, time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
 		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}))
 
