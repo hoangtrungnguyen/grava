@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/hoangtrungnguyen/grava/pkg/doltinstall"
 	"github.com/hoangtrungnguyen/grava/pkg/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -18,14 +19,35 @@ var initCmd = &cobra.Command{
 	Short: "Initialize a new Grava repository",
 	Long: `Initialize a new Grava repository in the current directory.
 This command creates a .grava directory and a default configuration file.
-It also checks if the dolt CLI is installed.`,
+If Dolt is not installed locally or on the system PATH, it will be
+automatically downloaded to .grava/bin/dolt (no sudo required).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// 1. Check for Dolt
-		if _, err := exec.LookPath("dolt"); err != nil {
-			return fmt.Errorf("dolt not found: %w\nPlease install Dolt at https://docs.dolthub.com/introduction/installation", err)
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+
+		// 1. Resolve or install Dolt
+		doltBin, err := utils.ResolveDoltBinary(cwd)
+		if err != nil {
+			// Dolt not found locally or on PATH — download it
+			if !outputJSON {
+				fmt.Fprintln(cmd.OutOrStdout(), "📥 Dolt not found. Downloading to .grava/bin/dolt...")
+			}
+			binDir := utils.LocalDoltBinDir(cwd)
+			if installErr := doltinstall.InstallDolt(binDir); installErr != nil {
+				return fmt.Errorf("failed to install dolt: %w", installErr)
+			}
+			doltBin, err = utils.ResolveDoltBinary(cwd)
+			if err != nil {
+				return fmt.Errorf("dolt install appeared to succeed but binary not found: %w", err)
+			}
+			if !outputJSON {
+				fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt installed to .grava/bin/dolt")
+			}
 		}
 		if !outputJSON {
-			fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt is installed.")
+			fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt is ready.")
 		}
 
 		// 2. Create .grava directory
@@ -44,19 +66,14 @@ It also checks if the dolt CLI is installed.`,
 			if !outputJSON {
 				fmt.Fprintln(cmd.OutOrStdout(), "📦 Initializing Dolt database...")
 			}
-			initCmd := exec.Command("dolt", "init")
-			initCmd.Dir = doltRepoDir
-			if err := initCmd.Run(); err != nil {
+			initDoltCmd := exec.Command(doltBin, "init")
+			initDoltCmd.Dir = doltRepoDir
+			if err := initDoltCmd.Run(); err != nil {
 				return fmt.Errorf("failed to initialize dolt: %w", err)
 			}
 		}
 
 		// 4. Find Available Port
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current working directory: %w", err)
-		}
-
 		port, err := utils.AllocatePort(cwd, 3306)
 		if err != nil {
 			return err
@@ -70,7 +87,7 @@ It also checks if the dolt CLI is installed.`,
 			fmt.Fprintf(cmd.OutOrStdout(), "🚀 Starting Dolt server on port %d...\n", port)
 		}
 
-		serverCmd := exec.Command("dolt", "sql-server", "--port", fmt.Sprintf("%d", port), "--host", "0.0.0.0")
+		serverCmd := exec.Command(doltBin, "sql-server", "--port", fmt.Sprintf("%d", port), "--host", "0.0.0.0")
 		serverCmd.Dir = doltRepoDir
 
 		// Redirect output to log file
@@ -85,15 +102,12 @@ It also checks if the dolt CLI is installed.`,
 		}
 
 		// 6. Create default config
-		configFile := ".grava.yaml" // Default used by root.go in CWD
+		configFile := ".grava.yaml"
 		dbURL := fmt.Sprintf("root@tcp(127.0.0.1:%d)/dolt?parseTime=true", port)
 		viper.Set("db_url", dbURL)
 
 		if err := viper.WriteConfigAs(configFile); err != nil {
-			// If it fails because file exists, we might want to update it
 			if os.IsExist(err) || err.Error() == "file already exists" {
-				// For now just overwrite if we are initializing?
-				// The prompt says "Initialize .grava directory and config"
 				_ = os.Remove(configFile)
 				_ = viper.WriteConfigAs(configFile)
 			} else {
