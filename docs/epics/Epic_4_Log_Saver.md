@@ -1,10 +1,14 @@
-# Epic 4: Grava Flight Recorder (System-Wide Trace Logging)
+# Epic 4: Grava Flight Recorder & Ephemeral Store
 
-**Goal:** Implement a persistent, structured logging system that captures command execution, internal errors, stack traces, and agent interactions without cluttering the user's terminal.
+**Goal:** Implement a persistent, structured logging system and an ephemeral state store. This captures command execution, internal errors, and agent interactions while managing transient "in-flight" state (heartbeats, claims) in an isolated database to prevent Dolt history bloat.
+
+**Implementation Plan:** [Epic 4.1: Ephemeral Store Implementation Plan](./Epic_4.1_Ephemeral_Store_Implementation_Plan.md)
 
 **Success Criteria:**
 - `slog` infrastructure initialized with custom handler writing to `.grava/logs/grava.log`
 - Log rotation preventing infinite file growth
+- Ephemeral SQLite store initialized at `.grava/ephemeral.sqlite3` for transient state
+- TTL-based automatic cleanup of ephemeral records (heartbeats, stale claims)
 - Global `--debug` flag enabling verbose logging
 - Panic recovery middleware capturing stack traces
 - `grava debug logs` command implemented for viewing and exporting logs
@@ -84,3 +88,15 @@
 - `grava debug logs` prints path to log file
 - `grava debug logs --last` prints logs from last execution
 - `grava debug logs --export` zips `.grava/logs` into `grava_debug_bundle.zip`
+
+### 4.8 Ephemeral Store (The "Wisp" Layer)
+**As an** AI agent
+**I want to** store short-lived state like heartbeats and transient claims
+**So that** I don't create thousands of junk commits in the main Dolt database
+
+**Acceptance Criteria:**
+- `internal/storage/ephemeral.go` creates a sidecar SQLite database at `.grava/ephemeral.sqlite3`
+- TTL cleanup: Rows older than 24 hours are deleted on startup
+- Stores `agent_heartbeats` (agent_id, last_seen, active_task_id)
+- Stores `transient_meta` for high-frequency state updates
+- Provides a clean separation between "Permanent Record" (Dolt) and "Execution Pulse" (SQLite)
