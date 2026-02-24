@@ -350,9 +350,9 @@ func TestSubtaskCmd(t *testing.T) {
 		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 1, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// 5. Add parent-child dependency
+	// 5. Add subtask-of dependency
 	mock.ExpectExec(`INSERT INTO dependencies .* VALUES`).
-		WithArgs("grava-123", "grava-123.5", "parent-child", "unknown", "unknown", "").
+		WithArgs("grava-123.5", "grava-123", "subtask-of", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// 6. Audit Log (create)
@@ -362,7 +362,7 @@ func TestSubtaskCmd(t *testing.T) {
 
 	// 7. Audit Log (dependency_add)
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
-		WithArgs("grava-123", "dependency_add", "unknown", "{}", sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WithArgs("grava-123.5", "dependency_add", "unknown", "{}", sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// 8. Transaction Commit

@@ -78,12 +78,24 @@ You can specify title, description, type, and priority.`,
 			return fmt.Errorf("failed to insert issue: %w", err)
 		}
 
-		// 4. Add parent-child dependency if parent is specified
+		// 4. Add subtask-of dependency if parent is specified
 		if parentID != "" {
-			depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
-			_, err = tx.ExecContext(ctx, depQuery, parentID, id, "parent-child", actor, actor, agentModel)
+			// Check if parent exists
+			var exists int
+			err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM issues WHERE id = ?", parentID).Scan(&exists)
 			if err != nil {
-				return fmt.Errorf("failed to create parent-child dependency: %w", err)
+				return fmt.Errorf("failed to check parent existence: %w", err)
+			}
+			if exists == 0 {
+				return fmt.Errorf("parent issue %s not found", parentID)
+			}
+
+			// Epic 2.4 specifies 'subtask-of' for hierarchical breakdown
+			depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
+			// Direction: child --subtask-of--> parent
+			_, err = tx.ExecContext(ctx, depQuery, id, parentID, "subtask-of", actor, actor, agentModel)
+			if err != nil {
+				return fmt.Errorf("failed to create subtask-of dependency: %w", err)
 			}
 		}
 
@@ -99,10 +111,10 @@ You can specify title, description, type, and priority.`,
 		}
 
 		if parentID != "" {
-			// Audit Log for the edge
-			err = Store.LogEventTx(ctx, tx, parentID, "dependency_add", actor, agentModel, nil, map[string]interface{}{
-				"to_id": id,
-				"type":  "parent-child",
+			// Audit Log for the edge (on the child node)
+			err = Store.LogEventTx(ctx, tx, id, "dependency_add", actor, agentModel, nil, map[string]interface{}{
+				"to_id": parentID,
+				"type":  "subtask-of",
 			})
 			if err != nil {
 				return fmt.Errorf("failed to log dependency event: %w", err)

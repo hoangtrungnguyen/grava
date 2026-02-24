@@ -70,22 +70,23 @@ func TestCreateAuditIntegration(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "Child Task", title)
 
-	// Verify dependency (AddEdge part of the audit)
+	// Verify dependency
 	var fromID, toID, depType string
-	err = client.QueryRow("SELECT from_id, to_id, type FROM dependencies WHERE to_id = ?", childID).Scan(&fromID, &toID, &depType)
+	err = client.QueryRow("SELECT from_id, to_id, type FROM dependencies WHERE from_id = ?", childID).Scan(&fromID, &toID, &depType)
 	assert.NoError(t, err)
-	assert.Equal(t, parentID, fromID)
-	assert.Equal(t, "parent-child", depType)
+	assert.Equal(t, childID, fromID)
+	assert.Equal(t, parentID, toID)
+	assert.Equal(t, "subtask-of", depType)
 
-	// Verify Audit Log (Wisp indicators / Store data to log table)
+	// Verify Audit Log
 	var count int
 	err = client.QueryRow("SELECT COUNT(*) FROM events WHERE issue_id = ? AND event_type = 'create'", childID).Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count, "Subtask creation should be logged")
 
-	err = client.QueryRow("SELECT COUNT(*) FROM events WHERE issue_id = ? AND event_type = 'dependency_add'", parentID).Scan(&count)
+	err = client.QueryRow("SELECT COUNT(*) FROM events WHERE issue_id = ? AND event_type = 'dependency_add'", childID).Scan(&count)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, count, "Parent-Child relationship should be logged")
+	assert.Equal(t, 1, count, "Subtask relationship should be logged on the child")
 
 	// 7. Verify Wisp (ephemeral)
 	output, err = executeCommand(rootCmd, "create", "--title", "Temporary Note", "--ephemeral")

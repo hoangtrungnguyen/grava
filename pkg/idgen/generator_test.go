@@ -53,4 +53,13 @@ func TestStandardGenerator_GenerateChildID(t *testing.T) {
 	if child2 != "grava-a1b2.2" {
 		t.Errorf("Expected grava-a1b2.2, got %s", child2)
 	}
+
+	// Test 3: Nested child (multilevel)
+	subchild, err := gen.GenerateChildID(child1)
+	if err != nil {
+		t.Fatalf("GenerateChildID failed for nested child: %v", err)
+	}
+	if subchild != "grava-a1b2.1.1" {
+		t.Errorf("Expected grava-a1b2.1.1, got %s", subchild)
+	}
 }

@@ -286,7 +286,7 @@ func getFill(isLast bool, isRoot bool) string {
 
 func init() {
 	rootCmd.AddCommand(depCmd)
-	depCmd.PersistentFlags().StringVar(&depType, "type", "blocks", "Dependency type (blocks, relates-to, duplicates, parent-child)")
+	depCmd.PersistentFlags().StringVar(&depType, "type", "blocks", "Dependency type (blocks, relates-to, duplicates, parent-child, subtask-of)")
 
 	depCmd.AddCommand(depBatchCmd)
 	depBatchCmd.Flags().StringVarP(&batchFile, "file", "f", "", "JSON file containing dependencies")
