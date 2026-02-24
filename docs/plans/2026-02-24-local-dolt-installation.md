@@ -615,47 +615,145 @@ git commit -m "feat: grava start uses resolved local dolt binary instead of shel
 
 ---
 
-## Task 5: Update shell scripts to accept `DOLT_BIN` env var
+## Task 5: Update all shell scripts to use local dolt via `DOLT_BIN`
+
+All five scripts that invoke `dolt` must be updated. The pattern is:
+1. Add `DOLT_BIN` resolution at the top of each script
+2. Replace every bare `dolt` invocation with `$DOLT_BIN`
 
 **Files:**
 - Modify: `scripts/start_dolt_server.sh`
+- Modify: `scripts/stop_dolt_server.sh`
+- Modify: `scripts/setup_test_env.sh`
 - Modify: `scripts/init_dolt.sh`
 - Modify: `scripts/apply_schema.sh`
 
-These scripts are still used in some contexts. Update them to honour `DOLT_BIN` env var with fallback to system `dolt`.
+---
 
-**Step 1: Update `scripts/start_dolt_server.sh`**
+### `scripts/start_dolt_server.sh`
 
-Add at the top (after `set -e`):
+Current content uses bare `dolt` on lines 8 and 23. Replace with:
+
 ```bash
-# Use local dolt if available, otherwise system dolt
-DOLT_BIN="${DOLT_BIN:-dolt}"
-```
+#!/bin/bash
+set -e
 
-Then replace all bare `dolt` command invocations with `$DOLT_BIN`:
-```bash
-# Before: dolt sql-server ...
-# After:
-$DOLT_BIN sql-server --port=$PORT --host=0.0.0.0 --loglevel=info
-```
+DOLT_DIR=".grava/dolt"
+PORT=${1:-3306}
 
-Also update the `command -v dolt` check:
-```bash
-if ! command -v "$DOLT_BIN" &> /dev/null; then
-    echo "Error: dolt not found at $DOLT_BIN"
+# Resolve dolt binary: prefer local .grava/bin/dolt, fallback to system
+DOLT_BIN="${DOLT_BIN:-$([ -x ".grava/bin/dolt" ] && echo ".grava/bin/dolt" || echo "dolt")}"
+
+# Check dolt is reachable
+if ! command -v "$DOLT_BIN" &> /dev/null && [ ! -x "$DOLT_BIN" ]; then
+    echo "Error: dolt not found at '$DOLT_BIN'. Run 'grava init' first."
     exit 1
 fi
+
+if [ ! -d "$DOLT_DIR" ]; then
+    echo "Error: Dolt directory $DOLT_DIR not found. Run 'grava init' first."
+    exit 1
+fi
+
+echo "Starting Dolt SQL Server on port $PORT..."
+echo "Connection String: mysql://root@127.0.0.1:$PORT/dolt"
+
+cd "$DOLT_DIR"
+"$DOLT_BIN" sql-server --port=$PORT --host=0.0.0.0 --loglevel=info
 ```
 
-**Step 2: Update `scripts/init_dolt.sh`** — same pattern:
+---
+
+### `scripts/stop_dolt_server.sh`
+
+`stop_dolt_server.sh` does **not** invoke the `dolt` binary directly — it uses `lsof` and `kill` to find and stop the process by port. No `dolt` call to replace. **No changes needed** — it works for both local and system installs since it kills by PID, not by binary name.
+
+> ✅ Verify: `grep -n "dolt" scripts/stop_dolt_server.sh` — only appears in comments/string checks (`PROCESS_NAME != *"dolt"*`), not as a command call.
+
+---
+
+### `scripts/setup_test_env.sh`
+
+`setup_test_env.sh` does **not** invoke the `dolt` binary either — it only checks if the port is listening via `lsof` and then connects with `mysql` client. **No changes needed.**
+
+> ✅ Verify: `grep -n "^dolt\|exec.*dolt\| dolt " scripts/setup_test_env.sh` — no dolt binary invocations found.
+
+---
+
+### `scripts/init_dolt.sh`
+
+Replace bare `dolt` calls:
+
 ```bash
-DOLT_BIN="${DOLT_BIN:-dolt}"
+#!/bin/bash
+set -e
+
+DOLT_DIR=".grava/dolt"
+
+# Resolve dolt binary: prefer local .grava/bin/dolt, fallback to system
+DOLT_BIN="${DOLT_BIN:-$([ -x ".grava/bin/dolt" ] && echo ".grava/bin/dolt" || echo "dolt")}"
+
+echo "Checking execution environment..."
+
+# Check dolt is reachable
+if ! command -v "$DOLT_BIN" &> /dev/null && [ ! -x "$DOLT_BIN" ]; then
+    echo "Error: dolt is not installed. Run 'grava init' first."
+    exit 1
+fi
+
+# Ensure user identity is configured for Dolt
+if ! "$DOLT_BIN" config --list | grep -q "user.email"; then
+    echo "Configuring Dolt global user from Git configuration..."
+    if [ -n "$(git config user.email)" ]; then
+        "$DOLT_BIN" config --global --add user.email "$(git config user.email)"
+        "$DOLT_BIN" config --global --add user.name "$(git config user.name)"
+        echo "Dolt user configured: $(git config user.name) <$(git config user.email)>"
+    else
+        echo "Error: Git user.email not found. Please run:"
+        echo "  $DOLT_BIN config --global --add user.email \"your@email.com\""
+        echo "  $DOLT_BIN config --global --add user.name \"Your Name\""
+        exit 1
+    fi
+fi
+
+echo "Initializing Dolt database in $DOLT_DIR..."
+PROJECT_ROOT=$(git rev-parse --show-toplevel)
+cd "$PROJECT_ROOT"
+
+mkdir -p "$DOLT_DIR"
+cd "$DOLT_DIR"
+
+if [ ! -d ".dolt" ]; then
+    "$DOLT_BIN" init
+    echo "✅ Dolt database initialized successfully."
+else
+    echo "ℹ️  Dolt database already initialized."
+fi
+
+echo "Verifying database status..."
+"$DOLT_BIN" status
 ```
-Replace all `dolt` calls with `$DOLT_BIN`.
 
-**Step 3: Update `scripts/apply_schema.sh`** — same pattern.
+---
 
-**Step 4: Verify scripts are valid bash**
+### `scripts/apply_schema.sh`
+
+Add `DOLT_BIN` resolution at top and replace bare `dolt` calls:
+
+```bash
+# After set -e, add:
+DOLT_BIN="${DOLT_BIN:-$([ -x ".grava/bin/dolt" ] && echo ".grava/bin/dolt" || echo "dolt")}"
+```
+
+Then replace:
+- `dolt sql < "$schema"` → `"$DOLT_BIN" sql < "$schema"`
+- `dolt ls` → `"$DOLT_BIN" ls`
+
+---
+
+**Step 1: Apply all changes as described above**
+
+**Step 2: Verify scripts are valid bash**
 
 ```bash
 bash -n scripts/start_dolt_server.sh
@@ -664,11 +762,11 @@ bash -n scripts/apply_schema.sh
 ```
 Expected: no output (syntax OK).
 
-**Step 5: Commit**
+**Step 3: Commit**
 
 ```bash
 git add scripts/start_dolt_server.sh scripts/init_dolt.sh scripts/apply_schema.sh
-git commit -m "feat: shell scripts respect DOLT_BIN env var for local dolt binary"
+git commit -m "feat: shell scripts resolve and use local .grava/bin/dolt via DOLT_BIN"
 ```
 
 ---
