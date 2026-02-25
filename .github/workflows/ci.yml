@@ -31,20 +31,6 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     
-    # Run a test Dolt database as a service container for integration tests
-    services:
-      dolt:
-        image: dolthub/dolt:latest
-        ports:
-          - 3306:3306
-        env:
-          DOLT_ROOT_PASSWORD: ""
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root --silent"
-          --health-interval=5s
-          --health-timeout=10s
-          --health-retries=5
-
     steps:
       - uses: actions/checkout@v4
 
@@ -54,8 +40,18 @@ jobs:
           go-version: '1.25.0'
           cache: true
 
-      - name: Install MySQL Client
-        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+      - name: Start Dolt Database
+        run: |
+          docker run -d -p 3306:3306 -e DOLT_ROOT_PASSWORD="" --name dolt dolthub/dolt:latest sql-server --host 0.0.0.0 --port 3306
+          # Wait for it to become healthy
+          for i in {1..15}; do
+            docker exec dolt mysqladmin ping -h 127.0.0.1 -u root --silent && break
+            echo "Waiting for Dolt..."
+            sleep 2
+          done
+
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client lsof
 
       - name: Set up test database
         run: |
