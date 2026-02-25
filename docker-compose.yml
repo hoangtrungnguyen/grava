@@ -1,0 +1,44 @@
+
+
+services:
+  # The Dolt SQL Server running locally for development and testing
+  dolt:
+    image: dolthub/dolt:latest
+    ports:
+      - "3306:3306"
+    volumes:
+      # Persist the dolt data so we don't lose the DB on container restart
+      - ./.grava-docker-dolt:/var/lib/dolt 
+    environment:
+      # Specify any environment variables Dolt might need. 
+      # By default, root has no password in Dolt SQL Server.
+      - DOLT_ROOT_PASSWORD=
+    command: sql-server --host 0.0.0.0 --port 3306
+    healthcheck:
+      # Ensure the DB is listening before test containers start
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 2s
+
+  # Ephemeral container for running tests against the Dolt server in an isolated environment
+  # Usage: docker compose run --rm tester
+  tester:
+    image: golang:1.25.0
+    working_dir: /app
+    volumes:
+      # Mount the codebase
+      - .:/app
+      # Mount Go module cache for faster test runs
+      - go-mod-cache:/go/pkg/mod
+    depends_on:
+      dolt:
+        condition: service_healthy
+    environment:
+      - DB_URL=root@tcp(dolt:3306)/test_grava?parseTime=true
+    # By default, it runs the tests, but you can override this via `docker compose run`
+    command: sh -c "apt-get update && apt-get install -y default-mysql-client && ./scripts/setup_test_env.sh && go test ./... -v"
+
+volumes:
+  go-mod-cache:
