@@ -20,8 +20,8 @@ fi
 echo "🛠️  Setting up Test Environment..."
 
 # 1. Check if Dolt is running
-if ! lsof -i :$PORT > /dev/null; then
-    echo "⚠️  Dolt server not running on port $PORT. Please start it using scripts/start_dolt_server.sh"
+if ! "$MYSQL_CLIENT" -h "$HOST" -P "$PORT" -u root -e "SELECT 1" > /dev/null 2>&1; then
+    echo "⚠️  Dolt server not reachable on port $PORT. Please start it using scripts/start_dolt_server.sh"
     exit 1
 fi
 
