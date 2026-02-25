@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+          cache: true
+          
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.62.2
+          # Skip cache because setup-go does it
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    # Run a test Dolt database as a service container for integration tests
+    services:
+      dolt:
+        image: dolthub/dolt:latest
+        ports:
+          - 3306:3306
+        env:
+          DOLT_ROOT_PASSWORD: ""
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root --silent"
+          --health-interval=5s
+          --health-timeout=10s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+          cache: true
+
+      - name: Install MySQL Client
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+      - name: Set up test database
+        run: |
+          chmod +x ./scripts/setup_test_env.sh
+          ./scripts/setup_test_env.sh
+        
+      - name: Run Unit Tests
+        env:
+          DB_URL: "root@tcp(127.0.0.1:3306)/test_grava?parseTime=true"
+        run: go test -v -race ./...
