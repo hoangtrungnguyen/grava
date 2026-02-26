@@ -21,7 +21,7 @@ func TestClient_GetNextChildSequence_Integration(t *testing.T) {
 	if err != nil {
 		t.Skipf("Skipping integration test: connection failed: %v", err)
 	}
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	parentID := fmt.Sprintf("test-parent-%d", time.Now().UnixNano())
 
@@ -84,7 +84,7 @@ func TestForeignKeyConstraints_Dependencies(t *testing.T) {
 	if err != nil {
 		t.Skipf("Skipping integration test: connection failed: %v", err)
 	}
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	// Test 1: Insert dependency with non-existent from_id should fail
 	t.Run("InvalidFromID", func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestForeignKeyConstraints_Dependencies(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create valid issue: %v", err)
 		}
-		defer client.Exec("DELETE FROM issues WHERE id = ?", validID)
+		defer client.Exec("DELETE FROM issues WHERE id = ?", validID) //nolint:errcheck
 
 		// Try to insert dependency with invalid from_id
 		_, err = client.Exec(
@@ -128,7 +128,7 @@ func TestForeignKeyConstraints_Dependencies(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create valid issue: %v", err)
 		}
-		defer client.Exec("DELETE FROM issues WHERE id = ?", validID)
+		defer client.Exec("DELETE FROM issues WHERE id = ?", validID) //nolint:errcheck
 
 		// Try to insert dependency with invalid to_id
 		_, err = client.Exec(
@@ -194,7 +194,7 @@ func TestForeignKeyConstraints_Dependencies(t *testing.T) {
 		}
 
 		// Cleanup remaining issue
-		client.Exec("DELETE FROM issues WHERE id = ?", toID)
+		client.Exec("DELETE FROM issues WHERE id = ?", toID) //nolint:errcheck
 	})
 }
 
@@ -208,7 +208,7 @@ func TestForeignKeyConstraints_Events(t *testing.T) {
 	if err != nil {
 		t.Skipf("Skipping integration test: connection failed: %v", err)
 	}
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	// Test 1: Insert event with non-existent issue_id should fail
 	t.Run("InvalidIssueID", func(t *testing.T) {
@@ -280,7 +280,7 @@ func TestForeignKeyConstraints_Events(t *testing.T) {
 
 // containsString checks if error message contains any of the expected strings (case-insensitive)
 func containsString(s string, substrs []string) bool {
-	lower := fmt.Sprintf("%s", s)
+	lower := s
 	for _, substr := range substrs {
 		if len(lower) >= len(substr) {
 			for i := 0; i <= len(lower)-len(substr); i++ {

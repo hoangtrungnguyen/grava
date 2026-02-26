@@ -14,7 +14,7 @@ import (
 func TestHistoryCmd(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	Store = dolt.NewClientFromDB(db)
 	defer func() { Store = nil }()
@@ -43,7 +43,7 @@ func TestUndoCmd_Dirty(t *testing.T) {
 
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	Store = dolt.NewClientFromDB(db)
 	defer func() { Store = nil }()
@@ -100,7 +100,7 @@ func TestUndoCmd_Clean(t *testing.T) {
 
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	Store = dolt.NewClientFromDB(db)
 	defer func() { Store = nil }()
@@ -154,7 +154,7 @@ func TestUndoCmd_Clean(t *testing.T) {
 func TestUndoCmd_NoHistory(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	Store = dolt.NewClientFromDB(db)
 	defer func() { Store = nil }()
@@ -183,7 +183,7 @@ func TestUndoCmd_NoHistory(t *testing.T) {
 func TestUndoCmd_NotFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	Store = dolt.NewClientFromDB(db)
 	defer func() { Store = nil }()

@@ -13,7 +13,7 @@ import (
 func TestSetNodeStatus_Persistence(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	store := dolt.NewClientFromDB(db)
 	dag := NewAdjacencyDAG(true)
@@ -45,7 +45,7 @@ func TestSetNodeStatus_Persistence(t *testing.T) {
 func TestSetNodePriority_Persistence(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	store := dolt.NewClientFromDB(db)
 	dag := NewAdjacencyDAG(true)
@@ -76,7 +76,7 @@ func TestSetNodePriority_Persistence(t *testing.T) {
 func TestUpdate_CacheConsistency(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	store := dolt.NewClientFromDB(db)
 	dag := NewAdjacencyDAG(true) // Enable cache

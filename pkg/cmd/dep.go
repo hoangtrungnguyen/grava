@@ -72,7 +72,7 @@ func addDependency(cmd *cobra.Command, fromID, toID string) error {
 		"type":  depType,
 	})
 
-	fmt.Fprintf(cmd.OutOrStdout(), "🔗 Dependency created: %s -[%s]-> %s\n", fromID, depType, toID)
+	fmt.Fprintf(cmd.OutOrStdout(), "🔗 Dependency created: %s -[%s]-> %s\n", fromID, depType, toID) //nolint:errcheck
 	return nil
 }
 
@@ -93,7 +93,7 @@ Example JSON:
 		if err != nil {
 			return fmt.Errorf("failed to open file: %w", err)
 		}
-		defer f.Close()
+		defer f.Close() //nolint:errcheck
 
 		var deps []struct {
 			From string `json:"from"`
@@ -125,7 +125,7 @@ Example JSON:
 			}
 
 			if valErr != nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "⚠️ Skipping %s -> %s: %v\n", d.From, d.To, valErr)
+				fmt.Fprintf(cmd.OutOrStdout(), "⚠️ Skipping %s -> %s: %v\n", d.From, d.To, valErr) //nolint:errcheck
 				continue
 			}
 
@@ -134,14 +134,14 @@ Example JSON:
 				d.From, d.To, d.Type, actor, actor, agentModel,
 			)
 			if err != nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "⚠️ Database failure for %s -> %s: %v\n", d.From, d.To, err)
+				fmt.Fprintf(cmd.OutOrStdout(), "⚠️ Database failure for %s -> %s: %v\n", d.From, d.To, err) //nolint:errcheck
 			} else {
 				// Audit Log
 				_ = Store.LogEvent(d.From, "dependency_add", actor, agentModel, nil, map[string]interface{}{
 					"to_id": d.To,
 					"type":  d.Type,
 				})
-				fmt.Fprintf(cmd.OutOrStdout(), "🔗 Created: %s -[%s]-> %s\n", d.From, d.Type, d.To)
+				fmt.Fprintf(cmd.OutOrStdout(), "🔗 Created: %s -[%s]-> %s\n", d.From, d.Type, d.To) //nolint:errcheck
 			}
 		}
 
@@ -159,7 +159,7 @@ var depClearCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to clear dependencies: %w", err)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "🧹 All dependencies for %s cleared.\n", id)
+		fmt.Fprintf(cmd.OutOrStdout(), "🧹 All dependencies for %s cleared.\n", id) //nolint:errcheck
 		return nil
 	},
 }

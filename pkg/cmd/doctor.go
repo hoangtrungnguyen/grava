@@ -143,7 +143,7 @@ Example:
 				resp["status"] = "unhealthy"
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
 			if hasFailure {
 				return fmt.Errorf("doctor found critical issues")
 			}
@@ -153,7 +153,7 @@ Example:
 		fmt.Fprintln(cmd.OutOrStdout(), "🩺 Grava Doctor Report")
 		fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
 		for _, c := range checks {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %-30s %s\n", c.icon(), c.Name, c.Detail)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  %-30s %s\n", c.icon(), c.Name, c.Detail) //nolint:errcheck
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
 

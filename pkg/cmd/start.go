@@ -38,7 +38,7 @@ var startCmd = &cobra.Command{
 		ln, err := net.Listen("tcp", ":"+port)
 		if err == nil {
 			// Port is free, so server is NOT running
-			ln.Close()
+			ln.Close() //nolint:errcheck
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Server appears to be already running on port %s\n", port)
 			return nil

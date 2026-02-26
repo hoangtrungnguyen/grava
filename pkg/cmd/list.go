@@ -120,7 +120,7 @@ You can filter by status or type, and sort by various criteria.`,
 		if err != nil {
 			return fmt.Errorf("failed to query issues: %w", err)
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
 		var results []IssueListItem
 
@@ -164,7 +164,7 @@ You can filter by status or type, and sort by various criteria.`,
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		} else {
-			w.Flush()
+			w.Flush() //nolint:errcheck
 		}
 
 		return nil

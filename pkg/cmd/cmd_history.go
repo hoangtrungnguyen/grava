@@ -29,11 +29,11 @@ var historyCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to fetch history for issue %s: %w", id, err)
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
-		fmt.Fprintf(cmd.OutOrStdout(), "History for Issue %s:\n\n", id)
-		fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-20s %-25s %-15s %-20s %s\n", "COMMIT", "AUTHOR", "DATE", "STATUS", "TITLE", "MESSAGE")
-		fmt.Fprintln(cmd.OutOrStdout(), "------------------------------------------------------------------------------------------------------------------------")
+		fmt.Fprintf(cmd.OutOrStdout(), "History for Issue %s:\n\n", id) //nolint:errcheck
+		fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-20s %-25s %-15s %-20s %s\n", "COMMIT", "AUTHOR", "DATE", "STATUS", "TITLE", "MESSAGE") //nolint:errcheck
+		fmt.Fprintln(cmd.OutOrStdout(), "------------------------------------------------------------------------------------------------------------------------") //nolint:errcheck
 
 		count := 0
 		for rows.Next() {
@@ -62,11 +62,11 @@ var historyCmd = &cobra.Command{
 				message = message[:37] + "..."
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-20s %-25s %-15s %-20s %s\n", shortHash, committer, date.Format(time.RFC3339), status, title, message)
+			fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-20s %-25s %-15s %-20s %s\n", shortHash, committer, date.Format(time.RFC3339), status, title, message) //nolint:errcheck
 		}
 
 		if count == 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "No history found for issue %s (check if it exists or is committed)\n", id)
+			fmt.Fprintf(cmd.OutOrStdout(), "No history found for issue %s (check if it exists or is committed)\n", id) //nolint:errcheck
 		}
 
 		return nil

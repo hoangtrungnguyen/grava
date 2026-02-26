@@ -11,9 +11,9 @@ func TestAllocatePort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
-	os.Setenv("HOME", tmpDir)
+	os.Setenv("HOME", tmpDir) //nolint:errcheck
 
 	port1, err := AllocatePort("/project1", 3306)
 	if err != nil {

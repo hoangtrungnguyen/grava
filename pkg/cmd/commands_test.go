@@ -41,7 +41,7 @@ func resetFlags(cmd *cobra.Command) {
 		if val == "[]" && f.Value.Type() == "stringSlice" {
 			val = ""
 		}
-		f.Value.Set(val)
+		f.Value.Set(val) //nolint:errcheck
 		f.Changed = false
 	})
 	for _, child := range cmd.Commands() {

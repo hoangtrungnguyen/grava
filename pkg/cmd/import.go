@@ -41,14 +41,14 @@ Use --skip-existing to ignore duplicates, or --overwrite to update them.`,
 		if err != nil {
 			return fmt.Errorf("failed to open import file: %w", err)
 		}
-		defer f.Close()
+		defer f.Close() //nolint:errcheck
 
 		ctx := context.Background()
 		tx, err := Store.BeginTx(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("failed to start transaction: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.Rollback() //nolint:errcheck
 
 		scanner := bufio.NewScanner(f)
 		buf := make([]byte, 0, 64*1024)

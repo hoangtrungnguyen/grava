@@ -47,7 +47,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		if err != nil {
 			return fmt.Errorf("query by status failed: %w", err)
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 		for rows.Next() {
 			var status string
 			var count int
@@ -70,7 +70,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		if err != nil {
 			return fmt.Errorf("query by priority failed: %w", err)
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 		for rows.Next() {
 			var priority int
 			var count int
@@ -85,7 +85,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		if err != nil {
 			return fmt.Errorf("query by author failed: %w", err)
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 		for rows.Next() {
 			var author string
 			var count int
@@ -226,7 +226,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 			}
 		}
 
-		w.Flush()
+		w.Flush() //nolint:errcheck
 		return nil
 	},
 }

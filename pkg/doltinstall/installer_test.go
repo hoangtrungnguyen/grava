@@ -33,8 +33,8 @@ func buildFakeTarball(t *testing.T, platform string) []byte {
 	if _, err := tw.Write(content); err != nil {
 		t.Fatal(err)
 	}
-	tw.Close()
-	gw.Close()
+	tw.Close() //nolint:errcheck
+	gw.Close() //nolint:errcheck
 	return buf.Bytes()
 }
 

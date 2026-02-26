@@ -92,7 +92,7 @@ func AllocatePort(projectPath string, startPort int) (int, error) {
 
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err == nil {
-			ln.Close()
+			ln.Close() //nolint:errcheck
 			// We found an available port
 			if err := SaveUsedPort(projectPath, port); err != nil {
 				return -1, fmt.Errorf("failed to save allocated port: %w", err)
@@ -110,7 +110,7 @@ func FindAvailablePort(start int) int {
 	for port := start; port < start+100; port++ {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err == nil {
-			ln.Close()
+			ln.Close() //nolint:errcheck
 			return port
 		}
 	}

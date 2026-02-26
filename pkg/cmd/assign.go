@@ -49,7 +49,7 @@ Example:
 				"assignee": user,
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
 			return nil
 		}
 

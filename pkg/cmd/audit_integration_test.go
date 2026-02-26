@@ -25,7 +25,7 @@ func TestCreateAuditIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect to test db: %v", err)
 	}
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 	Store = client
 
 	// Prevent rootCmd from closing our connection between commands

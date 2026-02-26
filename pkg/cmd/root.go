@@ -111,8 +111,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false, "Output in JSON format")
 
 	// Bind flags to viper for ENV var support
-	viper.BindPFlag("actor", rootCmd.PersistentFlags().Lookup("actor"))
-	viper.BindPFlag("agent_model", rootCmd.PersistentFlags().Lookup("agent-model"))
+	viper.BindPFlag("actor", rootCmd.PersistentFlags().Lookup("actor")) //nolint:errcheck
+	viper.BindPFlag("agent_model", rootCmd.PersistentFlags().Lookup("agent-model")) //nolint:errcheck
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.

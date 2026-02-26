@@ -32,7 +32,7 @@ Example:
 		if err != nil {
 			return fmt.Errorf("failed to query ephemeral issues: %w", err)
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
 		var ids []string
 		for rows.Next() {
@@ -54,7 +54,7 @@ Example:
 					"message": fmt.Sprintf("No Wisps older than %d day(s) found", compactDays),
 				}
 				b, _ := json.MarshalIndent(resp, "", "  ")
-				fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
 				return nil
 			}
 			cmd.Printf("🧹 No Wisps older than %d day(s) found. Nothing to compact.\n", compactDays)
@@ -67,7 +67,7 @@ Example:
 		if err != nil {
 			return fmt.Errorf("failed to start transaction: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.Rollback() //nolint:errcheck
 
 		for _, id := range ids {
 			// 1. Record tombstone
@@ -99,7 +99,7 @@ Example:
 				"ids":    ids,
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
 			return nil
 		}
 

@@ -80,12 +80,13 @@ func (g *AdjacencyDAG) detectCycleUnsafe() ([]string, error) {
 		color[nodeID] = GRAY
 
 		for toID := range g.outgoing[nodeID] {
-			if color[toID] == WHITE {
+			switch color[toID] {
+			case WHITE:
 				parent[toID] = nodeID
 				if found, cycle := dfs(toID); found {
 					return true, cycle
 				}
-			} else if color[toID] == GRAY {
+			case GRAY:
 				// Found cycle - reconstruct path
 				cycle := []string{toID}
 				current := nodeID

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"io/ioutil"
 	"os"
 	"regexp"
 	"testing"
@@ -67,13 +66,13 @@ func TestImportCmd(t *testing.T) {
 	content := `{"type":"issue","data":{"id":"grava-1","title":"Imported","description":"Desc","issue_type":"task","priority":1,"status":"open","created_at":"2024-01-01T10:00:00Z","updated_at":"2024-01-01T10:00:00Z","created_by":"user","updated_by":"user","ephemeral":false,"metadata":{},"affected_files":[]}}
 {"type":"dependency","data":{"from_id":"grava-1","to_id":"grava-2","type":"blocks","created_by":"user","updated_by":"user"}}`
 
-	tmpFile, err := ioutil.TempFile("", "grava_import_test.jsonl")
+	tmpFile, err := os.CreateTemp("", "grava_import_test.jsonl")
 	assert.NoError(t, err)
-	defer os.Remove(tmpFile.Name())
+	defer os.Remove(tmpFile.Name()) //nolint:errcheck
 
 	_, err = tmpFile.WriteString(content)
 	assert.NoError(t, err)
-	tmpFile.Close()
+	tmpFile.Close() //nolint:errcheck
 
 	// Reset flags
 	importFile = ""
@@ -110,11 +109,11 @@ func TestImportCmdSkipExisting(t *testing.T) {
 	Store = dolt.NewClientFromDB(db)
 
 	content := `{"type":"issue","data":{"id":"grava-1","title":"Exist","description":"","issue_type":"task","priority":1,"status":"open","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z","created_by":"","updated_by":"","ephemeral":false,"metadata":{},"affected_files":[]}}`
-	tmpFile, err := ioutil.TempFile("", "grava_import_skip.jsonl")
+	tmpFile, err := os.CreateTemp("", "grava_import_skip.jsonl")
 	assert.NoError(t, err)
-	defer os.Remove(tmpFile.Name())
-	tmpFile.WriteString(content)
-	tmpFile.Close()
+	defer os.Remove(tmpFile.Name()) //nolint:errcheck
+	tmpFile.WriteString(content) //nolint:errcheck
+	tmpFile.Close() //nolint:errcheck
 
 	// Reset flags
 	importFile = ""
@@ -144,11 +143,11 @@ func TestImportCmdOverwrite(t *testing.T) {
 	Store = dolt.NewClientFromDB(db)
 
 	content := `{"type":"issue","data":{"id":"grava-1","title":"Upd","description":"","issue_type":"task","priority":1,"status":"open","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z","created_by":"","updated_by":"","ephemeral":false,"metadata":{},"affected_files":[]}}`
-	tmpFile, err := ioutil.TempFile("", "grava_import_over.jsonl")
+	tmpFile, err := os.CreateTemp("", "grava_import_over.jsonl")
 	assert.NoError(t, err)
-	defer os.Remove(tmpFile.Name())
-	tmpFile.WriteString(content)
-	tmpFile.Close()
+	defer os.Remove(tmpFile.Name()) //nolint:errcheck
+	tmpFile.WriteString(content) //nolint:errcheck
+	tmpFile.Close() //nolint:errcheck
 
 	// Reset flags
 	importFile = ""

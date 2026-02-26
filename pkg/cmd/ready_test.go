@@ -14,7 +14,7 @@ func TestReadyCmd(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	// Mock issues query
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
@@ -41,7 +41,7 @@ func TestBlockedCmd(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	// Mock issues query
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).

@@ -34,8 +34,8 @@ func TestGraphCache(t *testing.T) {
 func TestReadyEngine_Caching(t *testing.T) {
 	dag := NewAdjacencyDAG(true)
 	now := time.Now()
-	dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: now})
-	dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: now})
+	dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: now}) //nolint:errcheck
+	dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: now}) //nolint:errcheck
 
 	engine := NewReadyEngine(dag, DefaultReadyEngineConfig())
 
@@ -56,7 +56,7 @@ func TestReadyEngine_Caching(t *testing.T) {
 	}
 
 	// Add an edge - should invalidate cache
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks}) //nolint:errcheck
 
 	tasks3, _ := engine.ComputeReady(0)
 	if len(tasks3) != 1 || tasks3[0].Node.ID != "A" {
@@ -105,7 +105,7 @@ func TestPriorityPropagation(t *testing.T) {
 
 	// Initial calculation (lazy population of cache)
 	engine := NewReadyEngine(dag, DefaultReadyEngineConfig())
-	engine.ComputeReady(0)
+	engine.ComputeReady(0) //nolint:errcheck
 
 	// Verify initial effective priorities in cache
 	// Note: Only A is guaranteed to be in cache because it was the only ready task
@@ -116,7 +116,7 @@ func TestPriorityPropagation(t *testing.T) {
 	}
 
 	// Now update C's priority to Critical
-	dag.SetNodePriority("C", PriorityCritical)
+	dag.SetNodePriority("C", PriorityCritical) //nolint:errcheck
 
 	// Verify that C, B, and A are updated proactively in the cache
 	effA, okA = dag.cache.GetPriority("A")
@@ -147,7 +147,7 @@ func TestPriorityPropagation_Rollback(t *testing.T) {
 
 	// Initial calculation
 	engine := NewReadyEngine(dag, DefaultReadyEngineConfig())
-	engine.ComputeReady(0)
+	engine.ComputeReady(0) //nolint:errcheck
 
 	effA, _ := dag.cache.GetPriority("A")
 	if effA != PriorityCritical {
@@ -155,7 +155,7 @@ func TestPriorityPropagation_Rollback(t *testing.T) {
 	}
 
 	// Now close B
-	dag.SetNodeStatus("B", StatusClosed)
+	dag.SetNodeStatus("B", StatusClosed) //nolint:errcheck
 
 	// A should no longer inherit from B
 	effA, _ = dag.cache.GetPriority("A")
