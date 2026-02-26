@@ -2,18 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "release" ]
   pull_request:
     branches: [ "release" ]
-  pull_request_review:
-    types: [submitted]
 
 jobs:
   lint:
-    if: >-
-      github.event_name == 'pull_request_review' &&
-      github.event.review.state == 'approved' &&
-      startsWith(github.event.pull_request.base.ref, 'release')
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -33,10 +27,6 @@ jobs:
           skip-cache: true
 
   test:
-    if: >-
-      github.event_name == 'pull_request_review' &&
-      github.event.review.state == 'approved' &&
-      startsWith(github.event.pull_request.base.ref, 'release')
     name: Test
     runs-on: ubuntu-latest
     
