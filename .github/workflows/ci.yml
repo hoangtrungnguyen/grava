@@ -23,16 +23,6 @@ jobs:
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install -y default-mysql-client
 
-      - name: Start Dolt Database
-        run: |
-          go run cmd/grava/main.go init
-          # Wait for it to become healthy
-          for i in {1..15}; do
-            mysqladmin ping -h 127.0.0.1 -P 3306 -u root --silent && break
-            echo "Waiting for Dolt..."
-            sleep 2
-          done
-
       - name: Set up test database
         run: |
           chmod +x ./scripts/setup_test_env.sh
