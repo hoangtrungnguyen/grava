@@ -90,8 +90,11 @@ fi
 echo "📦 Step 3/4 – Initialising Dolt repo in ${DOLT_REPO_DIR}/ ..."
 mkdir -p "${DOLT_REPO_DIR}"
 
+DOLT_BIN_ABS="$(pwd)/${DOLT_BIN}"
 if [ ! -d "${DOLT_REPO_DIR}/.dolt" ]; then
-    (cd "${DOLT_REPO_DIR}" && "${OLDPWD}/${DOLT_BIN}" init)
+    pushd "${DOLT_REPO_DIR}" > /dev/null
+    "${DOLT_BIN_ABS}" init
+    popd > /dev/null
     echo "   ✅ Dolt repo initialised."
 else
     echo "   ✅ Dolt repo already exists, skipping init."
@@ -100,15 +103,19 @@ fi
 # ── 4. Start Dolt SQL Server in the background ───────────────────────────────
 echo "🚀 Step 4/4 – Starting Dolt SQL Server on ${DOLT_HOST}:${DOLT_PORT} ..."
 mkdir -p "$(dirname "${DOLT_LOG}")"
+DOLT_LOG_ABS="$(pwd)/${DOLT_LOG}"
 
-(cd "${DOLT_REPO_DIR}" && \
-    "${OLDPWD}/${DOLT_BIN}" sql-server \
-        --host="${DOLT_HOST}" \
-        --port="${DOLT_PORT}" \
-        --loglevel=info \
-    >> "${OLDPWD}/${DOLT_LOG}" 2>&1 &)
+# Launch directly in parent shell (not a subshell) so $! is set correctly
+pushd "${DOLT_REPO_DIR}" > /dev/null
+"${DOLT_BIN_ABS}" sql-server \
+    --host="${DOLT_HOST}" \
+    --port="${DOLT_PORT}" \
+    --loglevel=info \
+    >> "${DOLT_LOG_ABS}" 2>&1 &
+DOLT_PID=$!
+popd > /dev/null
 
-echo "   Server PID: $!"
+echo "   Server PID: ${DOLT_PID}"
 echo "   Log file  : ${DOLT_LOG}"
 
 # ── Health-check loop ────────────────────────────────────────────────────────
