@@ -23,6 +23,7 @@ GRAVA_DIR=".grava"
 BIN_DIR="${GRAVA_DIR}/bin"
 DOLT_BIN="${BIN_DIR}/dolt"
 DOLT_REPO_DIR="${GRAVA_DIR}/dolt"
+MULTI_DB_DIR="${GRAVA_DIR}"          # parent dir — Dolt detects any dolt-repo sub-dirs
 DOLT_PORT="${DOLT_PORT:-3306}"
 DOLT_HOST="${DOLT_HOST:-0.0.0.0}"
 DOLT_LOG="${DOLT_LOG:-.grava/dolt.log}"
@@ -106,10 +107,13 @@ mkdir -p "$(dirname "${DOLT_LOG}")"
 DOLT_LOG_ABS="$(pwd)/${DOLT_LOG}"
 
 # Launch directly in parent shell (not a subshell) so $! is set correctly
-pushd "${DOLT_REPO_DIR}" > /dev/null
+# --multi-db-dir lets Dolt serve ALL dolt repos under .grava/ and allows
+# CREATE DATABASE via SQL (new repos are created as sub-dirs of .grava/).
+pushd "${GRAVA_DIR}" > /dev/null
 "${DOLT_BIN_ABS}" sql-server \
     --host="${DOLT_HOST}" \
     --port="${DOLT_PORT}" \
+    --multi-db-dir="." \
     --loglevel=info \
     >> "${DOLT_LOG_ABS}" 2>&1 &
 DOLT_PID=$!
