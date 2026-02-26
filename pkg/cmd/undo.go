@@ -150,8 +150,7 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 			return fmt.Errorf("no rows updated (concurrency issue?)")
 		}
 
-		// 5. Add Comment
-		commentMsg := fmt.Sprintf("Undo: reverted to %s", actionMsg)
+		var commentMsg string
 		if isDirty {
 			commentMsg = "Undo: discarded uncommitted changes (reverted to HEAD)"
 		} else {

@@ -23,7 +23,7 @@ var graphStatsCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Nodes: %d\n", dag.NodeCount())
+		fmt.Fprintf(cmd.OutOrStdout(), "Nodes: %d\n", dag.NodeCount()) //nolint:errcheck
 		fmt.Fprintf(cmd.OutOrStdout(), "Edges: %d\n", dag.EdgeCount())
 		if dag.NodeCount() > 1 {
 			density := float64(dag.EdgeCount()) / float64(dag.NodeCount()*(dag.NodeCount()-1))
@@ -119,9 +119,10 @@ var graphVisualizeCmd = &cobra.Command{
 
 		for _, node := range dag.GetAllNodes() {
 			color := "white"
-			if node.Status == graph.StatusClosed {
+			switch node.Status {
+			case graph.StatusClosed:
 				color = "gray"
-			} else if node.Status == graph.StatusInProgress {
+			case graph.StatusInProgress:
 				color = "lightblue"
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "  \"%s\" [label=\"%s\", fillcolor=\"%s\", style=\"filled,rounded\"];\n", node.ID, node.Title, color)

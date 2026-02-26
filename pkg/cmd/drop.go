@@ -67,7 +67,7 @@ Example:
 		if err != nil {
 			return fmt.Errorf("failed to start transaction: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.Rollback() //nolint:errcheck
 
 		for _, table := range tables {
 			_, err := tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", table))

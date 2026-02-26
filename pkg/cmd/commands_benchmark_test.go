@@ -28,7 +28,7 @@ func setupBenchmarkDB(b *testing.B) *dolt.Client {
 // BenchmarkCreateBaseIssue measures the performance of creating top-level issues
 func BenchmarkCreateBaseIssue(b *testing.B) {
 	client := setupBenchmarkDB(b)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	generator := idgen.NewStandardGenerator(client)
 
@@ -60,7 +60,7 @@ func BenchmarkCreateBaseIssue(b *testing.B) {
 // BenchmarkCreateSubtask measures the performance of creating hierarchical subtasks
 func BenchmarkCreateSubtask(b *testing.B) {
 	client := setupBenchmarkDB(b)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	generator := idgen.NewStandardGenerator(client)
 
@@ -96,7 +96,7 @@ func BenchmarkCreateSubtask(b *testing.B) {
 // This benchmark fulfills the requirement: "Benchmark script inserting 1000 items"
 func BenchmarkBulkInsert1000(b *testing.B) {
 	client := setupBenchmarkDB(b)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	generator := idgen.NewStandardGenerator(client)
 
@@ -135,7 +135,7 @@ func BenchmarkBulkInsert1000(b *testing.B) {
 // BenchmarkMixedWorkload measures realistic mixed operations
 func BenchmarkMixedWorkload(b *testing.B) {
 	client := setupBenchmarkDB(b)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	generator := idgen.NewStandardGenerator(client)
 
@@ -184,7 +184,7 @@ func BenchmarkMixedWorkload(b *testing.B) {
 // BenchmarkSequentialInserts measures performance of sequential inserts with varying priorities
 func BenchmarkSequentialInserts(b *testing.B) {
 	client := setupBenchmarkDB(b)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	priorities := []int{0, 1, 2, 3, 4}                                      // critical, high, medium, low, backlog
 	types := []string{"task", "bug", "epic", "feature", "chore", "message"} // All valid types from schema

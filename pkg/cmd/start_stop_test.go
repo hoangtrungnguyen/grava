@@ -15,11 +15,11 @@ func TestStartCmd(t *testing.T) {
 	// 1. Setup temporary directory as the fake project root
 	tmpDir, err := os.MkdirTemp("", "grava-test-*")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	origCWD, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(origCWD)
+	os.Chdir(tmpDir) //nolint:errcheck
+	defer os.Chdir(origCWD) //nolint:errcheck
 
 	// 2. Create the .grava structure that grava start expects
 	gravaDir := filepath.Join(tmpDir, ".grava")
@@ -51,7 +51,7 @@ func TestStartCmd(t *testing.T) {
 		// Temporarily rename dolt dir
 		bakDir := doltDir + "_bak"
 		assert.NoError(t, os.Rename(doltDir, bakDir))
-		defer os.Rename(bakDir, doltDir)
+		defer os.Rename(bakDir, doltDir) //nolint:errcheck
 
 		_, err := executeCommand(rootCmd, "start")
 		assert.Error(t, err)
@@ -62,7 +62,7 @@ func TestStartCmd(t *testing.T) {
 		// Temporarily rename the local binary
 		bakBin := fakeDolt + ".bak"
 		assert.NoError(t, os.Rename(fakeDolt, bakBin))
-		defer os.Rename(bakBin, fakeDolt)
+		defer os.Rename(bakBin, fakeDolt) //nolint:errcheck
 
 		// If dolt is installed on the system PATH this scenario can't be forced in tests.
 		// Skip rather than fail, since ResolveDoltBinary falls back to system dolt.

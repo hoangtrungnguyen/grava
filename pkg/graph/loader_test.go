@@ -24,7 +24,7 @@ func TestLoadGraphMetadataIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect to test db: %v", err)
 	}
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	// 2. Run migrations
 	if err := migrate.Run(client.DB()); err != nil {
@@ -84,7 +84,7 @@ func TestLoadGraphMalformedMetadataIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect to test db: %v", err)
 	}
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 
 	// Clear data
 	_, _ = client.Exec("DELETE FROM dependencies")

@@ -86,7 +86,7 @@ Priority levels:
 				task.Node.Status,
 			)
 		}
-		w.Flush()
+		w.Flush() //nolint:errcheck
 
 		if len(tasks) == 0 {
 			fmt.Fprintln(cmd.OutOrStdout(), "No ready tasks found.")

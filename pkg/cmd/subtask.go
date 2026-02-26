@@ -46,7 +46,7 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 		if err != nil {
 			return fmt.Errorf("failed to start transaction: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.Rollback() //nolint:errcheck
 
 		// 2. Verify Parent Exists (within transaction)
 		var exists int
@@ -148,5 +148,5 @@ func init() {
 	subtaskCmd.Flags().Bool("ephemeral", false, "Mark subtask as ephemeral (Wisp)")
 	subtaskCmd.Flags().StringSliceVar(&subtaskAffectedFiles, "files", []string{}, "Affected files (comma separated)")
 
-	subtaskCmd.MarkFlagRequired("title")
+	subtaskCmd.MarkFlagRequired("title") //nolint:errcheck
 }

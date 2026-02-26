@@ -17,7 +17,7 @@ func LoadGraphFromDB(store dolt.Store) (*AdjacencyDAG, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query issues: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	for rows.Next() {
 		var node Node
@@ -54,7 +54,7 @@ func LoadGraphFromDB(store dolt.Store) (*AdjacencyDAG, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query dependencies: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	for rows.Next() {
 		var edge Edge
