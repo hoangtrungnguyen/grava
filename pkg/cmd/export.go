@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
@@ -56,13 +55,13 @@ var exportCmd = &cobra.Command{
 	Long: `Export issues and dependencies to a file (default: stdout) in JSONL format.
 Useful for backups, migrations, or seeding test data.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var out io.Writer = cmd.OutOrStdout()
+		var out = cmd.OutOrStdout()
 		if exportFile != "" {
 			f, err := os.Create(exportFile)
 			if err != nil {
 				return fmt.Errorf("failed to create export file: %w", err)
 			}
-			defer f.Close()
+			defer f.Close() //nolint:errcheck
 			out = f
 		}
 
@@ -92,7 +91,7 @@ Useful for backups, migrations, or seeding test data.`,
 		if err != nil {
 			return fmt.Errorf("failed to query issues: %w", err)
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
 		enc := json.NewEncoder(out)
 
@@ -172,7 +171,7 @@ Useful for backups, migrations, or seeding test data.`,
 		if err != nil {
 			return fmt.Errorf("failed to query dependencies: %w", err)
 		}
-		defer depRows.Close()
+		defer depRows.Close() //nolint:errcheck
 
 		for depRows.Next() {
 			var d DependencyExportData

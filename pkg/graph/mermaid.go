@@ -29,22 +29,22 @@ func ToMermaid(g DAG) string {
 			displayName = "👻 " + cleanTitle
 		}
 
-		sb.WriteString(fmt.Sprintf("    %s[\"%s<br/>(%s)\"]\n", node.ID, displayName, node.ID))
+		fmt.Fprintf(&sb, "    %s[\"%s<br/>(%s)\"]\n", node.ID, displayName, node.ID)
 
 		// Apply styling based on status
 		switch node.Status {
 		case StatusInProgress:
-			sb.WriteString(fmt.Sprintf("    class %s in_progress\n", node.ID))
+			fmt.Fprintf(&sb, "    class %s in_progress\n", node.ID)
 		case StatusClosed:
-			sb.WriteString(fmt.Sprintf("    class %s closed\n", node.ID))
+			fmt.Fprintf(&sb, "    class %s closed\n", node.ID)
 		case StatusBlocked:
-			sb.WriteString(fmt.Sprintf("    class %s blocked\n", node.ID))
+			fmt.Fprintf(&sb, "    class %s blocked\n", node.ID)
 		default:
-			sb.WriteString(fmt.Sprintf("    class %s open\n", node.ID))
+			fmt.Fprintf(&sb, "    class %s open\n", node.ID)
 		}
 
 		if node.Ephemeral {
-			sb.WriteString(fmt.Sprintf("    class %s wisp\n", node.ID))
+			fmt.Fprintf(&sb, "    class %s wisp\n", node.ID)
 		}
 	}
 
@@ -55,7 +55,7 @@ func ToMermaid(g DAG) string {
 		}
 
 		// Optional: add edge type as label
-		sb.WriteString(fmt.Sprintf("    %s %s %s\n", edge.FromID, arrow, edge.ToID))
+		fmt.Fprintf(&sb, "    %s %s %s\n", edge.FromID, arrow, edge.ToID)
 	}
 
 	return sb.String()

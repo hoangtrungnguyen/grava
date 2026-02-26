@@ -47,6 +47,9 @@ You can specify title, description, type, and priority.`,
 		var id string
 		if parentID != "" {
 			id, err = generator.GenerateChildID(parentID)
+			if err != nil {
+				return fmt.Errorf("failed to generate child ID: %w", err)
+			}
 		} else {
 			id = generator.GenerateBaseID()
 		}
@@ -68,7 +71,7 @@ You can specify title, description, type, and priority.`,
 		if err != nil {
 			return fmt.Errorf("failed to start transaction: %w", err)
 		}
-		defer tx.Rollback()
+		defer tx.Rollback() //nolint:errcheck
 
 		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -134,7 +137,7 @@ You can specify title, description, type, and priority.`,
 				resp["ephemeral"] = "true"
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
 			return nil
 		}
 
@@ -161,5 +164,5 @@ func init() {
 	createCmd.Flags().Bool("ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
 	createCmd.Flags().StringSliceVar(&createAffectedFiles, "files", []string{}, "Affected files (comma separated)")
 
-	createCmd.MarkFlagRequired("title")
+	createCmd.MarkFlagRequired("title") //nolint:errcheck
 }

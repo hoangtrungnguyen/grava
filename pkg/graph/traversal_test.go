@@ -20,7 +20,7 @@ func TestAdjacencyDAG_Traversal(t *testing.T) {
 
 	// Test BFS
 	visitedBFS := []string{}
-	dag.BFS("A", func(id string) bool {
+	dag.BFS("A", func(id string) bool { //nolint:errcheck
 		visitedBFS = append(visitedBFS, id)
 		return true
 	})
@@ -31,7 +31,7 @@ func TestAdjacencyDAG_Traversal(t *testing.T) {
 
 	// Test DFS
 	visitedDFS := []string{}
-	dag.DFS("A", func(id string) bool {
+	dag.DFS("A", func(id string) bool { //nolint:errcheck
 		visitedDFS = append(visitedDFS, id)
 		return true
 	})

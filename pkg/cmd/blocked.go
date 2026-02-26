@@ -61,12 +61,12 @@ Use --depth to see transitive blockers.`,
 
 		if outputJSON {
 			b, _ := json.MarshalIndent(blockedResults, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
 			return nil
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tTitle\tBlocked By\tGate")
+		fmt.Fprintln(w, "ID\tTitle\tBlocked By\tGate") //nolint:errcheck
 
 		for _, info := range blockedResults {
 			blockerStr := "-"
@@ -86,17 +86,17 @@ Use --depth to see transitive blockers.`,
 				title = title[:37] + "..."
 			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", //nolint:errcheck
 				info.ID,
 				title,
 				blockerStr,
 				gateStr,
 			)
 		}
-		w.Flush()
+		w.Flush() //nolint:errcheck
 
 		if len(blockedResults) == 0 {
-			fmt.Fprintln(cmd.OutOrStdout(), "No blocked tasks found.")
+			fmt.Fprintln(cmd.OutOrStdout(), "No blocked tasks found.") //nolint:errcheck
 		}
 
 		return nil

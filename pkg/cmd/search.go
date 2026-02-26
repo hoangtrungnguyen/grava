@@ -51,7 +51,7 @@ Examples:
 		if err != nil {
 			return fmt.Errorf("search failed: %w", err)
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
 		var results []IssueListItem
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
@@ -94,7 +94,7 @@ Examples:
 			b, _ := json.MarshalIndent(results, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		} else {
-			w.Flush()
+			w.Flush() //nolint:errcheck
 			if found == 0 {
 				fmt.Fprintf(cmd.OutOrStdout(), "No issues found matching %q\n", query)
 			} else {

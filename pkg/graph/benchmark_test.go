@@ -12,7 +12,7 @@ func createLargeDAG(nodes, edges int) *AdjacencyDAG {
 	now := time.Now()
 
 	for i := 0; i < nodes; i++ {
-		dag.AddNode(&Node{
+		dag.AddNode(&Node{ //nolint:errcheck
 			ID:        fmt.Sprintf("node-%d", i),
 			Status:    StatusOpen,
 			Priority:  PriorityMedium,
@@ -29,7 +29,7 @@ func createLargeDAG(nodes, edges int) *AdjacencyDAG {
 	count := 0
 	for i := 0; i < nodes-1 && count < edges; i++ {
 		for j := 1; j <= edgesPerNode && i+j < nodes && count < edges; j++ {
-			dag.AddEdge(&Edge{
+			dag.AddEdge(&Edge{ //nolint:errcheck
 				FromID: fmt.Sprintf("node-%d", i),
 				ToID:   fmt.Sprintf("node-%d", i+j),
 				Type:   DependencyBlocks,

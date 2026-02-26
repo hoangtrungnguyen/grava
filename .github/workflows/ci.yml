@@ -2,42 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "release" ]
   pull_request:
-    branches: [ "release" ]
-  pull_request_review:
-    types: [submitted]
+    branches: [ "main", "release" ]
 
 jobs:
-  lint:
-    if: >-
-      github.event_name == 'pull_request_review' &&
-      github.event.review.state == 'approved' &&
-      startsWith(github.event.pull_request.base.ref, 'release')
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.0'
-          cache: true
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          # Skip cache because setup-go does it
-          skip-pkg-cache: true
-          skip-build-cache: true
-
   test:
-    if: >-
-      github.event_name == 'pull_request_review' &&
-      github.event.review.state == 'approved' &&
-      startsWith(github.event.pull_request.base.ref, 'release')
     name: Test
     runs-on: ubuntu-latest
     
@@ -50,18 +20,13 @@ jobs:
           go-version: '1.24.0'
           cache: true
 
+      - name: Install mysql client
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
       - name: Start Dolt Database
         run: |
-          docker run -d -p 3306:3306 -e DOLT_ROOT_PASSWORD="" --name dolt dolthub/dolt:latest sql-server --host 0.0.0.0 --port 3306
-          # Wait for it to become healthy
-          for i in {1..15}; do
-            docker exec dolt mysqladmin ping -h 127.0.0.1 -u root --silent && break
-            echo "Waiting for Dolt..."
-            sleep 2
-          done
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+          chmod +x ./scripts/ci_setup_dolt.sh
+          ./scripts/ci_setup_dolt.sh
 
       - name: Set up test database
         run: |

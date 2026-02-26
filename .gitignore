@@ -51,4 +51,4 @@ __pycache__/
 
 # Benchmark results
 scripts/benchmark_results.json
-dist/
+dist/.DS_Store
