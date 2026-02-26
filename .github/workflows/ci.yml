@@ -30,8 +30,7 @@ jobs:
         with:
           version: latest
           # Skip cache because setup-go does it
-          skip-pkg-cache: true
-          skip-build-cache: true
+          skip-cache: true
 
   test:
     if: >-
