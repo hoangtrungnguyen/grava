@@ -40,7 +40,7 @@ var showCmd = &cobra.Command{
 		id := args[0]
 
 		if showTree {
-			return showTreeVisualization(id)
+			return showTreeVisualization(cmd, id)
 		}
 
 		query := `SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files 
@@ -130,7 +130,7 @@ func init() {
 	showCmd.Flags().BoolVar(&showTree, "tree", false, "Show hierarchical tree visualization")
 }
 
-func showTreeVisualization(rootID string) error {
+func showTreeVisualization(cmd *cobra.Command, rootID string) error {
 	dag, err := graph.LoadGraphFromDB(Store)
 	if err != nil {
 		return fmt.Errorf("failed to load graph: %w", err)
@@ -140,13 +140,13 @@ func showTreeVisualization(rootID string) error {
 		return fmt.Errorf("issue %s not found in graph", rootID)
 	}
 
-	fmt.Printf("Hierarchical Tree for %s:\n\n", rootID)
-	renderTreeNode(dag, rootID, "", true, true)
-	fmt.Println()
+	cmd.Printf("Hierarchical Tree for %s:\n\n", rootID)
+	renderTreeNode(cmd, dag, rootID, "", true, true)
+	cmd.Println()
 	return nil
 }
 
-func renderTreeNode(dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool) {
+func renderTreeNode(cmd *cobra.Command, dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool) {
 	node, _ := dag.GetNode(id)
 	children := dag.GetTreeChildren(id)
 
@@ -194,7 +194,7 @@ func renderTreeNode(dag *graph.AdjacencyDAG, id string, indent string, isLast bo
 		progress = fmt.Sprintf(" [%s] %d%%", bar, percentage)
 	}
 
-	fmt.Printf("%s%s%s%s%s %s (%s)%s %s\n",
+	cmd.Printf("%s%s%s%s%s %s (%s)%s %s\n",
 		indent, marker, color, glyph, reset, id, node.Type, progress, node.Title)
 
 	newIndent := indent
@@ -207,6 +207,6 @@ func renderTreeNode(dag *graph.AdjacencyDAG, id string, indent string, isLast bo
 	}
 
 	for i, cid := range children {
-		renderTreeNode(dag, cid, newIndent, i == len(children)-1, false)
+		renderTreeNode(cmd, dag, cid, newIndent, i == len(children)-1, false)
 	}
 }

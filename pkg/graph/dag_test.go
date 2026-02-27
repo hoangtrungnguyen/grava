@@ -63,3 +63,50 @@ func TestAdjacencyDAG_TransitiveDependencies(t *testing.T) {
 		t.Errorf("expected [A, B], got %v", deps)
 	}
 }
+
+func TestAdjacencyDAG_StatusBubbling(t *testing.T) {
+	dag := NewAdjacencyDAG(false)
+
+	// Epic -> Task -> Subtask1 & Subtask2
+	dag.AddNode(&Node{ID: "Epic1", Status: StatusOpen})
+	dag.AddNode(&Node{ID: "Task1", Status: StatusOpen})
+	dag.AddNode(&Node{ID: "Sub1", Status: StatusOpen})
+	dag.AddNode(&Node{ID: "Sub2", Status: StatusOpen})
+
+	// Add subtask-of edges (child --subtask-of--> parent)
+	dag.AddEdge(&Edge{FromID: "Task1", ToID: "Epic1", Type: DependencySubtaskOf})
+	dag.AddEdge(&Edge{FromID: "Sub1", ToID: "Task1", Type: DependencySubtaskOf})
+	dag.AddEdge(&Edge{FromID: "Sub2", ToID: "Task1", Type: DependencySubtaskOf})
+
+	// Test 1: Set Sub1 to InProgress -> Task1 and Epic1 should become InProgress
+	err := dag.SetNodeStatus("Sub1", StatusInProgress)
+	if err != nil {
+		t.Fatalf("SetNodeStatus failed: %v", err)
+	}
+
+	task1, _ := dag.GetNode("Task1")
+	if task1.Status != StatusInProgress {
+		t.Errorf("Expected Task1 status to be InProgress, got %v", task1.Status)
+	}
+	epic1, _ := dag.GetNode("Epic1")
+	if epic1.Status != StatusInProgress {
+		t.Errorf("Expected Epic1 status to be InProgress, got %v", epic1.Status)
+	}
+
+	// Test 2: Set Sub1 to Closed. Task1 is still InProgress because Sub2 is Open.
+	_ = dag.SetNodeStatus("Sub1", StatusClosed)
+	if task1.Status == StatusClosed {
+		t.Errorf("Expected Task1 to NOT be closed yet")
+	}
+
+	// Test 3: Set Sub2 to Closed. This should close Task1 and Epic1.
+	_ = dag.SetNodeStatus("Sub2", StatusClosed)
+	task1, _ = dag.GetNode("Task1")
+	if task1.Status != StatusClosed {
+		t.Errorf("Expected Task1 to be closed, got %v", task1.Status)
+	}
+	epic1, _ = dag.GetNode("Epic1")
+	if epic1.Status != StatusClosed {
+		t.Errorf("Expected Epic1 to be closed, got %v", epic1.Status)
+	}
+}

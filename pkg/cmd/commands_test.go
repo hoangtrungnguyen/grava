@@ -106,6 +106,39 @@ func TestShowCmd(t *testing.T) {
 	assert.Contains(t, output, "Priority:    high (1)")
 }
 
+func TestShowTreeCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+
+	Store = dolt.NewClientFromDB(db)
+
+	issueRows := sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
+		AddRow("grava-epic", "Epic 1", "epic", "in_progress", 1, time.Now(), nil, nil, 0, nil).
+		AddRow("grava-task", "Task 1", "task", "closed", 1, time.Now(), nil, nil, 0, nil)
+
+	depRows := sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}).
+		AddRow("grava-task", "grava-epic", "subtask-of", nil)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
+		WillReturnRows(issueRows)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
+		WillReturnRows(depRows)
+
+	mock.ExpectClose() // PersistentPostRunE
+
+	output, err := executeCommand(rootCmd, "show", "--tree", "grava-epic")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Hierarchical Tree for grava-epic")
+	assert.Contains(t, output, "grava-epic (epic)")
+	assert.Contains(t, output, "grava-task (task)")
+	assert.Contains(t, output, "100%")
+	assert.Contains(t, output, "└──")
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
 func TestCreateEphemeralCmd(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
