@@ -61,6 +61,10 @@ func NewClient(dsn string) (*Client, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
+
+	// Explicitly enable foreign key checks to ensure enforcement in all environments (e.g. CI)
+	_, _ = db.Exec("SET foreign_key_checks = 1")
+
 	return &Client{db: db}, nil
 }
 
@@ -121,44 +125,42 @@ func (c *Client) tryGetNextChildSequence(parentID string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Use explicit transaction without GET_LOCK, relying purely on MVCC write conflict + Retry
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// 1. Read-Modify-Write
-	var current int
-	err = tx.QueryRowContext(ctx, "SELECT next_child FROM child_counters WHERE parent_id = ? FOR UPDATE", parentID).Scan(&current)
-
-	if err == sql.ErrNoRows {
-		// Insert initial
-		_, err = tx.ExecContext(ctx, "INSERT INTO child_counters (parent_id, next_child, updated_by) VALUES (?, 2, ?)", parentID, fmt.Sprintf("tx-%d", time.Now().UnixNano()))
-		if err != nil {
-			return 0, fmt.Errorf("failed to insert counter: %w", err)
-		}
-		if err := tx.Commit(); err != nil {
-			return 0, fmt.Errorf("failed to commit insert: %w", err)
-		}
-		// Return 1 as the first value (we just consumed 1, next is 2)
-		return 1, nil
-	} else if err != nil {
-		return 0, fmt.Errorf("failed to read counter: %w", err)
+	// Use MySQL-idiomatic atomic increment trick:
+	// 1. If row exists, increment next_child and use LAST_INSERT_ID() to capture the NEW value.
+	// 2. If row doesn't exist, insert with next_child=2 and use LAST_INSERT_ID(2) to capture the NEW value.
+	// This approach is more robust than SELECT ... FOR UPDATE on potentially missing rows in Dolt.
+	uniqueTxID := fmt.Sprintf("tx-%d-%d", time.Now().UnixNano(), time.Now().UnixNano()%1000)
+	query := `
+		INSERT INTO child_counters (parent_id, next_child, updated_by)
+		VALUES (?, LAST_INSERT_ID(2), ?)
+		ON DUPLICATE KEY UPDATE
+			next_child = LAST_INSERT_ID(next_child + 1),
+			updated_by = VALUES(updated_by)
+	`
+	_, err = tx.ExecContext(ctx, query, parentID, uniqueTxID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to increment counter: %w", err)
 	}
 
-	// Update (we MUST write a different value into `updated_by` so Dolt correctly flags a serialization collision if `GET_LOCK` fails or is bypassed)
-	uniqueTxID := fmt.Sprintf("tx-%d", time.Now().UnixNano())
-	_, err = tx.ExecContext(ctx, "UPDATE child_counters SET next_child = ?, updated_by = ? WHERE parent_id = ?", current+1, uniqueTxID, parentID)
+	var nextVal int
+	err = tx.QueryRowContext(ctx, "SELECT LAST_INSERT_ID()").Scan(&nextVal)
 	if err != nil {
-		return 0, fmt.Errorf("failed to update counter: %w", err)
+		return 0, fmt.Errorf("failed to read last_insert_id: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("failed to commit update: %w", err)
+		// If commit fails due to serialization conflict in Dolt, we will retry.
+		return 0, fmt.Errorf("failed to commit: %w", err)
 	}
 
-	return current, nil
+	// nextVal is the value to be used NEXT. The value we consume is nextVal - 1.
+	return nextVal - 1, nil
 }
 
 // LogEvent implementation for Client
