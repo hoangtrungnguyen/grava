@@ -4,7 +4,7 @@ set -e
 OWNER="hoangtrungnguyen"
 REPO="grava"
 BINARY="grava"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
 # Detect OS and Architecture
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
