@@ -1005,3 +1005,25 @@ func TestDropCmdDeleteError(t *testing.T) {
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestMergeSlotCmdExists(t *testing.T) {
+	// Simple test to ensure the command is registered and has the right flags
+	output, err := executeCommand(rootCmd, "merge-slot", "--help")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "merge-slot")
+	assert.Contains(t, output, "--ancestor")
+	assert.Contains(t, output, "--current")
+	assert.Contains(t, output, "--other")
+}
+
+func TestResolveCmdExists(t *testing.T) {
+	output, err := executeCommand(rootCmd, "resolve", "--help")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "resolve")
+}
+
+func TestInstallCmdExists(t *testing.T) {
+	output, err := executeCommand(rootCmd, "install", "--help")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "install")
+}
