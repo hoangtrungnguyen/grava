@@ -9,13 +9,13 @@ func TestToMermaid(t *testing.T) {
 	dag := NewAdjacencyDAG(false)
 
 	// Add some nodes with different statuses
-	dag.AddNode(&Node{ID: "A", Title: "Task A", Status: StatusOpen})
-	dag.AddNode(&Node{ID: "B", Title: "Task \"B\"", Status: StatusInProgress})
-	dag.AddNode(&Node{ID: "C", Title: "Task [C]", Status: StatusClosed})
+	_ = dag.AddNode(&Node{ID: "A", Title: "Task A", Status: StatusOpen})
+	_ = dag.AddNode(&Node{ID: "B", Title: "Task \"B\"", Status: StatusInProgress})
+	_ = dag.AddNode(&Node{ID: "C", Title: "Task [C]", Status: StatusClosed})
 
 	// Add some edges
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyRelatesTo}) // Non-blocking
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyRelatesTo}) // Non-blocking
 
 	mermaid := ToMermaid(dag)
 

@@ -112,8 +112,8 @@ func TestImportCmdSkipExisting(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "grava_import_skip.jsonl")
 	assert.NoError(t, err)
 	defer os.Remove(tmpFile.Name()) //nolint:errcheck
-	tmpFile.WriteString(content) //nolint:errcheck
-	tmpFile.Close() //nolint:errcheck
+	tmpFile.WriteString(content)    //nolint:errcheck
+	tmpFile.Close()                 //nolint:errcheck
 
 	// Reset flags
 	importFile = ""
@@ -146,8 +146,8 @@ func TestImportCmdOverwrite(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "grava_import_over.jsonl")
 	assert.NoError(t, err)
 	defer os.Remove(tmpFile.Name()) //nolint:errcheck
-	tmpFile.WriteString(content) //nolint:errcheck
-	tmpFile.Close() //nolint:errcheck
+	tmpFile.WriteString(content)    //nolint:errcheck
+	tmpFile.Close()                 //nolint:errcheck
 
 	// Reset flags
 	importFile = ""

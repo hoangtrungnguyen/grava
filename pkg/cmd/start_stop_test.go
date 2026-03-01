@@ -18,7 +18,7 @@ func TestStartCmd(t *testing.T) {
 	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	origCWD, _ := os.Getwd()
-	os.Chdir(tmpDir) //nolint:errcheck
+	os.Chdir(tmpDir)        //nolint:errcheck
 	defer os.Chdir(origCWD) //nolint:errcheck
 
 	// 2. Create the .grava structure that grava start expects

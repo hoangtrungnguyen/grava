@@ -150,19 +150,19 @@ Example:
 			return nil
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "🩺 Grava Doctor Report")
-		fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "🩺 Grava Doctor Report")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
 		for _, c := range checks {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %-30s %s\n", c.icon(), c.Name, c.Detail) //nolint:errcheck
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %-30s %s\n", c.icon(), c.Name, c.Detail)
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
 
 		if hasFailure {
-			fmt.Fprintln(cmd.OutOrStdout(), "❌ Some checks FAILED. Please review the issues above.")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "❌ Some checks FAILED. Please review the issues above.")
 			return fmt.Errorf("doctor found critical issues")
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "✅ All critical checks passed.")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ All critical checks passed.")
 		return nil
 	},
 }

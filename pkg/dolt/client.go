@@ -112,7 +112,7 @@ func (c *Client) GetNextChildSequence(parentID string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to obtain connection: %w", err)
 	}
-	defer conn.Close() // Returns connection to pool //nolint:errcheck
+	defer func() { _ = conn.Close() }() // Returns connection to pool
 
 	// 1. Acquire Lock
 	lockName := fmt.Sprintf("grava_cc_%s", parentID)
@@ -129,9 +129,8 @@ func (c *Client) GetNextChildSequence(parentID string) (int, error) {
 		return 0, fmt.Errorf("timeout acquiring lock for %s", parentID)
 	}
 
-	// Release lock explicitly before connection is returned to pool
 	defer func() {
-		conn.ExecContext(ctx, "SELECT RELEASE_LOCK(?)", lockName) //nolint:errcheck
+		_, _ = conn.ExecContext(ctx, "SELECT RELEASE_LOCK(?)", lockName)
 	}()
 
 	// 2. Read-Modify-Write

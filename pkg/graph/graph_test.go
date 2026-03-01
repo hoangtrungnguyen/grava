@@ -52,8 +52,8 @@ func TestAdjacencyDAG_Edges(t *testing.T) {
 
 	node1 := &Node{ID: "task1"}
 	node2 := &Node{ID: "task2"}
-	dag.AddNode(node1)
-	dag.AddNode(node2)
+	_ = dag.AddNode(node1)
+	_ = dag.AddNode(node2)
 
 	edge := &Edge{FromID: "task1", ToID: "task2", Type: DependencyBlocks}
 

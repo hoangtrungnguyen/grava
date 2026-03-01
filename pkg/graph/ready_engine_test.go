@@ -14,12 +14,12 @@ func TestReadyEngine_ComputeReady(t *testing.T) {
 	// Setup nodes
 	// A (Priority 1) -> B (Priority 2)
 	// C (Priority 0, Blocked by A)
-	dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: now.Add(-24 * time.Hour)})
-	dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: now.Add(-12 * time.Hour)})
-	dag.AddNode(&Node{ID: "C", Status: StatusOpen, Priority: PriorityCritical, CreatedAt: now})
+	_ = dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: now.Add(-24 * time.Hour)})
+	_ = dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: now.Add(-12 * time.Hour)})
+	_ = dag.AddNode(&Node{ID: "C", Status: StatusOpen, Priority: PriorityCritical, CreatedAt: now})
 
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "A", ToID: "C", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "C", Type: DependencyBlocks})
 
 	// Only A and B are candidiates for ready tasks, but B is blocked by A.
 	// Wait, B is blocked by A, so only A should be ready.
@@ -66,7 +66,7 @@ func TestReadyEngine_GateFiltering(t *testing.T) {
 	now := time.Now()
 	// Task with timer gate in future
 	future := now.Add(1 * time.Hour).Format(time.RFC3339)
-	dag.AddNode(&Node{ID: "Gated", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: now, AwaitType: "timer", AwaitID: future})
+	_ = dag.AddNode(&Node{ID: "Gated", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: now, AwaitType: "timer", AwaitID: future})
 
 	ready, _ := engine.ComputeReady(0)
 	if len(ready) != 0 {
@@ -75,7 +75,7 @@ func TestReadyEngine_GateFiltering(t *testing.T) {
 
 	// Task with timer gate in past
 	past := now.Add(-1 * time.Hour).Format(time.RFC3339)
-	dag.AddNode(&Node{ID: "Expired", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: now, AwaitType: "timer", AwaitID: past})
+	_ = dag.AddNode(&Node{ID: "Expired", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: now, AwaitType: "timer", AwaitID: past})
 
 	ready, _ = engine.ComputeReady(0)
 	if len(ready) != 1 || ready[0].Node.ID != "Expired" {
@@ -90,12 +90,12 @@ func TestReadyEngine_DeepInheritance(t *testing.T) {
 	engine := NewReadyEngine(dag, config)
 
 	// A -> B -> C (Priority Critical)
-	dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityLow, CreatedAt: time.Now()})
-	dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: time.Now()})
-	dag.AddNode(&Node{ID: "C", Status: StatusOpen, Priority: PriorityCritical, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityLow, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "C", Status: StatusOpen, Priority: PriorityCritical, CreatedAt: time.Now()})
 
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
 
 	ready, _ := engine.ComputeReady(0)
 	if len(ready) != 1 || ready[0].Node.ID != "A" {
@@ -115,12 +115,12 @@ func TestReadyEngine_InheritanceLimit(t *testing.T) {
 	engine := NewReadyEngine(dag, config)
 
 	// A -> B -> C (Priority Critical)
-	dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityLow, CreatedAt: time.Now()})
-	dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: time.Now()})
-	dag.AddNode(&Node{ID: "C", Status: StatusOpen, Priority: PriorityCritical, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityLow, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "C", Status: StatusOpen, Priority: PriorityCritical, CreatedAt: time.Now()})
 
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
 
 	ready, _ := engine.ComputeReady(0)
 	// A should inherit from B (Medium), but NOT from C (Critical) because C is depth 2
@@ -138,9 +138,9 @@ func TestReadyEngine_Aging(t *testing.T) {
 
 	now := time.Now()
 	// New task (Low)
-	dag.AddNode(&Node{ID: "New", Status: StatusOpen, Priority: PriorityLow, CreatedAt: now})
+	_ = dag.AddNode(&Node{ID: "New", Status: StatusOpen, Priority: PriorityLow, CreatedAt: now})
 	// Old task (Low, 2 days old)
-	dag.AddNode(&Node{ID: "Old", Status: StatusOpen, Priority: PriorityLow, CreatedAt: now.Add(-48 * time.Hour)})
+	_ = dag.AddNode(&Node{ID: "Old", Status: StatusOpen, Priority: PriorityLow, CreatedAt: now.Add(-48 * time.Hour)})
 
 	ready, _ := engine.ComputeReady(0)
 	if len(ready) != 2 {
@@ -163,9 +163,9 @@ func TestReadyEngine_Limits(t *testing.T) {
 	dag := NewAdjacencyDAG(false)
 	engine := NewReadyEngine(dag, nil)
 
-	dag.AddNode(&Node{ID: "1", Status: StatusOpen, Priority: PriorityCritical, CreatedAt: time.Now()})
-	dag.AddNode(&Node{ID: "2", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: time.Now()})
-	dag.AddNode(&Node{ID: "3", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "1", Status: StatusOpen, Priority: PriorityCritical, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "2", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "3", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: time.Now()})
 
 	ready, _ := engine.ComputeReady(2)
 	if len(ready) != 2 {

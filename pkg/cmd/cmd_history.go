@@ -31,8 +31,8 @@ var historyCmd = &cobra.Command{
 		}
 		defer rows.Close() //nolint:errcheck
 
-		fmt.Fprintf(cmd.OutOrStdout(), "History for Issue %s:\n\n", id) //nolint:errcheck
-		fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-20s %-25s %-15s %-20s %s\n", "COMMIT", "AUTHOR", "DATE", "STATUS", "TITLE", "MESSAGE") //nolint:errcheck
+		fmt.Fprintf(cmd.OutOrStdout(), "History for Issue %s:\n\n", id)                                                                                             //nolint:errcheck
+		fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-20s %-25s %-15s %-20s %s\n", "COMMIT", "AUTHOR", "DATE", "STATUS", "TITLE", "MESSAGE")                              //nolint:errcheck
 		fmt.Fprintln(cmd.OutOrStdout(), "------------------------------------------------------------------------------------------------------------------------") //nolint:errcheck
 
 		count := 0

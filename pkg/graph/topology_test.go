@@ -9,13 +9,13 @@ func TestAdjacencyDAG_TopologicalSort(t *testing.T) {
 
 	// A -> B -> C
 	// A -> C
-	dag.AddNode(&Node{ID: "A"})
-	dag.AddNode(&Node{ID: "B"})
-	dag.AddNode(&Node{ID: "C"})
+	_ = dag.AddNode(&Node{ID: "A"})
+	_ = dag.AddNode(&Node{ID: "B"})
+	_ = dag.AddNode(&Node{ID: "C"})
 
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "A", ToID: "C", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "C", Type: DependencyBlocks})
 
 	sorted, err := dag.TopologicalSort()
 	if err != nil {
@@ -30,7 +30,7 @@ func TestAdjacencyDAG_TopologicalSort(t *testing.T) {
 	}
 
 	// Add a cycle
-	dag.AddEdge(&Edge{FromID: "C", ToID: "A", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "C", ToID: "A", Type: DependencyBlocks})
 	_, err = dag.TopologicalSort()
 	if err != ErrCycleDetected {
 		t.Errorf("expected ErrCycleDetected, got %v", err)

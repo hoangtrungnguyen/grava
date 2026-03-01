@@ -13,14 +13,14 @@ import (
 func TestSetNodeStatus_Persistence(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close() //nolint:errcheck
+	defer func() { _ = db.Close() }()
 
 	store := dolt.NewClientFromDB(db)
 	dag := NewAdjacencyDAG(true)
 	dag.store = store
 	dag.SetSession("test-actor", "test-model")
 
-	dag.AddNode(&Node{ID: "grava-1", Status: StatusOpen})
+	_ = dag.AddNode(&Node{ID: "grava-1", Status: StatusOpen})
 
 	// Expect UPDATE
 	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET status = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?")).
@@ -45,14 +45,14 @@ func TestSetNodeStatus_Persistence(t *testing.T) {
 func TestSetNodePriority_Persistence(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close() //nolint:errcheck
+	defer func() { _ = db.Close() }()
 
 	store := dolt.NewClientFromDB(db)
 	dag := NewAdjacencyDAG(true)
 	dag.store = store
 	dag.SetSession("test-actor", "test-model")
 
-	dag.AddNode(&Node{ID: "grava-1", Priority: PriorityMedium})
+	_ = dag.AddNode(&Node{ID: "grava-1", Priority: PriorityMedium})
 
 	// Expect UPDATE
 	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET priority = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?")).
@@ -76,16 +76,16 @@ func TestSetNodePriority_Persistence(t *testing.T) {
 func TestUpdate_CacheConsistency(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close() //nolint:errcheck
+	defer func() { _ = db.Close() }()
 
 	store := dolt.NewClientFromDB(db)
 	dag := NewAdjacencyDAG(true) // Enable cache
 	dag.store = store
 	dag.SetSession("test-actor", "test-model")
 
-	dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: time.Now()})
-	dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: time.Now()})
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddNode(&Node{ID: "A", Status: StatusOpen, Priority: PriorityMedium, CreatedAt: time.Now()})
+	_ = dag.AddNode(&Node{ID: "B", Status: StatusOpen, Priority: PriorityHigh, CreatedAt: time.Now()})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
 
 	re := NewReadyEngine(dag, nil)
 
@@ -113,14 +113,14 @@ func TestUpdate_CacheConsistency(t *testing.T) {
 func TestRemoveNode_Persistence(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	store := dolt.NewClientFromDB(db)
 	dag := NewAdjacencyDAG(true)
 	dag.store = store
 	dag.SetSession("test-actor", "test-model")
 
-	dag.AddNode(&Node{ID: "grava-1", Status: StatusOpen})
+	_ = dag.AddNode(&Node{ID: "grava-1", Status: StatusOpen})
 
 	// Expect INSERT INTO deletions
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO deletions")).
@@ -150,16 +150,16 @@ func TestRemoveNode_Persistence(t *testing.T) {
 func TestRemoveEdge_Persistence(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	store := dolt.NewClientFromDB(db)
 	dag := NewAdjacencyDAG(true)
 	dag.store = store
 	dag.SetSession("test-actor", "test-model")
 
-	dag.AddNode(&Node{ID: "A", Status: StatusOpen})
-	dag.AddNode(&Node{ID: "B", Status: StatusOpen})
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddNode(&Node{ID: "A", Status: StatusOpen})
+	_ = dag.AddNode(&Node{ID: "B", Status: StatusOpen})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
 
 	// Expect DELETE FROM dependencies with type filter
 	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM dependencies WHERE from_id = ? AND to_id = ? AND type = ?")).
@@ -179,7 +179,7 @@ func TestRemoveEdge_Persistence(t *testing.T) {
 func TestStatusBubbling_Persistence(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	store := dolt.NewClientFromDB(db)
 	dag := NewAdjacencyDAG(true)
@@ -187,13 +187,13 @@ func TestStatusBubbling_Persistence(t *testing.T) {
 	dag.SetSession("test-actor", "test-model")
 
 	// Setup hierarchy: Parent -> Child 1, Parent -> Child 2
-	dag.AddNode(&Node{ID: "parent", Status: StatusOpen})
-	dag.AddNode(&Node{ID: "child1", Status: StatusOpen})
-	dag.AddNode(&Node{ID: "child2", Status: StatusOpen})
+	_ = dag.AddNode(&Node{ID: "parent", Status: StatusOpen})
+	_ = dag.AddNode(&Node{ID: "child1", Status: StatusOpen})
+	_ = dag.AddNode(&Node{ID: "child2", Status: StatusOpen})
 	// child1 --subtask-of--> parent
-	dag.AddEdge(&Edge{FromID: "child1", ToID: "parent", Type: DependencySubtaskOf})
+	_ = dag.AddEdge(&Edge{FromID: "child1", ToID: "parent", Type: DependencySubtaskOf})
 	// child2 --subtask-of--> parent
-	dag.AddEdge(&Edge{FromID: "child2", ToID: "parent", Type: DependencySubtaskOf})
+	_ = dag.AddEdge(&Edge{FromID: "child2", ToID: "parent", Type: DependencySubtaskOf})
 
 	// 1. Mark child1 as In Progress -> Parent should become In Progress
 	mock.ExpectExec(regexp.QuoteMeta("UPDATE issues SET status = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?")).

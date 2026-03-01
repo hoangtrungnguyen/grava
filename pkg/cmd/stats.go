@@ -103,7 +103,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		if err != nil {
 			return fmt.Errorf("query by assignee failed: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var assignee string
 			var count int
@@ -120,7 +120,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		if err != nil {
 			return fmt.Errorf("query created by date failed: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var day string
 			var count int
@@ -136,7 +136,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		if err != nil {
 			return fmt.Errorf("query closed by date failed: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var day string
 			var count int
