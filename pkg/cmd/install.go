@@ -48,7 +48,19 @@ var installCmd = &cobra.Command{
 		}
 
 		// 3. Create hooks
-		hooksDir := filepath.Join(".git", "hooks")
+		shared, _ := cmd.Flags().GetBool("shared")
+		var hooksDir string
+		if shared {
+			hooksDir = filepath.Join(".grava", "hooks")
+			execCmd = exec.Command("git", "config", "core.hooksPath", hooksDir)
+			if err := execCmd.Run(); err != nil {
+				return fmt.Errorf("failed to configure git core.hooksPath: %w", err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Configured core.hooksPath to", hooksDir)
+		} else {
+			hooksDir = filepath.Join(".git", "hooks")
+		}
+
 		if _, err := os.Stat(hooksDir); os.IsNotExist(err) {
 			if err := os.MkdirAll(hooksDir, 0755); err != nil {
 				return fmt.Errorf("failed to create hooks directory: %w", err)
@@ -119,5 +131,6 @@ func installHookSafely(path, content string, cmd *cobra.Command) error {
 }
 
 func init() {
+	installCmd.Flags().Bool("shared", false, "Install hooks to .grava/hooks and configure core.hooksPath for team sharing")
 	rootCmd.AddCommand(installCmd)
 }

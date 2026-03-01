@@ -54,5 +54,46 @@ func TestInstallCmd(t *testing.T) {
 
 		info, _ := os.Stat(hookPath)
 		assert.True(t, info.Mode()&0111 != 0, "hook %s should be executable", hookPath)
+
+		content, _ := os.ReadFile(hookPath)
+		assert.Contains(t, string(content), "# grava-shim")
 	}
+
+	// Test Hook Chaining
+	// Create a dummy non-grava hook
+	dummyHookPath := filepath.Join(".git", "hooks", "pre-commit")
+	os.WriteFile(dummyHookPath, []byte("#!/bin/sh\necho 'custom'"), 0755)
+
+	// Re-run install
+	_, err = executeCommand(rootCmd, "install")
+	assert.NoError(t, err)
+
+	// Verify .old exists and contains the custom script
+	oldHookPath := dummyHookPath + ".old"
+	_, err = os.Stat(oldHookPath)
+	assert.NoError(t, err, "pre-commit.old should exist")
+	oldContent, _ := os.ReadFile(oldHookPath)
+	assert.Contains(t, string(oldContent), "echo 'custom'")
+
+	// Verify the new shim exists at the primary path
+	newContent, _ := os.ReadFile(dummyHookPath)
+	assert.Contains(t, string(newContent), "# grava-shim")
+
+	// Test Shared Install
+	// Run install with --shared
+	_, err = executeCommand(rootCmd, "install", "--shared")
+	assert.NoError(t, err)
+
+	// Verify .grava/hooks exists and is populated
+	for _, hook := range hooks {
+		hookPath := filepath.Join(".grava", "hooks", hook)
+		_, err := os.Stat(hookPath)
+		assert.NoError(t, err, "shared hook %s should exist", hookPath)
+	}
+
+	// Verify core.hooksPath is set
+	configCmd := exec.Command("git", "config", "core.hooksPath")
+	configOut, err := configCmd.Output()
+	assert.NoError(t, err)
+	assert.Contains(t, string(configOut), ".grava/hooks")
 }
