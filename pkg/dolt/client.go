@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -106,71 +105,41 @@ func (c *Client) QueryContext(ctx context.Context, query string, args ...any) (*
 // GetNextChildSequence uses Advisory Locks (GET_LOCK) and retries on serialization failures.
 func (c *Client) GetNextChildSequence(parentID string) (int, error) {
 	var lastErr error
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := 0; attempt < 10; attempt++ {
 		seq, err := c.tryGetNextChildSequence(parentID)
 		if err == nil {
 			return seq, nil
 		}
-		// Dolt/MySQL Error 1213: serialization failure
-		if containsString(err.Error(), []string{"1213", "serialization failure", "deadlock"}) {
-			time.Sleep(100 * time.Millisecond)
-			lastErr = err
-			continue
-		}
-		return 0, err
+		// Dolt/MySQL Error 1213: serialization failure, deadlock, or generic failure from concurrent transaction
+		lastErr = err
+		time.Sleep(100 * time.Millisecond)
 	}
 	return 0, fmt.Errorf("failed to get next child sequence after multiple attempts. last err: %w", lastErr)
-}
-
-// containsString is a helper to check error messages
-func containsString(s string, substrs []string) bool {
-	for _, sub := range substrs {
-		if strings.Contains(strings.ToLower(s), strings.ToLower(sub)) {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Client) tryGetNextChildSequence(parentID string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Get a dedicated connection from the pool
-	conn, err := c.db.Conn(ctx)
+	// Use explicit transaction without GET_LOCK, relying purely on MVCC write conflict + Retry
+	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to obtain connection: %w", err)
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer func() { _ = conn.Close() }() // Returns connection to pool
+	defer func() { _ = tx.Rollback() }()
 
-	// 1. Acquire Lock
-	lockName := fmt.Sprintf("grava_cc_%s", parentID)
-	if len(lockName) > 64 {
-		lockName = lockName[:64]
-	}
-
-	var locked int
-	err = conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, 10)", lockName).Scan(&locked)
-	if err != nil {
-		return 0, fmt.Errorf("failed to acquire lock: %w", err)
-	}
-	if locked != 1 {
-		return 0, fmt.Errorf("timeout acquiring lock for %s", parentID)
-	}
-
-	defer func() {
-		_, _ = conn.ExecContext(ctx, "SELECT RELEASE_LOCK(?)", lockName)
-	}()
-
-	// 2. Read-Modify-Write
+	// 1. Read-Modify-Write
 	var current int
-	err = conn.QueryRowContext(ctx, "SELECT next_child FROM child_counters WHERE parent_id = ?", parentID).Scan(&current)
+	err = tx.QueryRowContext(ctx, "SELECT next_child FROM child_counters WHERE parent_id = ? FOR UPDATE", parentID).Scan(&current)
 
 	if err == sql.ErrNoRows {
 		// Insert initial
-		_, err = conn.ExecContext(ctx, "INSERT INTO child_counters (parent_id, next_child) VALUES (?, 2)", parentID)
+		_, err = tx.ExecContext(ctx, "INSERT INTO child_counters (parent_id, next_child, updated_by) VALUES (?, 2, ?)", parentID, fmt.Sprintf("tx-%d", time.Now().UnixNano()))
 		if err != nil {
 			return 0, fmt.Errorf("failed to insert counter: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return 0, fmt.Errorf("failed to commit insert: %w", err)
 		}
 		// Return 1 as the first value (we just consumed 1, next is 2)
 		return 1, nil
@@ -178,10 +147,15 @@ func (c *Client) tryGetNextChildSequence(parentID string) (int, error) {
 		return 0, fmt.Errorf("failed to read counter: %w", err)
 	}
 
-	// Update
-	_, err = conn.ExecContext(ctx, "UPDATE child_counters SET next_child = ? WHERE parent_id = ?", current+1, parentID)
+	// Update (we MUST write a different value into `updated_by` so Dolt correctly flags a serialization collision if `GET_LOCK` fails or is bypassed)
+	uniqueTxID := fmt.Sprintf("tx-%d", time.Now().UnixNano())
+	_, err = tx.ExecContext(ctx, "UPDATE child_counters SET next_child = ?, updated_by = ? WHERE parent_id = ?", current+1, uniqueTxID, parentID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to update counter: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit update: %w", err)
 	}
 
 	return current, nil

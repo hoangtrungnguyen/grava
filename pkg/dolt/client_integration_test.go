@@ -25,6 +25,9 @@ func TestClient_GetNextChildSequence_Integration(t *testing.T) {
 
 	parentID := fmt.Sprintf("test-parent-%d", time.Now().UnixNano())
 
+	// Clean up any potential lingering test data
+	_, _ = client.Exec("DELETE FROM child_counters WHERE parent_id = ?", parentID)
+
 	// 1. Sequential Test
 	seq, err := client.GetNextChildSequence(parentID)
 	if err != nil {
