@@ -126,7 +126,7 @@ You can filter by status or type, and sort by various criteria.`,
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		if !outputJSON {
-			fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
+			_, _ = fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
 		}
 
 		for rows.Next() {
@@ -152,7 +152,7 @@ You can filter by status or type, and sort by various criteria.`,
 					title = title[:47] + "..."
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
 					id, title, iType, priority, status, createdAt.Format("2006-01-02"))
 			}
 		}
@@ -162,7 +162,7 @@ You can filter by status or type, and sort by various criteria.`,
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		} else {
 			w.Flush() //nolint:errcheck
 		}

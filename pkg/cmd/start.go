@@ -40,7 +40,7 @@ var startCmd = &cobra.Command{
 			// Port is free, so server is NOT running
 			ln.Close() //nolint:errcheck
 		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Server appears to be already running on port %s\n", port)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Server appears to be already running on port %s\n", port)
 			return nil
 		}
 
@@ -61,7 +61,7 @@ var startCmd = &cobra.Command{
 		}
 
 		// 4. Start in background
-		fmt.Fprintf(cmd.OutOrStdout(), "🚀 Starting Dolt server on port %s...\n", port)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "🚀 Starting Dolt server on port %s...\n", port)
 
 		serverCmd := exec.Command(doltBin, "sql-server", "--port", port, "--host", "0.0.0.0")
 		serverCmd.Dir = doltRepoDir
@@ -79,7 +79,7 @@ var startCmd = &cobra.Command{
 			return fmt.Errorf("failed to start dolt server: %w", err)
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt server started in background. Check .grava/dolt.log for details.")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt server started in background. Check .grava/dolt.log for details.")
 		return nil
 	},
 }

@@ -38,7 +38,7 @@ var stopCmd = &cobra.Command{
 		}
 
 		// 3. Run stop script
-		fmt.Fprintf(cmd.OutOrStdout(), "🛑 Stopping Dolt server on port %s...\n", port)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "🛑 Stopping Dolt server on port %s...\n", port)
 
 		stopCmd := exec.Command(scriptPath, port, "-y")
 		stopCmd.Stdout = cmd.OutOrStdout()
