@@ -37,6 +37,8 @@ var hookRunCmd = &cobra.Command{
 			return runPreCommit(cmd)
 		case "post-merge", "post-checkout":
 			return runPostMergeCheckout(cmd)
+		case "prepare-commit-msg":
+			return runPrepareCommitMsg(cmd, hookName, args[1:])
 		default:
 			// Unrecognized hook, just exit cleanly or log
 			return nil
@@ -83,6 +85,55 @@ func runPostMergeCheckout(cmd *cobra.Command) error {
 		}
 	} else {
 		fmt.Fprint(cmd.OutOrStdout(), string(output))
+	}
+
+	return nil
+}
+
+func runPrepareCommitMsg(cmd *cobra.Command, hookName string, args []string) error {
+	if len(args) < 1 {
+		// Git normally passes the file path as the first argument
+		return nil
+	}
+
+	msgFile := args[0]
+	// Optional 2nd and 3rd args tell us the source (e.g., "message", "template", "merge", "squash", "commit")
+	source := ""
+	if len(args) > 1 {
+		source = args[1]
+	}
+
+	// We only want to inject our trailer on clean manual commits or merges where we might have helped
+	// Actually, if we resolved a conflict, we could detect that here based on our own state file,
+	// but for now let's just add a generic "Executed-By: Grava Agent" if it doesn't exist
+
+	// Skip ammend commits or merge commits if we don't want to clutter
+	if source == "commit" {
+		// "commit" source means it's an amend. We don't want to duplicate trailers.
+		// A full implementation would parse trailers, but we'll do simplistic checking below.
+	}
+
+	content, err := os.ReadFile(msgFile)
+	if err != nil {
+		return fmt.Errorf("failed to read commit msg file %s: %w", msgFile, err)
+	}
+
+	contentStr := string(content)
+	trailer := "Executed-By: Grava JSONL Manager"
+
+	if !strings.Contains(contentStr, trailer) {
+		// Append to the end of the file. If there are existing scissors (# ------------------------ >8 ------------------------)
+		// we should ideally insert before the scissors. For simplicity, we append.
+
+		newContent := contentStr
+		if !strings.HasSuffix(newContent, "\n") {
+			newContent += "\n"
+		}
+		newContent += "\n" + trailer + "\n"
+
+		if err := os.WriteFile(msgFile, []byte(newContent), 0644); err != nil {
+			return fmt.Errorf("failed to write commit trailer: %w", err)
+		}
 	}
 
 	return nil

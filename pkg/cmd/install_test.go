@@ -46,7 +46,7 @@ func TestInstallCmd(t *testing.T) {
 	assert.Contains(t, string(attributesContent), "issues.jsonl merge=grava")
 
 	// 3. Check hooks
-	hooks := []string{"pre-commit", "post-merge", "post-checkout"}
+	hooks := []string{"pre-commit", "post-merge", "post-checkout", "prepare-commit-msg"}
 	for _, hook := range hooks {
 		hookPath := filepath.Join(".git", "hooks", hook)
 		_, err := os.Stat(hookPath)

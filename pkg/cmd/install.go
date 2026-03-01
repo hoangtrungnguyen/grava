@@ -79,6 +79,10 @@ grava hook run post-merge
 # grava-shim
 grava hook run post-checkout
 `
+		prepareCommitMsgContent := `#!/bin/sh
+# grava-shim
+grava hook run prepare-commit-msg "$1" "$2" "$3"
+`
 
 		if err := installHookSafely(filepath.Join(hooksDir, "pre-commit"), preCommitContent, cmd); err != nil {
 			return err
@@ -87,6 +91,9 @@ grava hook run post-checkout
 			return err
 		}
 		if err := installHookSafely(filepath.Join(hooksDir, "post-checkout"), postCheckoutContent, cmd); err != nil {
+			return err
+		}
+		if err := installHookSafely(filepath.Join(hooksDir, "prepare-commit-msg"), prepareCommitMsgContent, cmd); err != nil {
 			return err
 		}
 
