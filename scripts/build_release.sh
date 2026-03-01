@@ -37,7 +37,7 @@ for target in "${TARGETS[@]}"; do
         output_name+=".exe"
     fi
     
-    GOOS=$os GOARCH=$arch go build -ldflags "-s -w -X 'github.com/hoangtrungnguyen/grava/cmd.Version=$VERSION'" -o "$DIST_DIR/$output_name" "$ENTRYPOINT"
+    GOOS=$os GOARCH=$arch go build -ldflags "-s -w -X 'main.Version=$VERSION'" -o "$DIST_DIR/$output_name" "$ENTRYPOINT"
     
     # Create archive
     if command -v zip >/dev/null 2>&1 && [ "$os" = "windows" ]; then
