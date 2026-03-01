@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -67,13 +68,13 @@ grava hook run post-merge
 grava hook run post-checkout
 `
 
-		if err := writeExecutableFile(filepath.Join(hooksDir, "pre-commit"), preCommitContent); err != nil {
+		if err := installHookSafely(filepath.Join(hooksDir, "pre-commit"), preCommitContent, cmd); err != nil {
 			return err
 		}
-		if err := writeExecutableFile(filepath.Join(hooksDir, "post-merge"), postMergeContent); err != nil {
+		if err := installHookSafely(filepath.Join(hooksDir, "post-merge"), postMergeContent, cmd); err != nil {
 			return err
 		}
-		if err := writeExecutableFile(filepath.Join(hooksDir, "post-checkout"), postCheckoutContent); err != nil {
+		if err := installHookSafely(filepath.Join(hooksDir, "post-checkout"), postCheckoutContent, cmd); err != nil {
 			return err
 		}
 
@@ -82,7 +83,34 @@ grava hook run post-checkout
 	},
 }
 
-func writeExecutableFile(path, content string) error {
+func installHookSafely(path, content string, cmd *cobra.Command) error {
+	// 1. Check if the hook exists
+	if _, err := os.Stat(path); err == nil {
+		// Hook exists. Check if it's already a grava shim.
+		existingContent, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read existing hook %s: %w", path, err)
+		}
+
+		// If it's a grava shim, we can just overwrite it (it's safe).
+		if !strings.Contains(string(existingContent), "# grava-shim") {
+			// It's a user's custom hook or another tool's hook.
+			// Rename it to .old so we can chain it.
+			oldPath := path + ".old"
+
+			// Don't overwrite an existing .old
+			if _, err := os.Stat(oldPath); os.IsNotExist(err) {
+				fmt.Fprintf(cmd.OutOrStdout(), "⚠️  Existing hook found at %s. Renaming to %s to preserve it.\n", path, oldPath)
+				if err := os.Rename(path, oldPath); err != nil {
+					return fmt.Errorf("failed to rename existing hook to %s: %w", oldPath, err)
+				}
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "⚠️  Existing non-Grava hook and .old hook both found at %s. Overwriting the primary hook, but keeping .old.\n", path)
+			}
+		}
+	}
+
+	// 2. Write the new grava shim
 	err := os.WriteFile(path, []byte(content), 0755)
 	if err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)

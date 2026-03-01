@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -21,6 +23,15 @@ var hookRunCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hookName := args[0]
 
+		// 1. Run chained .old hook if it exists
+		if err := executeChainedHook(hookName, cmd); err != nil {
+			// A failure in a chained hook shouldn't necessarily stop Grava's own hook logic,
+			// but Git hooks traditionally fail the whole process if any script fails.
+			// Let's propagate the error so the commit/merge gets aborted.
+			return fmt.Errorf("chained hook %s.old failed: %w", hookName, err)
+		}
+
+		// 2. Run Grava logic
 		switch hookName {
 		case "pre-commit":
 			return runPreCommit(cmd)
@@ -74,6 +85,23 @@ func runPostMergeCheckout(cmd *cobra.Command) error {
 		fmt.Fprint(cmd.OutOrStdout(), string(output))
 	}
 
+	return nil
+}
+
+func executeChainedHook(hookName string, cmd *cobra.Command) error {
+	// The working directory should automatically be the repository root
+	// when git triggers the hook, so .git/hooks should be accessible.
+	repoRoot := "." // For simplicity. Might need to use git rev-parse --show-toplevel ideally.
+	chainedPath := filepath.Join(repoRoot, ".git", "hooks", hookName+".old")
+
+	if _, err := os.Stat(chainedPath); err == nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "Running chained hook: %s\n", chainedPath)
+		chainedCmd := exec.Command(chainedPath)
+		chainedCmd.Stdout = cmd.OutOrStdout()
+		chainedCmd.Stderr = cmd.ErrOrStderr()
+		return chainedCmd.Run()
+	}
+	// Path doesn't exist, which is fine
 	return nil
 }
 
