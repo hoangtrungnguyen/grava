@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -102,8 +103,36 @@ func (c *Client) QueryContext(ctx context.Context, query string, args ...any) (*
 	return c.db.QueryContext(ctx, query, args...)
 }
 
-// GetNextChildSequence uses Advisory Locks (GET_LOCK) on a dedicated connection.
+// GetNextChildSequence uses Advisory Locks (GET_LOCK) and retries on serialization failures.
 func (c *Client) GetNextChildSequence(parentID string) (int, error) {
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		seq, err := c.tryGetNextChildSequence(parentID)
+		if err == nil {
+			return seq, nil
+		}
+		// Dolt/MySQL Error 1213: serialization failure
+		if containsString(err.Error(), []string{"1213", "serialization failure", "deadlock"}) {
+			time.Sleep(100 * time.Millisecond)
+			lastErr = err
+			continue
+		}
+		return 0, err
+	}
+	return 0, fmt.Errorf("failed to get next child sequence after multiple attempts. last err: %w", lastErr)
+}
+
+// containsString is a helper to check error messages
+func containsString(s string, substrs []string) bool {
+	for _, sub := range substrs {
+		if strings.Contains(strings.ToLower(s), strings.ToLower(sub)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) tryGetNextChildSequence(parentID string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
