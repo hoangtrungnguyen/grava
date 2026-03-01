@@ -46,7 +46,7 @@ func LoadGraphFromDB(store dolt.Store) (*AdjacencyDAG, error) {
 			node.Metadata = make(map[string]interface{})
 		}
 
-		dag.AddNode(&node)
+		_ = dag.AddNode(&node)
 	}
 
 	// Load all dependencies
@@ -74,7 +74,7 @@ func LoadGraphFromDB(store dolt.Store) (*AdjacencyDAG, error) {
 			edge.Metadata = make(map[string]interface{})
 		}
 
-		dag.AddEdge(&edge)
+		_ = dag.AddEdge(&edge)
 	}
 
 	return dag, nil

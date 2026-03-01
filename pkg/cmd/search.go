@@ -56,7 +56,7 @@ Examples:
 		var results []IssueListItem
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		if !outputJSON {
-			fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
+			_, _ = fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
 		}
 
 		found := 0
@@ -81,7 +81,7 @@ Examples:
 				if len(title) > 50 {
 					title = title[:47] + "..."
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
 					id, title, iType, priority, status, createdAt.Format("2006-01-02"))
 			}
 			found++
@@ -92,13 +92,13 @@ Examples:
 
 		if outputJSON {
 			b, _ := json.MarshalIndent(results, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		} else {
 			w.Flush() //nolint:errcheck
 			if found == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "No issues found matching %q\n", query)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No issues found matching %q\n", query)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "\n🔍 %d result(s) for %q\n", found, query)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n🔍 %d result(s) for %q\n", found, query)
 			}
 		}
 		return nil

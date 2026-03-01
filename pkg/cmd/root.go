@@ -111,7 +111,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false, "Output in JSON format")
 
 	// Bind flags to viper for ENV var support
-	viper.BindPFlag("actor", rootCmd.PersistentFlags().Lookup("actor")) //nolint:errcheck
+	viper.BindPFlag("actor", rootCmd.PersistentFlags().Lookup("actor"))             //nolint:errcheck
 	viper.BindPFlag("agent_model", rootCmd.PersistentFlags().Lookup("agent-model")) //nolint:errcheck
 
 	// Cobra also supports local flags, which will only run
@@ -140,6 +140,6 @@ func initConfig() {
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		_, _ = fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	}
 }

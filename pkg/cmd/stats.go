@@ -103,7 +103,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		if err != nil {
 			return fmt.Errorf("query by assignee failed: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var assignee string
 			var count int
@@ -120,7 +120,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		if err != nil {
 			return fmt.Errorf("query created by date failed: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var day string
 			var count int
@@ -136,7 +136,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		if err != nil {
 			return fmt.Errorf("query closed by date failed: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var day string
 			var count int
@@ -151,24 +151,24 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(bytes))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(bytes))
 			return nil
 		}
 
 		// Text Output
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "Total Issues:\t%d\n", stats.Total)
-		fmt.Fprintf(w, "Open Issues:\t%d\n", stats.Open)
-		fmt.Fprintf(w, "Closed Issues:\t%d\n", stats.Closed)
-		fmt.Fprintln(w, "")
+		_, _ = fmt.Fprintf(w, "Total Issues:\t%d\n", stats.Total)
+		_, _ = fmt.Fprintf(w, "Open Issues:\t%d\n", stats.Open)
+		_, _ = fmt.Fprintf(w, "Closed Issues:\t%d\n", stats.Closed)
+		_, _ = fmt.Fprintln(w, "")
 
-		fmt.Fprintln(w, "By Status:")
+		_, _ = fmt.Fprintln(w, "By Status:")
 		for status, count := range stats.ByStatus {
-			fmt.Fprintf(w, "  %s:\t%d\n", status, count)
+			_, _ = fmt.Fprintf(w, "  %s:\t%d\n", status, count)
 		}
-		fmt.Fprintln(w, "")
+		_, _ = fmt.Fprintln(w, "")
 
-		fmt.Fprintln(w, "By Priority:")
+		_, _ = fmt.Fprintln(w, "By Priority:")
 		// Sort priorities
 		var priorities []int
 		for p := range stats.ByPriority {
@@ -176,11 +176,11 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		}
 		sort.Ints(priorities)
 		for _, p := range priorities {
-			fmt.Fprintf(w, "  P%d:\t%d\n", p, stats.ByPriority[p])
+			_, _ = fmt.Fprintf(w, "  P%d:\t%d\n", p, stats.ByPriority[p])
 		}
-		fmt.Fprintln(w, "")
+		_, _ = fmt.Fprintln(w, "")
 
-		fmt.Fprintln(w, "Top Authors:")
+		_, _ = fmt.Fprintln(w, "Top Authors:")
 		// Sort authors by count desc
 		type kv struct {
 			Key   string
@@ -194,11 +194,11 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 			return authors[i].Value > authors[j].Value
 		})
 		for _, a := range authors {
-			fmt.Fprintf(w, "  %s:\t%d\n", a.Key, a.Value)
+			_, _ = fmt.Fprintf(w, "  %s:\t%d\n", a.Key, a.Value)
 		}
-		fmt.Fprintln(w, "")
+		_, _ = fmt.Fprintln(w, "")
 
-		fmt.Fprintln(w, "Top Assignees:")
+		_, _ = fmt.Fprintln(w, "Top Assignees:")
 		var assignees []kv
 		for k, v := range stats.ByAssignee {
 			assignees = append(assignees, kv{k, v})
@@ -207,12 +207,12 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 			return assignees[i].Value > assignees[j].Value
 		})
 		for _, a := range assignees {
-			fmt.Fprintf(w, "  %s:\t%d\n", a.Key, a.Value)
+			_, _ = fmt.Fprintf(w, "  %s:\t%d\n", a.Key, a.Value)
 		}
-		fmt.Fprintln(w, "")
+		_, _ = fmt.Fprintln(w, "")
 
-		fmt.Fprintf(w, "Activity (Last %d Days):\n", statsDays)
-		fmt.Fprintln(w, "  Date\t\tCreated\tClosed")
+		_, _ = fmt.Fprintf(w, "Activity (Last %d Days):\n", statsDays)
+		_, _ = fmt.Fprintln(w, "  Date\t\tCreated\tClosed")
 
 		// Generate dates for the last N days
 		now := time.Now()
@@ -222,7 +222,7 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 			closed := stats.ClosedByDate[d]
 
 			if created > 0 || closed > 0 {
-				fmt.Fprintf(w, "  %s\t%d\t%d\n", d, created, closed)
+				_, _ = fmt.Fprintf(w, "  %s\t%d\t%d\n", d, created, closed)
 			}
 		}
 

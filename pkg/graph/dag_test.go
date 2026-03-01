@@ -10,12 +10,12 @@ func TestAdjacencyDAG_CycleDetection(t *testing.T) {
 	node1 := &Node{ID: "A"}
 	node2 := &Node{ID: "B"}
 	node3 := &Node{ID: "C"}
-	dag.AddNode(node1)
-	dag.AddNode(node2)
-	dag.AddNode(node3)
+	_ = dag.AddNode(node1)
+	_ = dag.AddNode(node2)
+	_ = dag.AddNode(node3)
 
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
 
 	// Test AddEdgeWithCycleCheck - No Cycle
 	if err := dag.AddEdgeWithCycleCheck(&Edge{FromID: "A", ToID: "C", Type: DependencyBlocks}); err != nil {
@@ -41,12 +41,12 @@ func TestAdjacencyDAG_TransitiveDependencies(t *testing.T) {
 	dag := NewAdjacencyDAG(false)
 
 	// A -> B -> C
-	dag.AddNode(&Node{ID: "A"})
-	dag.AddNode(&Node{ID: "B"})
-	dag.AddNode(&Node{ID: "C"})
+	_ = dag.AddNode(&Node{ID: "A"})
+	_ = dag.AddNode(&Node{ID: "B"})
+	_ = dag.AddNode(&Node{ID: "C"})
 
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
 
 	// Transitive dependencies of C should be B and A
 	deps, err := dag.GetTransitiveDependencies("C", 0)

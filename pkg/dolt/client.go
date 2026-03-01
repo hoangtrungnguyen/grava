@@ -61,6 +61,10 @@ func NewClient(dsn string) (*Client, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
+
+	// Explicitly enable foreign key checks to ensure enforcement in all environments (e.g. CI)
+	_, _ = db.Exec("SET foreign_key_checks = 1")
+
 	return &Client{db: db}, nil
 }
 
@@ -102,61 +106,61 @@ func (c *Client) QueryContext(ctx context.Context, query string, args ...any) (*
 	return c.db.QueryContext(ctx, query, args...)
 }
 
-// GetNextChildSequence uses Advisory Locks (GET_LOCK) on a dedicated connection.
+// GetNextChildSequence uses Advisory Locks (GET_LOCK) and retries on serialization failures.
 func (c *Client) GetNextChildSequence(parentID string) (int, error) {
+	var lastErr error
+	for attempt := 0; attempt < 10; attempt++ {
+		seq, err := c.tryGetNextChildSequence(parentID)
+		if err == nil {
+			return seq, nil
+		}
+		// Dolt/MySQL Error 1213: serialization failure, deadlock, or generic failure from concurrent transaction
+		lastErr = err
+		time.Sleep(100 * time.Millisecond)
+	}
+	return 0, fmt.Errorf("failed to get next child sequence after multiple attempts. last err: %w", lastErr)
+}
+
+func (c *Client) tryGetNextChildSequence(parentID string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Get a dedicated connection from the pool
-	conn, err := c.db.Conn(ctx)
+	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to obtain connection: %w", err)
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer conn.Close() // Returns connection to pool //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 
-	// 1. Acquire Lock
-	lockName := fmt.Sprintf("grava_cc_%s", parentID)
-	if len(lockName) > 64 {
-		lockName = lockName[:64]
-	}
-
-	var locked int
-	err = conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, 10)", lockName).Scan(&locked)
+	// Use MySQL-idiomatic atomic increment trick:
+	// 1. If row exists, increment next_child and use LAST_INSERT_ID() to capture the NEW value.
+	// 2. If row doesn't exist, insert with next_child=2 and use LAST_INSERT_ID(2) to capture the NEW value.
+	// This approach is more robust than SELECT ... FOR UPDATE on potentially missing rows in Dolt.
+	uniqueTxID := fmt.Sprintf("tx-%d-%d", time.Now().UnixNano(), time.Now().UnixNano()%1000)
+	query := `
+		INSERT INTO child_counters (parent_id, next_child, updated_by)
+		VALUES (?, LAST_INSERT_ID(2), ?)
+		ON DUPLICATE KEY UPDATE
+			next_child = LAST_INSERT_ID(next_child + 1),
+			updated_by = VALUES(updated_by)
+	`
+	_, err = tx.ExecContext(ctx, query, parentID, uniqueTxID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to acquire lock: %w", err)
-	}
-	if locked != 1 {
-		return 0, fmt.Errorf("timeout acquiring lock for %s", parentID)
+		return 0, fmt.Errorf("failed to increment counter: %w", err)
 	}
 
-	// Release lock explicitly before connection is returned to pool
-	defer func() {
-		conn.ExecContext(ctx, "SELECT RELEASE_LOCK(?)", lockName) //nolint:errcheck
-	}()
-
-	// 2. Read-Modify-Write
-	var current int
-	err = conn.QueryRowContext(ctx, "SELECT next_child FROM child_counters WHERE parent_id = ?", parentID).Scan(&current)
-
-	if err == sql.ErrNoRows {
-		// Insert initial
-		_, err = conn.ExecContext(ctx, "INSERT INTO child_counters (parent_id, next_child) VALUES (?, 2)", parentID)
-		if err != nil {
-			return 0, fmt.Errorf("failed to insert counter: %w", err)
-		}
-		// Return 1 as the first value (we just consumed 1, next is 2)
-		return 1, nil
-	} else if err != nil {
-		return 0, fmt.Errorf("failed to read counter: %w", err)
-	}
-
-	// Update
-	_, err = conn.ExecContext(ctx, "UPDATE child_counters SET next_child = ? WHERE parent_id = ?", current+1, parentID)
+	var nextVal int
+	err = tx.QueryRowContext(ctx, "SELECT LAST_INSERT_ID()").Scan(&nextVal)
 	if err != nil {
-		return 0, fmt.Errorf("failed to update counter: %w", err)
+		return 0, fmt.Errorf("failed to read last_insert_id: %w", err)
 	}
 
-	return current, nil
+	if err := tx.Commit(); err != nil {
+		// If commit fails due to serialization conflict in Dolt, we will retry.
+		return 0, fmt.Errorf("failed to commit: %w", err)
+	}
+
+	// nextVal is the value to be used NEXT. The value we consume is nextVal - 1.
+	return nextVal - 1, nil
 }
 
 // LogEvent implementation for Client

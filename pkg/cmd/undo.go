@@ -58,7 +58,7 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 		if err != nil {
 			return fmt.Errorf("failed to fetch history: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		var history []IssueState
 		for rows.Next() {
@@ -94,7 +94,7 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 			targetState = history[1]
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), actionMsg)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), actionMsg)
 
 		// 3.5 Check for Session Undo (Git-level Revert)
 		if !isDirty {
@@ -103,16 +103,16 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 				var meta map[string]any
 				if err := json.Unmarshal([]byte(rawMeta.String), &meta); err == nil {
 					if lastCommit, ok := meta["last_commit"].(string); ok {
-						fmt.Fprintf(cmd.OutOrStdout(), "Found last session commit: %s\n", lastCommit)
-						fmt.Fprintf(cmd.OutOrStdout(), "Reverting session commit... ")
+						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Found last session commit: %s\n", lastCommit)
+						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Reverting session commit... ")
 						_, err := Store.Exec("CALL DOLT_REVERT(?)", lastCommit)
 						if err != nil {
 							// If revert fails (e.g. conflicts), we might want to fallback to row-level
 							// but for now, let's report it as a fail or just continue.
-							fmt.Fprintf(cmd.OutOrStdout(), "Revert failed: %v. Falling back to row-level undo.\n", err)
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Revert failed: %v. Falling back to row-level undo.\n", err)
 						} else {
-							fmt.Fprintln(cmd.OutOrStdout(), "DONE.")
-							fmt.Fprintf(cmd.OutOrStdout(), "✅ Session undo successful for %v.\n", id)
+							_, _ = fmt.Fprintln(cmd.OutOrStdout(), "DONE.")
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Session undo successful for %v.\n", id)
 							return nil
 						}
 					}
@@ -162,9 +162,9 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 		}
 
 		// Print summary
-		fmt.Fprintf(cmd.OutOrStdout(), "✅ Reverted issue %s.\n", id)
-		fmt.Fprintf(cmd.OutOrStdout(), "   Title: %s\n", targetState.Title)
-		fmt.Fprintf(cmd.OutOrStdout(), "   Status: %s\n", targetState.Status)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Reverted issue %s.\n", id)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   Title: %s\n", targetState.Title)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   Status: %s\n", targetState.Status)
 
 		return nil
 	},

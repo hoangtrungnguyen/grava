@@ -13,7 +13,7 @@ import (
 func TestStatsCmd(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	Store = dolt.NewClientFromDB(db)
 

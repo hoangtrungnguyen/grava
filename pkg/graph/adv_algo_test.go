@@ -45,10 +45,10 @@ func TestAdjacencyDAG_GetBlockingPath(t *testing.T) {
 	dag.AddNode(&Node{ID: "C"}) //nolint:errcheck
 	dag.AddNode(&Node{ID: "D"}) //nolint:errcheck
 
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks}) //nolint:errcheck
-	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks}) //nolint:errcheck
+	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})    //nolint:errcheck
+	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})    //nolint:errcheck
 	dag.AddEdge(&Edge{FromID: "A", ToID: "D", Type: DependencyRelatesTo}) //nolint:errcheck
-	dag.AddEdge(&Edge{FromID: "D", ToID: "C", Type: DependencyBlocks}) //nolint:errcheck
+	dag.AddEdge(&Edge{FromID: "D", ToID: "C", Type: DependencyBlocks})    //nolint:errcheck
 
 	// Blocking path from A to C should be A -> B -> C
 	path, err := dag.GetBlockingPath("A", "C")

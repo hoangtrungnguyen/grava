@@ -25,6 +25,9 @@ func TestClient_GetNextChildSequence_Integration(t *testing.T) {
 
 	parentID := fmt.Sprintf("test-parent-%d", time.Now().UnixNano())
 
+	// Clean up any potential lingering test data
+	_, _ = client.Exec("DELETE FROM child_counters WHERE parent_id = ?", parentID)
+
 	// 1. Sequential Test
 	seq, err := client.GetNextChildSequence(parentID)
 	if err != nil {
@@ -85,6 +88,11 @@ func TestForeignKeyConstraints_Dependencies(t *testing.T) {
 		t.Skipf("Skipping integration test: connection failed: %v", err)
 	}
 	defer client.Close() //nolint:errcheck
+
+	// Diagnostic: Print current state of foreign_key_checks
+	var name, val string
+	_ = client.QueryRow("SHOW VARIABLES LIKE 'foreign_key_checks'").Scan(&name, &val)
+	t.Logf("DB State: %s=%s", name, val)
 
 	// Test 1: Insert dependency with non-existent from_id should fail
 	t.Run("InvalidFromID", func(t *testing.T) {
@@ -209,6 +217,11 @@ func TestForeignKeyConstraints_Events(t *testing.T) {
 		t.Skipf("Skipping integration test: connection failed: %v", err)
 	}
 	defer client.Close() //nolint:errcheck
+
+	// Diagnostic: Print current state of foreign_key_checks
+	var name, val string
+	_ = client.QueryRow("SHOW VARIABLES LIKE 'foreign_key_checks'").Scan(&name, &val)
+	t.Logf("DB State: %s=%s", name, val)
 
 	// Test 1: Insert event with non-existent issue_id should fail
 	t.Run("InvalidIssueID", func(t *testing.T) {

@@ -122,7 +122,7 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 				resp["ephemeral"] = "true"
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			return nil
 		}
 

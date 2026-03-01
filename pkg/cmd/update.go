@@ -111,11 +111,11 @@ Only the flags provided will be updated.`,
 				"status": "updated",
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			return nil
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "✅ Updated issue %s\n", id)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Updated issue %s\n", id)
 		return nil
 	},
 }

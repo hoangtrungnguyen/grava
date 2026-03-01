@@ -23,11 +23,11 @@ var graphStatsCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Nodes: %d\n", dag.NodeCount()) //nolint:errcheck
-		fmt.Fprintf(cmd.OutOrStdout(), "Edges: %d\n", dag.EdgeCount())
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Nodes: %d\n", dag.NodeCount())
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Edges: %d\n", dag.EdgeCount())
 		if dag.NodeCount() > 1 {
 			density := float64(dag.EdgeCount()) / float64(dag.NodeCount()*(dag.NodeCount()-1))
-			fmt.Fprintf(cmd.OutOrStdout(), "Density: %.4f\n", density)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Density: %.4f\n", density)
 		}
 
 		return nil
@@ -49,9 +49,9 @@ var graphCycleCmd = &cobra.Command{
 		}
 
 		if len(cycle) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "❌ Cycle detected: %v\n", cycle)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "❌ Cycle detected: %v\n", cycle)
 		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "✅ No cycles detected.")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ No cycles detected.")
 		}
 
 		return nil
@@ -67,14 +67,14 @@ var graphHealthCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "Performing health check...")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Performing health check...")
 
 		// Check for cycles
 		cycle, _ := dag.DetectCycle()
 		if len(cycle) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "- Cycles: ❌ Found (%v)\n", cycle)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "- Cycles: ❌ Found (%v)\n", cycle)
 		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "- Cycles: ✅ None")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "- Cycles: ✅ None")
 		}
 
 		// Check for orphan nodes (no incoming, no outgoing)
@@ -87,9 +87,9 @@ var graphHealthCmd = &cobra.Command{
 			}
 		}
 		if orphans > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "- Orphans: ⚠️ %d nodes have no dependencies\n", orphans)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "- Orphans: ⚠️ %d nodes have no dependencies\n", orphans)
 		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "- Orphans: ✅ None")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "- Orphans: ✅ None")
 		}
 
 		return nil
@@ -108,14 +108,14 @@ var graphVisualizeCmd = &cobra.Command{
 		}
 
 		if graphFormat == "mermaid" {
-			fmt.Fprintln(cmd.OutOrStdout(), graph.ToMermaid(dag))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), graph.ToMermaid(dag))
 			return nil
 		}
 
 		// Default: DOT format
-		fmt.Fprintln(cmd.OutOrStdout(), "digraph G {")
-		fmt.Fprintln(cmd.OutOrStdout(), "  rankdir=LR;")
-		fmt.Fprintln(cmd.OutOrStdout(), "  node [shape=box, style=rounded];")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "digraph G {")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  rankdir=LR;")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  node [shape=box, style=rounded];")
 
 		for _, node := range dag.GetAllNodes() {
 			color := "white"
@@ -125,7 +125,7 @@ var graphVisualizeCmd = &cobra.Command{
 			case graph.StatusInProgress:
 				color = "lightblue"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "  \"%s\" [label=\"%s\", fillcolor=\"%s\", style=\"filled,rounded\"];\n", node.ID, node.Title, color)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  \"%s\" [label=\"%s\", fillcolor=\"%s\", style=\"filled,rounded\"];\n", node.ID, node.Title, color)
 		}
 
 		for _, edge := range dag.GetAllEdges() {
@@ -133,10 +133,10 @@ var graphVisualizeCmd = &cobra.Command{
 			if edge.Type == graph.DependencyWaitsFor || edge.Type == graph.DependencyRelatesTo {
 				style = "dashed"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "  \"%s\" -> \"%s\" [label=\"%s\", style=\"%s\"];\n", edge.FromID, edge.ToID, edge.Type, style)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  \"%s\" -> \"%s\" [label=\"%s\", style=\"%s\"];\n", edge.FromID, edge.ToID, edge.Type, style)
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "}")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "}")
 		return nil
 	},
 }

@@ -57,12 +57,12 @@ Priority levels:
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			return nil
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tTitle\tPriority\tAge\tStatus")
+		_, _ = fmt.Fprintln(w, "ID\tTitle\tPriority\tAge\tStatus")
 
 		for _, task := range tasks {
 			prioStr := fmt.Sprintf("%d", task.EffectivePriority)
@@ -78,7 +78,7 @@ Priority levels:
 				title = title[:47] + "..."
 			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 				task.Node.ID,
 				title,
 				prioStr,
@@ -89,7 +89,7 @@ Priority levels:
 		w.Flush() //nolint:errcheck
 
 		if len(tasks) == 0 {
-			fmt.Fprintln(cmd.OutOrStdout(), "No ready tasks found.")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No ready tasks found.")
 		}
 
 		return nil

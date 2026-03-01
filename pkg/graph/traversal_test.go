@@ -9,18 +9,18 @@ func TestAdjacencyDAG_Traversal(t *testing.T) {
 
 	// A -> B -> C
 	// A -> D
-	dag.AddNode(&Node{ID: "A"})
-	dag.AddNode(&Node{ID: "B"})
-	dag.AddNode(&Node{ID: "C"})
-	dag.AddNode(&Node{ID: "D"})
+	_ = dag.AddNode(&Node{ID: "A"})
+	_ = dag.AddNode(&Node{ID: "B"})
+	_ = dag.AddNode(&Node{ID: "C"})
+	_ = dag.AddNode(&Node{ID: "D"})
 
-	dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
-	dag.AddEdge(&Edge{FromID: "A", ToID: "D", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "B", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "B", ToID: "C", Type: DependencyBlocks})
+	_ = dag.AddEdge(&Edge{FromID: "A", ToID: "D", Type: DependencyBlocks})
 
 	// Test BFS
 	visitedBFS := []string{}
-	dag.BFS("A", func(id string) bool { //nolint:errcheck
+	_ = dag.BFS("A", func(id string) bool {
 		visitedBFS = append(visitedBFS, id)
 		return true
 	})
@@ -31,7 +31,7 @@ func TestAdjacencyDAG_Traversal(t *testing.T) {
 
 	// Test DFS
 	visitedDFS := []string{}
-	dag.DFS("A", func(id string) bool { //nolint:errcheck
+	_ = dag.DFS("A", func(id string) bool {
 		visitedDFS = append(visitedDFS, id)
 		return true
 	})

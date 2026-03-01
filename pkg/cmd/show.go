@@ -99,7 +99,7 @@ var showCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			return nil
 		}
 

@@ -32,7 +32,7 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 		if err != nil {
 			// Dolt not found locally or on PATH — download it
 			if !outputJSON {
-				fmt.Fprintln(cmd.OutOrStdout(), "📥 Dolt not found. Downloading to .grava/bin/dolt...")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "📥 Dolt not found. Downloading to .grava/bin/dolt...")
 			}
 			binDir := utils.LocalDoltBinDir(cwd)
 			if installErr := doltinstall.InstallDolt(binDir); installErr != nil {
@@ -43,11 +43,11 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 				return fmt.Errorf("dolt install appeared to succeed but binary not found: %w", err)
 			}
 			if !outputJSON {
-				fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt installed to .grava/bin/dolt")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt installed to .grava/bin/dolt")
 			}
 		}
 		if !outputJSON {
-			fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt is ready.")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Dolt is ready.")
 		}
 
 		// 2. Create .grava directory
@@ -64,7 +64,7 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 
 		if _, err := os.Stat(filepath.Join(doltRepoDir, ".dolt")); os.IsNotExist(err) {
 			if !outputJSON {
-				fmt.Fprintln(cmd.OutOrStdout(), "📦 Initializing Dolt database...")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "📦 Initializing Dolt database...")
 			}
 			initDoltCmd := exec.Command(doltBin, "init")
 			initDoltCmd.Dir = doltRepoDir
@@ -79,12 +79,12 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			return err
 		}
 		if !outputJSON && port != 3306 {
-			fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Port 3306 is busy, using port %d\n", port)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Port 3306 is busy, using port %d\n", port)
 		}
 
 		// 5. Start Dolt Server in background
 		if !outputJSON {
-			fmt.Fprintf(cmd.OutOrStdout(), "🚀 Starting Dolt server on port %d...\n", port)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "🚀 Starting Dolt server on port %d...\n", port)
 		}
 
 		serverCmd := exec.Command(doltBin, "sql-server", "--port", fmt.Sprintf("%d", port), "--host", "0.0.0.0")
@@ -111,12 +111,12 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 				_ = os.Remove(configFile)
 				_ = viper.WriteConfigAs(configFile)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Note: %v\n", err)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ℹ️  Note: %v\n", err)
 			}
 		}
 
 		if !outputJSON {
-			fmt.Fprintln(cmd.OutOrStdout(), "✅ Created configuration in .grava.yaml")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Created configuration in .grava.yaml")
 		}
 
 		if outputJSON {
@@ -126,11 +126,11 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 				"db_url": dbURL,
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			return nil
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "🎉 Grava initialized successfully and server is running!")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "🎉 Grava initialized successfully and server is running!")
 		return nil
 	},
 }

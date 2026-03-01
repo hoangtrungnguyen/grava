@@ -59,7 +59,7 @@ Example:
 						"note":   fmt.Sprintf("Label %q already present", label),
 					}
 					b, _ := json.MarshalIndent(resp, "", "  ")
-					fmt.Fprintln(cmd.OutOrStdout(), string(b))
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 					return nil
 				}
 				cmd.Printf("🏷️  Label %q already present on %s\n", label, id)
@@ -81,7 +81,7 @@ Example:
 				"field":  "labels",
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			return nil
 		}
 
