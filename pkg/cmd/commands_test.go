@@ -347,9 +347,8 @@ func TestSubtaskCmd(t *testing.T) {
 	Store = dolt.NewClientFromDB(db)
 
 	parentID := "grava-123"
-	lockName := "grava_cc_" + parentID
 
-	// 1. Transaction Start
+	// 1. Transaction Start (main)
 	mock.ExpectBegin()
 
 	// 2. Verify Parent Exists
@@ -358,25 +357,21 @@ func TestSubtaskCmd(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 
 	// 3. ID Generation (GetNextChildSequence)
-	// GET_LOCK
-	mock.ExpectQuery(`SELECT GET_LOCK\(\?, 10\)`).
-		WithArgs(lockName).
-		WillReturnRows(sqlmock.NewRows([]string{"xc"}).AddRow(1))
+	// GetNextChildSequence now starts its own transaction
+	mock.ExpectBegin()
 
-	// SELECT next_child
-	mock.ExpectQuery(`SELECT next_child FROM child_counters WHERE parent_id = \?`).
+	// SELECT next_child FOR UPDATE
+	mock.ExpectQuery(`SELECT next_child FROM child_counters WHERE parent_id = \? FOR UPDATE`).
 		WithArgs(parentID).
 		WillReturnRows(sqlmock.NewRows([]string{"next_child"}).AddRow(5))
 
-	// UPDATE child_counters
-	mock.ExpectExec(`UPDATE child_counters SET next_child = \? WHERE parent_id = \?`).
-		WithArgs(6, parentID).
+	// UPDATE child_counters with unique updated_by
+	mock.ExpectExec(`UPDATE child_counters SET next_child = \?, updated_by = \? WHERE parent_id = \?`).
+		WithArgs(6, sqlmock.AnyArg(), parentID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	// RELEASE_LOCK (deferred in GetNextChildSequence)
-	mock.ExpectExec(`SELECT RELEASE_LOCK\(\?\)`).
-		WithArgs(lockName).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	// Commit (INNER)
+	mock.ExpectCommit()
 
 	// 4. Insert Subtask (after generator returns)
 	mock.ExpectExec(`INSERT INTO issues .* VALUES`).
@@ -398,10 +393,10 @@ func TestSubtaskCmd(t *testing.T) {
 		WithArgs("grava-123.5", "dependency_add", "unknown", "{}", sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// 8. Transaction Commit
+	// 8. Transaction Commit (main)
 	mock.ExpectCommit()
 
-	// 7. Close (PersistentPostRunE and conn.Close match this?)
+	// PersistentPostRunE may close the connection
 	mock.ExpectClose()
 	mock.ExpectClose()
 
