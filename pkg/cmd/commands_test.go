@@ -360,15 +360,18 @@ func TestSubtaskCmd(t *testing.T) {
 	// GetNextChildSequence now starts its own transaction
 	mock.ExpectBegin()
 
-	// SELECT next_child FOR UPDATE
-	mock.ExpectQuery(`SELECT next_child FROM child_counters WHERE parent_id = \? FOR UPDATE`).
-		WithArgs(parentID).
-		WillReturnRows(sqlmock.NewRows([]string{"next_child"}).AddRow(5))
-
-	// UPDATE child_counters with unique updated_by
-	mock.ExpectExec(`UPDATE child_counters SET next_child = \?, updated_by = \? WHERE parent_id = \?`).
-		WithArgs(6, sqlmock.AnyArg(), parentID).
+	// Atomic increment using INSERT ... ON DUPLICATE KEY UPDATE
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO child_counters (parent_id, next_child, updated_by)
+		VALUES (?, LAST_INSERT_ID(2), ?)
+		ON DUPLICATE KEY UPDATE
+			next_child = LAST_INSERT_ID(next_child + 1),
+			updated_by = VALUES(updated_by)`)).
+		WithArgs(parentID, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	// Get the value set by LAST_INSERT_ID
+	mock.ExpectQuery(`SELECT LAST_INSERT_ID\(\)`).
+		WillReturnRows(sqlmock.NewRows([]string{"LAST_INSERT_ID()"}).AddRow(6))
 
 	// Commit (INNER)
 	mock.ExpectCommit()
