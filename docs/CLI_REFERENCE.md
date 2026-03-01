@@ -823,6 +823,57 @@ grava commit -m "Finish work on login feature"
 
 ---
 
+### `install`
+
+Installs Grava's Git hooks and Git merge driver for automatic, seamless 3-way conflict resolution.
+
+**Usage:**
+```bash
+grava install [flags]
+```
+
+**Flags:**
+- `--shared`: Configure `core.hooksPath` to `.grava/hooks` to make hooks shareable with your team, instead of `.git/hooks/`.
+
+**Actions Performed:**
+1. Configures `merge.grava.name` and `merge.grava.driver` in Git.
+2. Updates `.gitattributes` to route `issues.jsonl` to Grava's driver.
+3. Installs thin-shim hooks for `pre-commit`, `post-merge`, `post-checkout`, and `prepare-commit-msg`.
+4. Properly chains any pre-existing hooks by relocating them to `.old`.
+
+---
+
+### `merge-slot`
+
+Internal command used by Git to execute a 3-way merge on `issues.jsonl`. You normally don't invoke this directly.
+
+**Usage:**
+```bash
+grava merge-slot --ancestor <file> --current <file> --other <file> --output <file>
+```
+
+---
+
+### `resolve`
+
+Manually override and resolve any remaining Git conflicts after a `grava merge-slot` fails to auto-merge fields. Provides an interactive human-overseer prompt to accept local, remote, or skip resolution on a per-field basis.
+
+**Usage:**
+```bash
+grava resolve [filename]
+```
+
+**Example:**
+```bash
+grava resolve issues.jsonl
+# Output: ⚠️ Conflict found in issue ID: grava-123
+#         [L] Local (Ours):   "Bug in login"
+#         [R] Remote (Theirs): "Fix login bug"
+#         Keep [L]ocal, [R]emote, or [S]kip?
+```
+
+---
+
 ## Wisps (Ephemeral Issues)
 
 **Wisps** are temporary, ephemeral issues intended for AI agents or developers who need a short-lived scratchpad that doesn't pollute the permanent project history.
