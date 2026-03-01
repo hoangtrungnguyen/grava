@@ -55,14 +55,16 @@ var installCmd = &cobra.Command{
 		}
 
 		preCommitContent := `#!/bin/sh
-grava export --file issues.jsonl
-git add issues.jsonl
+# grava-shim
+grava hook run pre-commit
 `
 		postMergeContent := `#!/bin/sh
-grava import --file issues.jsonl --overwrite
+# grava-shim
+grava hook run post-merge
 `
 		postCheckoutContent := `#!/bin/sh
-grava import --file issues.jsonl --overwrite
+# grava-shim
+grava hook run post-checkout
 `
 
 		if err := writeExecutableFile(filepath.Join(hooksDir, "pre-commit"), preCommitContent); err != nil {
