@@ -40,7 +40,9 @@ if [ "$OS" = "windows" ]; then
     EXT="zip"
 fi
 
-ASSET_PATTERN="${BINARY}_${VERSION}_${OS}_${ARCH}.${EXT}"
+# URL encode '+' character because GitHub API returns URL-encoded download links
+URL_SAFE_VERSION=$(echo "$VERSION" | sed 's/+/%2B/g')
+ASSET_PATTERN="${BINARY}_${URL_SAFE_VERSION}_${OS}_${ARCH}.${EXT}"
 DOWNLOAD_URL=$(echo "$LATEST_RELEASE_DATA" | grep "browser_download_url" | grep "$ASSET_PATTERN" | cut -d '"' -f 4)
 
 if [ -z "$DOWNLOAD_URL" ]; then
