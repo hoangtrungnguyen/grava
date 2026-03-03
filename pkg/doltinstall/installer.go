@@ -136,6 +136,30 @@ func fetchLatestVersion(apiURL string) (string, error) {
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+		// Fallback to GitHub HTML releases redirect to avoid rate limits
+		if apiURL == defaultGitHubAPIURL {
+			client := &http.Client{
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					return http.ErrUseLastResponse
+				},
+			}
+			fallbackURL := "https://github.com/dolthub/dolt/releases/latest"
+			fResp, fErr := client.Head(fallbackURL)
+			if fErr == nil {
+				fResp.Body.Close() //nolint:errcheck
+				if fResp.StatusCode == http.StatusFound {
+					loc := fResp.Header.Get("Location")
+					parts := strings.Split(loc, "/")
+					tag := parts[len(parts)-1]
+					if tag != "" {
+						return tag, nil
+					}
+				}
+			}
+		}
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GitHub API returned HTTP %d", resp.StatusCode)
 	}
@@ -204,6 +228,11 @@ func extractDoltBinary(r io.Reader, destPath string, platform string) error {
 				return fmt.Errorf("failed to write dolt binary: %w", err)
 			}
 			f.Close() //nolint:errcheck
+
+			// Ensure it is executable regardless of umask
+			if err := os.Chmod(destPath, 0755); err != nil {
+				return fmt.Errorf("failed to change permissions on dolt binary: %w", err)
+			}
 			return nil
 		}
 	}
