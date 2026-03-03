@@ -23,7 +23,7 @@ jobs:
           cache: true
 
       - name: Run Build Script
-        run: ./scripts/build_release.sh ${{ github.ref_name }}
+        run: ./scripts/build_release.sh "${{ github.ref_name }}"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
