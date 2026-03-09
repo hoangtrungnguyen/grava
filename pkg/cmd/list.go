@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/devlog"
 	"github.com/spf13/cobra"
 )
 
@@ -116,13 +117,16 @@ You can filter by status or type, and sort by various criteria.`,
 		}
 		query += " ORDER BY " + sortClause
 
+		devlog.Printf("Executing query: %s with params: %v", query, params)
 		rows, err := Store.Query(query, params...)
 		if err != nil {
+			devlog.Printf("Query failed: %v", err)
 			return fmt.Errorf("failed to query issues: %w", err)
 		}
 		defer rows.Close() //nolint:errcheck
 
 		var results []IssueListItem
+		count := 0
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		if !outputJSON {
@@ -147,6 +151,7 @@ You can filter by status or type, and sort by various criteria.`,
 					CreatedAt: createdAt,
 				})
 			} else {
+				count++
 				// Truncate title if too long?
 				if len(title) > 50 {
 					title = title[:47] + "..."
@@ -158,12 +163,14 @@ You can filter by status or type, and sort by various criteria.`,
 		}
 
 		if outputJSON {
+			devlog.Printf("Found %d results for JSON output", len(results))
 			b, err := json.MarshalIndent(results, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		} else {
+			devlog.Printf("Found %d results for table output", count)
 			w.Flush() //nolint:errcheck
 		}
 
