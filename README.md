@@ -33,7 +33,17 @@ The project governance and architecture are strictly documented:
 
 ## 📥 Installation
 
-Install Grava with a single command (no `sudo` required — installs to `~/.local/bin`):
+### Option 1: Go Install (Recommended)
+
+If you have Go installed, this is the fastest way — no `sudo`, no `curl`:
+
+```bash
+go install github.com/hoangtrungnguyen/grava/cmd/grava@latest
+```
+
+### Option 2: Shell Script
+
+Downloads the latest binary to `~/.local/bin` (no `sudo` required):
 
 ```bash
 curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh | bash
@@ -43,6 +53,12 @@ curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/i
 > ```bash
 > curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh | INSTALL_DIR=/usr/local/bin bash
 > ```
+
+### Verify Installation
+
+```bash
+grava version
+```
 
 ## 🛠️ Development Setup
 
