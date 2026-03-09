@@ -100,7 +100,7 @@ grava version
 | `grava undo <id>` | Revert the last change to an issue |
 | `grava compact` | Purge old ephemeral Wisps |
 
-See **[CLI Reference](docs/CLI_REFERENCE.md)** for full documentation.
+See **[CLI Reference](docs/guides/CLI_REFERENCE.md)** for full documentation.
 
 ## ❓ Troubleshooting
 
