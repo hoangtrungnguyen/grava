@@ -40,5 +40,20 @@ services:
     # By default, it runs the tests, but you can override this via `docker compose run`
     command: sh -c "apt-get update && apt-get install -y default-mysql-client && ./scripts/setup_test_env.sh && go test ./... -v"
 
+  # Sandbox environment for users to try out Grava without installing anything locally
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/hoangtrungnguyen/grava:latest
+    container_name: grava-sandbox
+    volumes:
+      - grava_sandbox_data:/workspace
+    # Keeps the container running and allows attaching to it
+    stdin_open: true # Equivalent to docker run -i
+    tty: true        # Equivalent to docker run -t
+    command: bash
+
 volumes:
   go-mod-cache:
+  grava_sandbox_data:
