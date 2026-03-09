@@ -50,6 +50,23 @@ curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/i
 > curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh | INSTALL_DIR=/usr/local/bin bash
 > ```
 
+### Option 3: Try with Docker (Zero-Commitment Sandbox)
+
+Want to try Grava without installing anything on your host machine? Use our pre-configured Docker sandbox:
+
+#### Using Docker Run:
+```bash
+docker run -it ghcr.io/hoangtrungnguyen/grava:latest
+```
+
+This will automatically initialize a Grava and Dolt environment and drop you into a read-to-use bash shell.
+
+#### Using Docker Compose:
+If you have the repository cloned, you can simply run:
+```bash
+docker compose run --rm sandbox
+```
+
 ### Verify Installation
 
 ```bash
