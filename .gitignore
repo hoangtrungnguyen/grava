@@ -33,6 +33,7 @@ go.work.sum
 
 # Grava local database and config
 .grava/
+.grava.yaml
 
 # Binaries
 /grava
