@@ -31,13 +31,18 @@ The project governance and architecture are strictly documented:
 6.  **[MCP Integration](docs/epics/Epic_6_MCP_Integration.md)**: The interface for AI agents.
 7.  **[Advanced Analytics](docs/epics/Epic_7_Advanced_Analytics.md)**: PageRank and critical path analysis (Optional).
 
-## � Installation
+## 📥 Installation
 
-To install Grava to your `/usr/local/bin`, run:
+Install Grava with a single command (no `sudo` required — installs to `~/.local/bin`):
 
 ```bash
 curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh | bash
 ```
+
+> **Tip:** To install to a different directory, set `INSTALL_DIR`:
+> ```bash
+> curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh | INSTALL_DIR=/usr/local/bin bash
+> ```
 
 ## 🛠️ Development Setup
 

@@ -4,7 +4,10 @@ set -e
 OWNER="hoangtrungnguyen"
 REPO="grava"
 BINARY="grava"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+
+# Default to user-local directory — no sudo required.
+# Users can override: INSTALL_DIR=/usr/local/bin bash install.sh
+INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/bin}"
 
 # Detect OS and Architecture
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -20,6 +23,25 @@ map_arch() {
 }
 
 ARCH=$(map_arch "$ARCH")
+
+# Detect the user's shell profile file for PATH instructions
+detect_shell_profile() {
+    local shell_name
+    shell_name="$(basename "${SHELL:-/bin/bash}")"
+    case "$shell_name" in
+        zsh)  echo "${HOME}/.zshrc" ;;
+        bash)
+            # macOS uses .bash_profile, Linux uses .bashrc
+            if [ "$OS" = "darwin" ]; then
+                echo "${HOME}/.bash_profile"
+            else
+                echo "${HOME}/.bashrc"
+            fi
+            ;;
+        fish) echo "${HOME}/.config/fish/config.fish" ;;
+        *)    echo "${HOME}/.profile" ;;
+    esac
+}
 
 echo "🔍 Detecting latest version..."
 # Get the latest release tag from GitHub API
@@ -85,14 +107,40 @@ fi
 
 chmod +x "$FOUND_BIN"
 
+# Ensure install directory exists (no sudo needed for ~/.local/bin)
+mkdir -p "$INSTALL_DIR"
+
 echo "🔧 Installing to $INSTALL_DIR..."
-if [ -w "$INSTALL_DIR" ]; then
-    mv "$FOUND_BIN" "$INSTALL_DIR/${BINARY}${EXT_BIN}"
-else
-    sudo mv "$FOUND_BIN" "$INSTALL_DIR/${BINARY}${EXT_BIN}"
-fi
+mv "$FOUND_BIN" "$INSTALL_DIR/${BINARY}${EXT_BIN}"
 
 rm -rf "$TMP_DIR"
 
 echo "✅ Installed ${BINARY} to ${INSTALL_DIR}/${BINARY}"
-echo "🚀 Run '${BINARY} help' to get started!"
+
+# Check if INSTALL_DIR is in PATH and warn if not
+case ":${PATH}:" in
+    *":${INSTALL_DIR}:"*)
+        # Already in PATH — no action needed
+        ;;
+    *)
+        SHELL_PROFILE=$(detect_shell_profile)
+        SHELL_NAME="$(basename "${SHELL:-/bin/bash}")"
+        echo ""
+        echo "⚠️  ${INSTALL_DIR} is not in your PATH."
+        echo ""
+        if [ "$SHELL_NAME" = "fish" ]; then
+            echo "   Add it by running:"
+            echo ""
+            echo "     fish_add_path ${INSTALL_DIR}"
+            echo ""
+        else
+            echo "   Add it by running:"
+            echo ""
+            echo "     echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ${SHELL_PROFILE}"
+            echo "     source ${SHELL_PROFILE}"
+            echo ""
+        fi
+        ;;
+esac
+
+echo "🚀 Run '${BINARY} version' to verify, then '${BINARY} help' to get started!"
