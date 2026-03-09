@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [v0.0.5] - 2026-03-09
+
+* chore: ignore .grava.yaml (9c8396c)
+* feat(debug): implement persistent development logging system (grava-8892) (a4eadff)
+* docs: reorganize folder structure and update internal paths (grava-2c31) (7910176)
+* feat(docker): add sandbox support and github release publish (grava-ec13.4) (eba688d)
+* docs: add agent workflow documentation (grava-273a) (d1d3ab8)
+* docs: rewrite README with Quick Start and Troubleshooting sections (grava-ec13.3) (ed5b633)
+* feat(install): add go install support with auto version detection (grava-ec13.1) (2ff09ba)
+* feat(install): default to ~/.local/bin, remove sudo requirement (grava-ec13.2) (fe79f11)
+
 ## [v0.0.2] - 2026-02-23
 
 * fix(scripts): inject version via -ldflags in build.sh (af83007)
