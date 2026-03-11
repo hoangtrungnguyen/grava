@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# Post-checkout hook for Grava
+# Syncs changes from issues.jsonl into the Dolt database after a checkout
+
+# Check if it was a file-level checkout or a branch switch
+CHECKOUT_TYPE=$3
+if [ "$CHECKOUT_TYPE" -ne 1 ]; then
+    # Only sync on branch changes, not file checkouts
+    exit 0
+fi
+
+ISSUE_FILE="issues.jsonl"
+if [ ! -f "$ISSUE_FILE" ]; then
+    # No issues file, nothing to sync
+    exit 0
+fi
+
+echo "🔄 post-checkout: Syncing issues from $ISSUE_FILE for current branch..."
+
+# Resolve 'grava' command (same logic as post-merge)
+GRAVA_CMD=""
+if command -v grava >/dev/null 2>&1; then
+    GRAVA_CMD="grava"
+else
+    REPO_ROOT=$(git rev-parse --show-toplevel)
+    if [ -x "$REPO_ROOT/grava" ]; then
+        GRAVA_CMD="$REPO_ROOT/grava"
+    elif [ -f "$REPO_ROOT/cmd/grava/main.go" ]; then
+        GRAVA_CMD="go run $REPO_ROOT/cmd/grava/main.go"
+    fi
+fi
+
+if [ -n "$GRAVA_CMD" ]; then
+    $GRAVA_CMD import --file "$ISSUE_FILE" --overwrite
+else
+    echo "⚠️  Grava not found. Skipping sync."
+fi
+
+exit 0
