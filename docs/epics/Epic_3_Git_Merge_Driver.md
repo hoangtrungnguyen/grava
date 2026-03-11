@@ -53,5 +53,27 @@
 - Automated test script initializes a Git repo and branches
 - Simulates concurrent edits to different fields of the same issue ID on separate branches
 - Verifies `git merge` completes automatically
-- Verifies `issues.jsonl` content is correct after merge (contains both changes)
+- Verifies `git merge` content is correct after merge (contains both changes)
 - Verifies `git merge` fails on true conflicts (same field modified)
+
+### 3.5 Automated Synchronization Hooks
+**As a** distributed developer  
+**I want to** have Git hooks that automatically sync the Dolt database when `issues.jsonl` changes via pull or branch switch  
+**So that** my local tracker state always reflects the current repository branch
+
+**Acceptance Criteria:**
+- `post-merge` hook implemented: runs `grava import --file issues.jsonl --overwrite` after successful merge/pull
+- `post-checkout` hook implemented: runs `grava import --file issues.jsonl --overwrite` when switching branches
+- `pre-commit` hook (optional but recommended): runs `grava export --file issues.jsonl` to ensure the text file is up-to-date before sharing
+- Installer command (`grava install`) correctly links or copies these hooks to `.git/hooks/`
+
+### 3.6 Automated Git Integration Installer
+**As a** user  
+**I want to** have a single command that hooks Grava into my Git environment  
+**So that** I don't have to perform any manual configuration for merging or syncing
+
+**Acceptance Criteria:**
+- `grava install` command implemented
+- Successfully configures `merge.grava.driver` in `.git/config`
+- Ensures `issues.jsonl merge=grava` is in `.gitattributes`
+- Automatically links or copies `pre-commit`, `post-merge`, and `post-checkout` hooks
