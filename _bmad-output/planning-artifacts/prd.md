@@ -12,6 +12,13 @@ stepsCompleted:
   - step-09-functional
   - step-10-nonfunctional
   - step-11-polish
+  - step-e-01-discovery
+  - step-e-02-review
+  - step-e-03-edit
+lastEdited: '2026-03-18'
+editHistory:
+  - date: '2026-03-18'
+    changes: 'Added non-technical user onboarding: Journey 4 (install script setup path for macOS/Linux/Windows), FR26-FR28 (automated install script supporting Claude CLI and Gemini CLI on macOS, Linux, Windows), NFR7-NFR8 (install speed and reliability), Success Criteria onboarding metric, Executive Summary audience segment update.'
 inputDocuments:
   - docs/architecture/GRAPH_MECHANICS.md
   - docs/architecture/PERFORMANCE_BENCHMARKS.md
@@ -90,6 +97,8 @@ Grava is built on three core pillars:
 2. **Graph-Based Context Engine:** Issues are structured as interconnected nodes (Dependencies, Blockers, Epics) queryable natively, providing agents immediate mapping of project state.
 3. **Machine-Native Optimization:** Outputs strictly deterministic, predictable JSON. Grava eliminates UI/UX bloat, allowing concurrent agents to maintain state safely without hallucination.
 
+Grava targets three user segments: **autonomous AI agents** (primary consumers), **technical developers** (operators and orchestrators), and **non-technical collaborators** (project participants who need to set up and run AI agent environments without deep CLI expertise).
+
 ## Project Classification
 
 - **Project Type:** CLI Tool / Agent Orchestration Substrate
@@ -103,6 +112,7 @@ Grava is built on three core pillars:
 - **Zero-Loss Handoff:** Achieve 100% preservation of issue context (blockers, relations) when a task is transferred from Agent A to Agent B.
 - **Swarm Stability:** Successfully sustain a localized swarm of up to 30 concurrent agents operating autonomously without fatal state conflicts or local resource exhaustion.
 - **Human Independence:** Reduce manual developer interventions per completed issue lifecycle to a near-zero threshold, excluding intentional strategic approvals.
+- **Non-Technical Onboarding:** A non-technical user with no prior CLI experience completes full Grava setup (including Claude CLI or Gemini CLI) in under 5 minutes using the automated install script on a clean machine.
 
 ## Product Scope
 
@@ -139,6 +149,20 @@ A conceptually distinct future phase focused on advanced graph analytics (e.g., 
   3. Establishes dependencies using `grava dep`.
   4. Executes `grava list --json` to monitor the board.
 - **Resolution:** Agents immediately begin claiming the ready tasks and updating the board autonomously. The developer manages the macro-strategy, Grava manages the micro-tasks.
+
+### Journey 4: The Non-Technical User Onboards (Setup Success Path)
+- **Actor:** Non-technical collaborator (no prior CLI experience)
+- **Goal:** Set up a fully operational Grava + AI CLI environment without manual research or installation steps.
+- **Trigger:** User is given a repository URL and told to "set up Grava."
+- **Action Sequence:**
+  1. User downloads or clones the repository.
+  2. User runs a single install script: `./install.sh` on macOS/Linux or `.\install.ps1` on Windows.
+  3. Script presents a prompt: "Which AI backend would you like to use? [1] Claude CLI  [2] Gemini CLI"
+  4. User selects their preferred backend.
+  5. Script automatically downloads, installs, and configures the selected CLI tool.
+  6. Script installs Grava, runs `grava init`, and validates the environment.
+  7. Script confirms: "Setup complete. Run `grava list` to verify."
+- **Resolution:** User has a fully operational Grava environment with their chosen AI CLI, without manually browsing documentation or executing installation steps.
 
 ### Journey 3: The Contested Issue (Edge Case)
 - **Actor:** DevBot and RefactorBot
@@ -195,6 +219,11 @@ A conceptually distinct future phase focused on advanced graph analytics (e.g., 
 - **FR18:** System Agent / Human Developer can explicitly write to and read from an issue's ephemeral state (Wisp) via dedicated commands to manage working artifacts and execution history.
 - **FR19:** System Agent / Human Developer can retrieve the historical progression log of an issue to understand what a previous agent did before handoff.
 
+### Onboarding & Installation
+- **FR26:** System provides an automated install script (shell-based, cross-platform for macOS and Linux) that installs the user's chosen AI CLI backend (Claude CLI or Gemini CLI) and Grava in a single execution, requiring no prior CLI experience.
+- **FR27:** The install script detects the host OS and architecture, selects the correct binary or package source, and handles all dependency installation without user intervention beyond selecting the preferred AI backend. Supported platforms: macOS (ARM, x86), Linux (Debian/Ubuntu, RHEL/Fedora), and Windows (x86-64 via PowerShell installer).
+- **FR28:** The install script validates the completed environment by running `grava doctor` and reports a clear success or failure message with remediation steps if setup is incomplete.
+
 ### Workspace Synchronization & Ecosystem Integration
 - **FR20:** System Agent / Human Developer can export the internal database state into a standardized, machine-readable artifact (`export`).
 - **FR21:** System Agent / Human Developer can hydrate the internal database by importing a standardized artifact (`import`), provided no conflicts exist.
@@ -212,6 +241,10 @@ A conceptually distinct future phase focused on advanced graph analytics (e.g., 
 ### Reliability & Data Integrity (Concurrency)
 - **NFR3 (Atomic Execution):** The system must guarantee that concurrent write attempts by multiple local agents (e.g., two agents executing `grava claim` simultaneously) result in exactly one successful claim and one deterministic rejection, never resulting in a polluted row or deadlock.
 - **NFR4 (Zero-Loss Handoff):** The system must guarantee 100% preservation of an issue's dependency links and core fields during state export (`issues.jsonl`) and hydration, ensuring identical graph recreation across workspace clones.
+
+### Onboarding Experience
+- **NFR7 (Install Speed):** The automated install script must complete full environment setup (OS detection, CLI download, Grava init, and validation) in under 5 minutes on a clean machine with a standard broadband connection (≥ 10 Mbps).
+- **NFR8 (Install Reliability):** The install script must succeed on first attempt on macOS (ARM and x86), Linux (Debian/Ubuntu, RHEL/Fedora), and Windows (x86-64 via PowerShell) without requiring elevated privileges beyond initial package manager bootstrapping.
 
 ### Operability & Extensibility
 - **NFR5 (Machine Readability):** The system must maintain strict adherence to predefined JSON schemas for all `--json` command outputs. Any change to the output schema must trigger a major version bump to prevent breaking autonomous agent prompts.

@@ -53,3 +53,5 @@ __pycache__/
 # Benchmark results
 scripts/benchmark_results.json
 dist/.DS_Store
+notebooklm-py/
+notebooklm-skill/
