@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -9,10 +10,12 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func executeCommand(root *cobra.Command, args ...string) (string, error) {
@@ -1002,4 +1005,65 @@ func TestDropCmdDeleteError(t *testing.T) {
 	assert.Contains(t, err.Error(), "connection lost")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// --- JSON error envelope tests ---
+
+func TestWriteJSONError_GenericError(t *testing.T) {
+	cmd := &cobra.Command{}
+	errBuf := new(bytes.Buffer)
+	cmd.SetErr(errBuf)
+
+	err := writeJSONError(cmd, fmt.Errorf("something went wrong"))
+	require.NoError(t, err)
+
+	var envelope jsonErrorEnvelope
+	require.NoError(t, json.Unmarshal(errBuf.Bytes(), &envelope))
+	assert.Equal(t, "INTERNAL_ERROR", envelope.Error.Code)
+	assert.Equal(t, "something went wrong", envelope.Error.Message)
+}
+
+func TestWriteJSONError_GravaError(t *testing.T) {
+	cmd := &cobra.Command{}
+	errBuf := new(bytes.Buffer)
+	cmd.SetErr(errBuf)
+
+	gravaErr := gravaerrors.New("SCHEMA_MISMATCH", "schema version mismatch", nil)
+	err := writeJSONError(cmd, gravaErr)
+	require.NoError(t, err)
+
+	var envelope jsonErrorEnvelope
+	require.NoError(t, json.Unmarshal(errBuf.Bytes(), &envelope))
+	assert.Equal(t, "SCHEMA_MISMATCH", envelope.Error.Code)
+	assert.Equal(t, "schema version mismatch", envelope.Error.Message)
+}
+
+func TestWriteJSONError_WrappedGravaError(t *testing.T) {
+	cmd := &cobra.Command{}
+	errBuf := new(bytes.Buffer)
+	cmd.SetErr(errBuf)
+
+	gravaErr := gravaerrors.New("NOT_INITIALIZED", "not initialized", nil)
+	wrapped := fmt.Errorf("outer: %w", gravaErr)
+
+	err := writeJSONError(cmd, wrapped)
+	require.NoError(t, err)
+
+	var envelope jsonErrorEnvelope
+	require.NoError(t, json.Unmarshal(errBuf.Bytes(), &envelope))
+	assert.Equal(t, "NOT_INITIALIZED", envelope.Error.Code)
+	assert.Equal(t, "not initialized", envelope.Error.Message)
+}
+
+func TestWriteJSONError_OutputIsValidJSON(t *testing.T) {
+	cmd := &cobra.Command{}
+	errBuf := new(bytes.Buffer)
+	cmd.SetErr(errBuf)
+
+	_ = writeJSONError(cmd, fmt.Errorf("any error"))
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(errBuf.Bytes(), &raw), "output must be valid JSON")
+	_, hasError := raw["error"]
+	assert.True(t, hasError, "JSON must contain top-level 'error' key")
 }

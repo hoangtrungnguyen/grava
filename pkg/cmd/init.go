@@ -6,8 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/hoangtrungnguyen/grava/pkg/doltinstall"
+	"github.com/hoangtrungnguyen/grava/pkg/migrate"
 	"github.com/hoangtrungnguyen/grava/pkg/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -101,7 +104,35 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			return fmt.Errorf("failed to start dolt server: %w", err)
 		}
 
-		// 6. Create default config
+		// 6. Wait for server ready, run migrations, write schema_version
+		initDBURL := fmt.Sprintf("root@tcp(127.0.0.1:%d)/dolt?parseTime=true", port)
+		var initStore *dolt.Client
+		for i := 0; i < 10; i++ {
+			initStore, err = dolt.NewClient(initDBURL)
+			if err == nil {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		if err != nil {
+			return fmt.Errorf("dolt server did not become ready: %w", err)
+		}
+		defer initStore.Close() //nolint:errcheck
+
+		if !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "📦 Running database migrations...")
+		}
+		if err := migrate.Run(initStore.DB()); err != nil {
+			return fmt.Errorf("failed to run migrations: %w", err)
+		}
+		if err := utils.WriteSchemaVersion(gravaDir, utils.SchemaVersion); err != nil {
+			return fmt.Errorf("failed to write schema_version: %w", err)
+		}
+		if !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Database migrations complete.")
+		}
+
+		// 7. Create default config
 		configFile := ".grava.yaml"
 		dbURL := fmt.Sprintf("root@tcp(127.0.0.1:%d)/dolt?parseTime=true", port)
 		viper.Set("db_url", dbURL)
