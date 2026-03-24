@@ -103,7 +103,8 @@ So that my work is isolated from other agents and I have a clean directory to wo
 **And** after successful claim: a Git worktree is created at `.grava/worktrees/agent-01/abc123def456/` and a branch `grava/agent-01/abc123def456` is checked out
 **And** `grava claim --json` returns `{"id": "abc123def456", "status": "in_progress", "assignee": "agent-01", "worktree_path": ".grava/worktrees/agent-01/abc123def456/", "branch": "grava/agent-01/abc123def456"}`
 **And** if two agents concurrently claim the same issue, exactly one succeeds (Epic 3 NFR3 guarantee); the losing agent receives `CLAIM_CONFLICT` and no worktree is created for them
-**And** if worktree creation fails after the DB claim succeeds, the claim is rolled back and the error is returned — no partial state
+**And** if worktree creation fails after the DB claim succeeds: any partially-created `.grava/worktrees/<agent>/<issue>/` directory is deleted before the DB claim rollback executes — no partial state (directory or DB)
+**And** if the directory deletion itself fails during rollback, the error is logged with `WORKTREE_CLEANUP_FAILED` code and `grava doctor` will detect and clean the orphaned directory on next run
 
 ---
 

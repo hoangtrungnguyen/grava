@@ -97,7 +97,8 @@ So that we have proof-of-concept evidence before committing the remaining merge 
 **And** `grava-merge` can execute a Dolt SQL query (`SELECT NOW()`) to confirm DB connectivity during merge hook lifecycle
 **And** the spike produces a deterministic output: either a merged `issues.jsonl` written to `%A` (success) or a structured exit code indicating unresolvable conflict
 **And** a spike report is written to `.grava/spike-reports/merge-driver-poc.md` documenting: invocation confirmed (Y/N), DB accessible during merge (Y/N), blockers (if any)
-**And** ⛔ **if spike fails**: remaining Epic 10 stories are blocked — scope renegotiation required before sprint planning proceeds
+**And** the spike registers a runnable CI scenario: `grava sandbox run --scenario=spike-merge-driver` exits 0 — this is the **hard gate**, not the markdown report alone
+**And** ⛔ **if spike fails** (either the sandbox scenario exits non-zero OR DB connectivity is unconfirmed): remaining Epic 10 stories are blocked — scope renegotiation required before sprint planning proceeds
 
 ---
 
