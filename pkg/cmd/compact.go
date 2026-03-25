@@ -108,7 +108,3 @@ Example:
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(compactCmd)
-	compactCmd.Flags().IntVar(&compactDays, "days", 7, "Delete Wisps older than this many days")
-}

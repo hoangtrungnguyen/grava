@@ -104,9 +104,3 @@ func formatAge(d time.Duration) string {
 	return fmt.Sprintf("%dd", days)
 }
 
-func init() {
-	rootCmd.AddCommand(readyCmd)
-	readyCmd.Flags().IntVarP(&readyLimit, "limit", "l", 20, "Limit number of results")
-	readyCmd.Flags().IntVarP(&readyPriority, "priority", "p", -1, "Filter by priority level")
-	readyCmd.Flags().BoolVar(&showInherited, "show-inherited", false, "Show if priority was inherited or boosted (indicated by *)")
-}

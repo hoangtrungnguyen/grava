@@ -7,8 +7,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
+	cmdgraph "github.com/hoangtrungnguyen/grava/pkg/cmd/graph"
+	"github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
+	"github.com/hoangtrungnguyen/grava/pkg/cmd/maintenance"
+	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	gravelog "github.com/hoangtrungnguyen/grava/pkg/log"
+	"github.com/hoangtrungnguyen/grava/pkg/notify"
 	"github.com/hoangtrungnguyen/grava/pkg/utils"
 )
 
@@ -20,6 +26,20 @@ var (
 	Store      dolt.Store
 	outputJSON bool
 	Version    = "v0.0.1"
+	// Notifier is the package-level alert notifier. Default: ConsoleNotifier.
+	// Commands call Notifier.Send(...) — never instantiate directly in command code.
+	// Tests inject a mock: cmd.Notifier = &mock.MockNotifier{}
+	Notifier notify.Notifier = notify.NewConsoleNotifier()
+
+	// deps is the shared dependency struct passed to sub-package AddCommands.
+	// Pointer fields allow sub-package commands to read current values set by PersistentPreRunE.
+	deps = &cmddeps.Deps{
+		Store:      &Store,
+		Actor:      &actor,
+		AgentModel: &agentModel,
+		OutputJSON: &outputJSON,
+		Notifier:   &Notifier,
+	}
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -140,6 +160,12 @@ func init() {
 	viper.BindPFlag("agent_model", rootCmd.PersistentFlags().Lookup("agent-model")) //nolint:errcheck
 
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+
+	// Register commands from sub-packages.
+	issues.AddCommands(rootCmd, deps)
+	cmdgraph.AddCommands(rootCmd, deps)
+	maintenance.AddCommands(rootCmd, deps)
+	synccmd.AddCommands(rootCmd, deps)
 }
 
 // initConfig reads in config file and ENV variables if set.

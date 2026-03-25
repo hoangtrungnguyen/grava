@@ -141,12 +141,3 @@ var graphVisualizeCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	graphVisualizeCmd.Flags().StringVarP(&graphFormat, "format", "f", "dot", "Output format (dot, mermaid)")
-
-	rootCmd.AddCommand(graphCmd)
-	graphCmd.AddCommand(graphStatsCmd)
-	graphCmd.AddCommand(graphCycleCmd)
-	graphCmd.AddCommand(graphHealthCmd)
-	graphCmd.AddCommand(graphVisualizeCmd)
-}

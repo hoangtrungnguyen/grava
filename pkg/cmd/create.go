@@ -153,16 +153,3 @@ You can specify title, description, type, and priority.`,
 
 var createAffectedFiles []string
 
-func init() {
-	rootCmd.AddCommand(createCmd)
-
-	createCmd.Flags().StringP("title", "t", "", "Issue title (required)")
-	createCmd.Flags().StringP("desc", "d", "", "Issue description")
-	createCmd.Flags().String("type", "task", "Issue type (task, bug, epic, story)")
-	createCmd.Flags().StringP("priority", "p", "medium", "Issue priority (low, medium, high, critical)")
-	createCmd.Flags().String("parent", "", "Parent Issue ID for sub-tasks")
-	createCmd.Flags().Bool("ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
-	createCmd.Flags().StringSliceVar(&createAffectedFiles, "files", []string{}, "Affected files (comma separated)")
-
-	createCmd.MarkFlagRequired("title") //nolint:errcheck
-}

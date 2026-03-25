@@ -11,6 +11,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
+	"github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -930,9 +931,9 @@ func TestDropCmdConfirmYes(t *testing.T) {
 	dropForce = false
 
 	// Inject "yes" into stdin reader
-	oldReader := stdinReader
-	stdinReader = strings.NewReader("yes\n")
-	defer func() { stdinReader = oldReader }()
+	oldReader := issues.StdinReader
+	issues.StdinReader = strings.NewReader("yes\n")
+	defer func() { issues.StdinReader = oldReader }()
 
 	// Expect Transaction
 	mock.ExpectBegin()
@@ -969,9 +970,9 @@ func TestDropCmdConfirmNo(t *testing.T) {
 	dropForce = false
 
 	// Inject "no" into stdin reader
-	oldReader := stdinReader
-	stdinReader = strings.NewReader("no\n")
-	defer func() { stdinReader = oldReader }()
+	oldReader := issues.StdinReader
+	issues.StdinReader = strings.NewReader("no\n")
+	defer func() { issues.StdinReader = oldReader }()
 
 	// No ExpectExec — no deletes should happen
 	// No ExpectClose — RunE returns error so PersistentPostRunE is skipped

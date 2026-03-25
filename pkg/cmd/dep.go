@@ -284,15 +284,3 @@ func getFill(isLast bool, isRoot bool) string {
 	return "│   "
 }
 
-func init() {
-	rootCmd.AddCommand(depCmd)
-	depCmd.PersistentFlags().StringVar(&depType, "type", "blocks", "Dependency type (blocks, relates-to, duplicates, parent-child, subtask-of)")
-
-	depCmd.AddCommand(depBatchCmd)
-	depBatchCmd.Flags().StringVarP(&batchFile, "file", "f", "", "JSON file containing dependencies")
-
-	depCmd.AddCommand(depClearCmd)
-	depCmd.AddCommand(depTreeCmd)
-	depCmd.AddCommand(depPathCmd)
-	depCmd.AddCommand(depImpactCmd)
-}

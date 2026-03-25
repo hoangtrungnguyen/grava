@@ -199,11 +199,3 @@ Useful for backups, migrations, or seeding test data.`,
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(exportCmd)
-
-	exportCmd.Flags().StringVarP(&exportFile, "file", "f", "", "Output file (default: stdout)")
-	exportCmd.Flags().StringVar(&exportFormat, "format", "jsonl", "Output format (only jsonl supported)")
-	exportCmd.Flags().BoolVar(&exportIncludeWisps, "include-wisps", false, "Include ephemeral Wisp issues")
-	exportCmd.Flags().BoolVar(&exportSkipTombstones, "skip-tombstones", false, "Exclude soft-deleted issues")
-}

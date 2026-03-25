@@ -39,8 +39,3 @@ var commitCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(commitCmd)
-	commitCmd.Flags().StringVarP(&commitMessage, "message", "m", "", "Commit message")
-	_ = commitCmd.MarkFlagRequired("message")
-}

@@ -231,7 +231,3 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(statsCmd)
-	statsCmd.Flags().IntVar(&statsDays, "days", 7, "Number of days to show activity for")
-}

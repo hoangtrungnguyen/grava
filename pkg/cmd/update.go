@@ -122,14 +122,3 @@ Only the flags provided will be updated.`,
 
 var updateAffectedFiles []string
 
-func init() {
-	rootCmd.AddCommand(updateCmd)
-
-	updateCmd.Flags().StringP("title", "t", "", "Update title")
-	updateCmd.Flags().StringP("desc", "d", "", "Update description")
-	updateCmd.Flags().String("type", "", "Update type")
-	updateCmd.Flags().StringP("priority", "p", "", "Update priority")
-	updateCmd.Flags().StringP("status", "s", "", "Update status")
-	updateCmd.Flags().StringSliceVar(&updateAffectedFiles, "files", []string{}, "Update affected files")
-	updateCmd.Flags().String("last-commit", "", "Store the last session's commit hash")
-}

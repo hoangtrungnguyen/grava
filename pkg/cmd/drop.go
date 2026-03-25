@@ -95,7 +95,3 @@ Example:
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(dropCmd)
-	dropCmd.Flags().BoolVar(&dropForce, "force", false, "Skip interactive confirmation prompt")
-}

@@ -112,7 +112,3 @@ type blockedInfo struct {
 	Ephemeral   bool     `json:"ephemeral"`
 }
 
-func init() {
-	rootCmd.AddCommand(blockedCmd)
-	blockedCmd.Flags().IntVarP(&blockedDepth, "depth", "d", 1, "Depth of transitive blockers to show")
-}

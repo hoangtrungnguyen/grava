@@ -170,6 +170,3 @@ If the issue is clean (matches HEAD), it reverts to the previous commit (HEAD~1)
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(undoCmd)
-}

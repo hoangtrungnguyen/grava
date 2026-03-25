@@ -1,0 +1,623 @@
+// Package maintenance contains the maintenance commands (compact, doctor, undo, clear, history).
+package maintenance
+
+import (
+	"bufio"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
+	"github.com/hoangtrungnguyen/grava/pkg/validation"
+	"github.com/spf13/cobra"
+)
+
+var (
+	compactDays      int
+	clearFrom        string
+	clearTo          string
+	clearForce       bool
+	clearIncludeWisp bool
+)
+
+// ClearStdinReader is overridable in tests to simulate interactive input for the clear command.
+var ClearStdinReader io.Reader = os.Stdin
+
+// AddCommands registers all maintenance commands with the root cobra.Command.
+func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
+	root.AddCommand(newCompactCmd(d))
+	root.AddCommand(newDoctorCmd(d))
+	root.AddCommand(newUndoCmd(d))
+	root.AddCommand(newClearCmd(d))
+	root.AddCommand(newHistoryCmd(d))
+}
+
+func newCompactCmd(d *cmddeps.Deps) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "compact",
+		Short: "Purge old ephemeral Wisp issues (soft delete)",
+		Long: `Compact soft-deletes ephemeral Wisp issues that are older than the specified
+	number of days. Issues are marked with 'tombstone' and recorded in the deletions table.
+
+Example:
+  grava compact --days 7   # delete Wisps older than 7 days (default)
+  grava compact --days 0   # delete ALL Wisps regardless of age`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cutoff := time.Now().AddDate(0, 0, -compactDays)
+
+			rows, err := (*d.Store).Query(
+				`SELECT id FROM issues WHERE ephemeral = 1 AND created_at < ?`,
+				cutoff,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to query ephemeral issues: %w", err)
+			}
+			defer rows.Close() //nolint:errcheck
+
+			var ids []string
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err != nil {
+					return fmt.Errorf("failed to scan row: %w", err)
+				}
+				ids = append(ids, id)
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("row iteration error: %w", err)
+			}
+
+			if len(ids) == 0 {
+				if *d.OutputJSON {
+					resp := map[string]any{
+						"status":  "unchanged",
+						"count":   0,
+						"message": fmt.Sprintf("No Wisps older than %d day(s) found", compactDays),
+					}
+					b, _ := json.MarshalIndent(resp, "", "  ")
+					fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+					return nil
+				}
+				cmd.Printf("🧹 No Wisps older than %d day(s) found. Nothing to compact.\n", compactDays)
+				return nil
+			}
+
+			ctx := context.Background()
+			tx, err := (*d.Store).BeginTx(ctx, nil)
+			if err != nil {
+				return fmt.Errorf("failed to start transaction: %w", err)
+			}
+			defer tx.Rollback() //nolint:errcheck
+
+			for _, id := range ids {
+				_, err := tx.ExecContext(ctx,
+					`INSERT INTO deletions (id, deleted_at, reason, actor, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+					id, time.Now(), "compact", "grava-compact", *d.Actor, *d.Actor, *d.AgentModel,
+				)
+				if err != nil {
+					return fmt.Errorf("failed to record deletion for %s: %w", id, err)
+				}
+
+				_, err = tx.ExecContext(ctx, "UPDATE issues SET status = 'tombstone', updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?", *d.Actor, *d.AgentModel, id)
+				if err != nil {
+					return fmt.Errorf("failed to soft delete issue %s: %w", id, err)
+				}
+			}
+
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("failed to commit transaction: %w", err)
+			}
+
+			purged := len(ids)
+
+			if *d.OutputJSON {
+				resp := map[string]any{
+					"status": "compacted",
+					"count":  purged,
+					"ids":    ids,
+				}
+				b, _ := json.MarshalIndent(resp, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+				return nil
+			}
+
+			cmd.Printf("🧹 Compacted %d Wisp(s) older than %d day(s). Tombstones recorded in deletions table.\n", purged, compactDays)
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&compactDays, "days", 7, "Delete Wisps older than this many days")
+	return cmd
+}
+
+type doctorCheck struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+}
+
+func (c doctorCheck) icon() string {
+	switch c.Status {
+	case "PASS":
+		return "✅"
+	case "WARN":
+		return "⚠️ "
+	default:
+		return "❌"
+	}
+}
+
+func newDoctorCmd(d *cmddeps.Deps) *cobra.Command {
+	return &cobra.Command{
+		Use:   "doctor",
+		Short: "Diagnose and report system health",
+		Long: `Doctor runs a series of read-only checks against the Grava database
+and reports the health of each component.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var checks []doctorCheck
+			hasFailure := false
+
+			var dbVersion string
+			err := (*d.Store).QueryRow("SELECT VERSION()").Scan(&dbVersion)
+			if err != nil {
+				checks = append(checks, doctorCheck{"DB connectivity", "FAIL",
+					fmt.Sprintf("cannot query database: %v", err)})
+				hasFailure = true
+			} else {
+				checks = append(checks, doctorCheck{"DB connectivity", "PASS",
+					fmt.Sprintf("connected (server %s)", dbVersion)})
+			}
+
+			for _, table := range []string{"issues", "dependencies", "deletions", "child_counters"} {
+				var count int
+				err := (*d.Store).QueryRow(
+					"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+					table,
+				).Scan(&count)
+				if err != nil {
+					checks = append(checks, doctorCheck{fmt.Sprintf("Table: %s", table), "FAIL", fmt.Sprintf("query error: %v", err)})
+					hasFailure = true
+				} else if count == 0 {
+					checks = append(checks, doctorCheck{fmt.Sprintf("Table: %s", table), "FAIL", "table does not exist — run `grava init`"})
+					hasFailure = true
+				} else {
+					checks = append(checks, doctorCheck{fmt.Sprintf("Table: %s", table), "PASS", "exists"})
+				}
+			}
+
+			var orphanCount int
+			err = (*d.Store).QueryRow(`
+			SELECT COUNT(*) FROM dependencies d
+			WHERE NOT EXISTS (SELECT 1 FROM issues i WHERE i.id = d.from_id)
+			   OR NOT EXISTS (SELECT 1 FROM issues i WHERE i.id = d.to_id)
+		`).Scan(&orphanCount)
+			if err != nil {
+				checks = append(checks, doctorCheck{"Orphaned dependencies", "WARN", fmt.Sprintf("could not check: %v", err)})
+			} else if orphanCount > 0 {
+				checks = append(checks, doctorCheck{"Orphaned dependencies", "WARN", fmt.Sprintf("%d edge(s) reference non-existent issues", orphanCount)})
+			} else {
+				checks = append(checks, doctorCheck{"Orphaned dependencies", "PASS", "none found"})
+			}
+
+			var untitledCount int
+			err = (*d.Store).QueryRow(`SELECT COUNT(*) FROM issues WHERE title IS NULL OR title = ''`).Scan(&untitledCount)
+			if err != nil {
+				checks = append(checks, doctorCheck{"Untitled issues", "WARN", fmt.Sprintf("could not check: %v", err)})
+			} else if untitledCount > 0 {
+				checks = append(checks, doctorCheck{"Untitled issues", "WARN", fmt.Sprintf("%d issue(s) have no title", untitledCount)})
+			} else {
+				checks = append(checks, doctorCheck{"Untitled issues", "PASS", "none found"})
+			}
+
+			var wispCount int
+			err = (*d.Store).QueryRow(`SELECT COUNT(*) FROM issues WHERE ephemeral = 1`).Scan(&wispCount)
+			if err != nil {
+				checks = append(checks, doctorCheck{"Wisp count", "WARN", fmt.Sprintf("could not check: %v", err)})
+			} else {
+				status := "PASS"
+				detail := fmt.Sprintf("%d Wisp(s) in database", wispCount)
+				if wispCount > 100 {
+					status = "WARN"
+					detail += " — consider running `grava compact`"
+				}
+				checks = append(checks, doctorCheck{"Wisp count", status, detail})
+			}
+
+			if *d.OutputJSON {
+				resp := map[string]any{"status": "healthy", "checks": checks}
+				if hasFailure {
+					resp["status"] = "unhealthy"
+				}
+				b, _ := json.MarshalIndent(resp, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+				if hasFailure {
+					return fmt.Errorf("doctor found critical issues")
+				}
+				return nil
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "🩺 Grava Doctor Report")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
+			for _, c := range checks {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %-30s %s\n", c.icon(), c.Name, c.Detail)
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.Repeat("─", 50))
+
+			if hasFailure {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "❌ Some checks FAILED. Please review the issues above.")
+				return fmt.Errorf("doctor found critical issues")
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ All critical checks passed.")
+			return nil
+		},
+	}
+}
+
+func newUndoCmd(d *cmddeps.Deps) *cobra.Command {
+	return &cobra.Command{
+		Use:   "undo <id>",
+		Short: "Revert the last change to an issue",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+
+			type IssueState struct {
+				Title         string
+				Description   string
+				Type          string
+				Priority      int
+				Status        string
+				AffectedFiles sql.NullString
+			}
+
+			var current IssueState
+			currQuery := `SELECT title, description, issue_type, priority, status, affected_files
+		              FROM issues WHERE id = ?`
+			err := (*d.Store).QueryRow(currQuery, id).Scan(
+				&current.Title, &current.Description, &current.Type,
+				&current.Priority, &current.Status, &current.AffectedFiles,
+			)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					return fmt.Errorf("issue %s not found", id)
+				}
+				return fmt.Errorf("failed to fetch current state: %w", err)
+			}
+
+			histQuery := `
+			SELECT title, description, issue_type, priority, status, affected_files
+			FROM dolt_history_issues
+			WHERE id = ?
+			ORDER BY commit_date DESC
+			LIMIT 2
+		`
+			rows, err := (*d.Store).Query(histQuery, id)
+			if err != nil {
+				return fmt.Errorf("failed to fetch history: %w", err)
+			}
+			defer func() { _ = rows.Close() }()
+
+			var history []IssueState
+			for rows.Next() {
+				var h IssueState
+				if err := rows.Scan(
+					&h.Title, &h.Description, &h.Type,
+					&h.Priority, &h.Status, &h.AffectedFiles,
+				); err != nil {
+					return fmt.Errorf("failed to scan history: %w", err)
+				}
+				history = append(history, h)
+			}
+
+			if len(history) == 0 {
+				return fmt.Errorf("no history found for issue %s (is it committed?)", id)
+			}
+
+			var targetState IssueState
+			var actionMsg string
+			isDirty := current != history[0]
+
+			if isDirty {
+				actionMsg = "Discarding uncommitted changes (reverting to HEAD)..."
+				targetState = history[0]
+			} else {
+				if len(history) < 2 {
+					return fmt.Errorf("cannot undo: issue is in its initial state (no previous commit)")
+				}
+				actionMsg = "Issue is clean. Reverting to PREVIOUS commit..."
+				targetState = history[1]
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), actionMsg)
+
+			if !isDirty {
+				var rawMeta sql.NullString
+				if err := (*d.Store).QueryRow("SELECT metadata FROM issues WHERE id = ?", id).Scan(&rawMeta); err == nil && rawMeta.Valid {
+					var meta map[string]any
+					if err := json.Unmarshal([]byte(rawMeta.String), &meta); err == nil {
+						if lastCommit, ok := meta["last_commit"].(string); ok {
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Found last session commit: %s\n", lastCommit)
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Reverting session commit... ")
+							_, err := (*d.Store).Exec("CALL DOLT_REVERT(?)", lastCommit)
+							if err != nil {
+								_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Revert failed: %v. Falling back to row-level undo.\n", err)
+							} else {
+								_, _ = fmt.Fprintln(cmd.OutOrStdout(), "DONE.")
+								_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Session undo successful for %v.\n", id)
+								return nil
+							}
+						}
+					}
+				}
+			}
+
+			updateQ := `
+			UPDATE issues
+			SET title = ?, description = ?, issue_type = ?, priority = ?, status = ?,
+			    affected_files = ?,
+			    updated_at = NOW(), updated_by = ?, agent_model = ?
+			WHERE id = ?
+		`
+			res, err := (*d.Store).Exec(updateQ,
+				targetState.Title, targetState.Description, targetState.Type,
+				targetState.Priority, targetState.Status, targetState.AffectedFiles,
+				*d.Actor, *d.AgentModel, id,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to execute undo: %w", err)
+			}
+
+			rowsAff, _ := res.RowsAffected()
+			if rowsAff == 0 {
+				return fmt.Errorf("no rows updated (concurrency issue?)")
+			}
+
+			var commentMsg string
+			if isDirty {
+				commentMsg = "Undo: discarded uncommitted changes (reverted to HEAD)"
+			} else {
+				commentMsg = "Undo: reverted to PREVIOUS commit"
+			}
+
+			if err := addCommentToIssue(d, id, commentMsg); err != nil {
+				return fmt.Errorf("failed to add undo comment: %w", err)
+			}
+
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Reverted issue %s.\n", id)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   Title: %s\n", targetState.Title)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   Status: %s\n", targetState.Status)
+
+			return nil
+		},
+	}
+}
+
+func newClearCmd(d *cmddeps.Deps) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "clear",
+		Short: "Soft-delete issues within a date range",
+		Long: `Soft-delete issues (and related data) created within a specified date range.
+	Issues are marked with 'tombstone' status and recorded in the deletions table.
+
+Example:
+  grava clear --from 2026-01-01 --to 2026-01-31
+  grava clear --from 2026-02-18 --to 2026-02-18 --force --include-wisps`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fromDate, toDate, err := validation.ValidateDateRange(clearFrom, clearTo)
+			if err != nil {
+				return err
+			}
+
+			query := "SELECT id FROM issues WHERE created_at >= ? AND created_at < ?"
+			nextDay := toDate.AddDate(0, 0, 1)
+
+			if !clearIncludeWisp {
+				query += " AND ephemeral = FALSE"
+			}
+
+			rows, err := (*d.Store).Query(query, fromDate.Format("2006-01-02"), nextDay.Format("2006-01-02"))
+			if err != nil {
+				return fmt.Errorf("failed to query issues: %w", err)
+			}
+			defer rows.Close() //nolint:errcheck
+
+			var ids []string
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err != nil {
+					return fmt.Errorf("failed to scan issue ID: %w", err)
+				}
+				ids = append(ids, id)
+			}
+
+			if len(ids) == 0 {
+				if *d.OutputJSON {
+					resp := map[string]any{
+						"status":  "unchanged",
+						"count":   0,
+						"message": fmt.Sprintf("No issues found between %s and %s", clearFrom, clearTo),
+					}
+					b, _ := json.MarshalIndent(resp, "", "  ")
+					fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+					return nil
+				}
+				cmd.Printf("No issues found between %s and %s.\n", clearFrom, clearTo)
+				return nil
+			}
+
+			if !clearForce && !*d.OutputJSON {
+				cmd.Printf("⚠️  Found %d issue(s) created between %s and %s.\nType \"yes\" to delete them: ", len(ids), clearFrom, clearTo)
+
+				scanner := bufio.NewScanner(ClearStdinReader)
+				scanner.Scan()
+				answer := strings.TrimSpace(scanner.Text())
+
+				if answer != "yes" {
+					cmd.Println("Aborted. No data was deleted.")
+					return nil
+				}
+			}
+
+			ctx := context.Background()
+			tx, err := (*d.Store).BeginTx(ctx, nil)
+			if err != nil {
+				return fmt.Errorf("failed to start transaction: %w", err)
+			}
+			defer tx.Rollback() //nolint:errcheck
+
+			for _, id := range ids {
+				_, err = tx.ExecContext(ctx,
+					"INSERT INTO deletions (id, reason, actor, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)",
+					id, "clear", "grava-clear", *d.Actor, *d.Actor, *d.AgentModel,
+				)
+				if err != nil {
+					return fmt.Errorf("failed to record tombstone for %s: %w", id, err)
+				}
+
+				_, err = tx.ExecContext(ctx, "UPDATE issues SET status = 'tombstone', updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?", *d.Actor, *d.AgentModel, id)
+				if err != nil {
+					return fmt.Errorf("failed to soft delete issue %s: %w", id, err)
+				}
+			}
+
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("failed to commit transaction: %w", err)
+			}
+
+			if *d.OutputJSON {
+				resp := map[string]any{
+					"status": "cleared",
+					"count":  len(ids),
+					"ids":    ids,
+					"from":   clearFrom,
+					"to":     clearTo,
+				}
+				b, _ := json.MarshalIndent(resp, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+				return nil
+			}
+
+			cmd.Printf("🗑️  Cleared %d issue(s) from %s to %s. Tombstones recorded.\n", len(ids), clearFrom, clearTo)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&clearFrom, "from", "", "Start date (inclusive), format YYYY-MM-DD (required)")
+	cmd.Flags().StringVar(&clearTo, "to", "", "End date (inclusive), format YYYY-MM-DD (required)")
+	cmd.Flags().BoolVar(&clearForce, "force", false, "Skip interactive confirmation prompt")
+	cmd.Flags().BoolVar(&clearIncludeWisp, "include-wisps", false, "Also delete ephemeral Wisp issues")
+	return cmd
+}
+
+func newHistoryCmd(d *cmddeps.Deps) *cobra.Command {
+	return &cobra.Command{
+		Use:   "history <id>",
+		Short: "Show modification history of an issue",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+
+			query := `
+			SELECT h.commit_hash, h.committer, h.commit_date, h.title, h.status, l.message
+			FROM dolt_history_issues h
+			JOIN dolt_log l ON h.commit_hash = l.commit_hash
+			WHERE h.id = ?
+			ORDER BY h.commit_date DESC
+		`
+
+			rows, err := (*d.Store).Query(query, id)
+			if err != nil {
+				return fmt.Errorf("failed to fetch history for issue %s: %w", id, err)
+			}
+			defer rows.Close() //nolint:errcheck
+
+			fmt.Fprintf(cmd.OutOrStdout(), "History for Issue %s:\n\n", id)                                                                                             //nolint:errcheck
+			fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-20s %-25s %-15s %-20s %s\n", "COMMIT", "AUTHOR", "DATE", "STATUS", "TITLE", "MESSAGE")                              //nolint:errcheck
+			fmt.Fprintln(cmd.OutOrStdout(), "------------------------------------------------------------------------------------------------------------------------") //nolint:errcheck
+
+			count := 0
+			for rows.Next() {
+				count++
+				var hash, committer, title, status, message string
+				var date time.Time
+				if err := rows.Scan(&hash, &committer, &date, &title, &status, &message); err != nil {
+					return fmt.Errorf("failed to scan history row: %w", err)
+				}
+				var shortHash string
+				if len(hash) >= 8 {
+					shortHash = hash[:8]
+				} else {
+					shortHash = hash
+				}
+				if status == "tombstone" {
+					status = "🗑️ DELETED"
+				}
+				if len(title) > 20 {
+					title = title[:17] + "..."
+				}
+				if len(message) > 40 {
+					message = message[:37] + "..."
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-20s %-25s %-15s %-20s %s\n", shortHash, committer, date.Format(time.RFC3339), status, title, message) //nolint:errcheck
+			}
+
+			if count == 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "No history found for issue %s (check if it exists or is committed)\n", id) //nolint:errcheck
+			}
+			return nil
+		},
+	}
+}
+
+// addCommentToIssue appends a comment to the issue's metadata.
+func addCommentToIssue(d *cmddeps.Deps, id string, text string) error {
+	comment := map[string]any{
+		"text":        text,
+		"timestamp":   time.Now().UTC().Format(time.RFC3339),
+		"actor":       *d.Actor,
+		"agent_model": *d.AgentModel,
+	}
+
+	row := (*d.Store).QueryRow(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`, id)
+	var rawMeta string
+	if err := row.Scan(&rawMeta); err != nil {
+		return fmt.Errorf("issue %s not found: %w", id, err)
+	}
+
+	var meta map[string]any
+	if err := json.Unmarshal([]byte(rawMeta), &meta); err != nil {
+		return fmt.Errorf("failed to parse metadata for %s: %w", id, err)
+	}
+
+	var comments []any
+	if existing, ok := meta["comments"]; ok {
+		if arr, ok := existing.([]any); ok {
+			comments = arr
+		}
+	}
+	comments = append(comments, comment)
+	meta["comments"] = comments
+
+	return updateIssueMetadata(d, id, meta)
+}
+
+func updateIssueMetadata(d *cmddeps.Deps, id string, meta map[string]any) error {
+	updated, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	_, err = (*d.Store).Exec(
+		`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`,
+		string(updated), *d.Actor, *d.AgentModel, id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save metadata for %s: %w", id, err)
+	}
+	return nil
+}

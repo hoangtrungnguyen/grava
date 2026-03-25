@@ -163,10 +163,3 @@ Use --skip-existing to ignore duplicates, or --overwrite to update them.`,
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(importCmd)
-
-	importCmd.Flags().StringVarP(&importFile, "file", "f", "", "Input file (required)")
-	importCmd.Flags().BoolVar(&importOverwrite, "overwrite", false, "Overwrite existing IDs (upsert)")
-	importCmd.Flags().BoolVar(&importSkipExisting, "skip-existing", false, "Skip existing IDs (ignore duplicates)")
-}

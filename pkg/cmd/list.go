@@ -178,10 +178,3 @@ You can filter by status or type, and sort by various criteria.`,
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(listCmd)
-	listCmd.Flags().StringP("status", "s", "", "Filter by status")
-	listCmd.Flags().StringP("type", "t", "", "Filter by type")
-	listCmd.Flags().Bool("wisp", false, "Show only ephemeral Wisp issues")
-	listCmd.Flags().String("sort", "", "Sort by fields (e.g. priority:asc,created:desc)")
-}

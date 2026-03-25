@@ -73,6 +73,3 @@ var historyCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(historyCmd)
-}

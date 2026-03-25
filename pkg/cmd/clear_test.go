@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/hoangtrungnguyen/grava/pkg/cmd/maintenance"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/stretchr/testify/assert"
 )
@@ -102,9 +103,9 @@ func TestClearCmd(t *testing.T) {
 		clearForce = false
 		clearIncludeWisp = false
 
-		oldReader := clearStdinReader
-		clearStdinReader = strings.NewReader("yes\n")
-		defer func() { clearStdinReader = oldReader }()
+		oldReader := maintenance.ClearStdinReader
+		maintenance.ClearStdinReader = strings.NewReader("yes\n")
+		defer func() { maintenance.ClearStdinReader = oldReader }()
 
 		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE created_at >= ? AND created_at < ? AND ephemeral = FALSE`)).
 			WithArgs("2026-01-01", "2026-02-01").
@@ -135,9 +136,9 @@ func TestClearCmd(t *testing.T) {
 		clearForce = false
 		clearIncludeWisp = false
 
-		oldReader := clearStdinReader
-		clearStdinReader = strings.NewReader("no\n")
-		defer func() { clearStdinReader = oldReader }()
+		oldReader := maintenance.ClearStdinReader
+		maintenance.ClearStdinReader = strings.NewReader("no\n")
+		defer func() { maintenance.ClearStdinReader = oldReader }()
 
 		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues`)).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-1"))

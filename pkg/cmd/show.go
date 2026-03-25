@@ -125,10 +125,6 @@ var showCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(showCmd)
-	showCmd.Flags().BoolVar(&showTree, "tree", false, "Show hierarchical tree visualization")
-}
 
 func showTreeVisualization(rootID string) error {
 	dag, err := graph.LoadGraphFromDB(Store)

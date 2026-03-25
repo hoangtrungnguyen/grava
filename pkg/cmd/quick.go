@@ -98,8 +98,3 @@ Examples:
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(quickCmd)
-	quickCmd.Flags().IntVar(&quickPriority, "priority", 1, "Show issues at or above this priority level (0=critical, 1=high, 2=medium, 3=low)")
-	quickCmd.Flags().IntVar(&quickLimit, "limit", 20, "Maximum number of results to return")
-}

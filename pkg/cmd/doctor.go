@@ -167,6 +167,3 @@ Example:
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(doctorCmd)
-}

@@ -142,11 +142,3 @@ Example:
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(clearCmd)
-
-	clearCmd.Flags().StringVar(&clearFrom, "from", "", "Start date (inclusive), format YYYY-MM-DD (required)")
-	clearCmd.Flags().StringVar(&clearTo, "to", "", "End date (inclusive), format YYYY-MM-DD (required)")
-	clearCmd.Flags().BoolVar(&clearForce, "force", false, "Skip interactive confirmation prompt")
-	clearCmd.Flags().BoolVar(&clearIncludeWisp, "include-wisps", false, "Also delete ephemeral Wisp issues")
-}

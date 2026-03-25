@@ -105,7 +105,3 @@ Examples:
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(searchCmd)
-	searchCmd.Flags().BoolVar(&searchWisp, "wisp", false, "Include ephemeral Wisp issues in results")
-}

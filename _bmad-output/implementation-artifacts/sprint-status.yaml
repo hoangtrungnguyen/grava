@@ -42,8 +42,8 @@ story_location: _bmad-output/implementation-artifacts
 development_status:
   # ─── Epic 1: Foundation & Scaffold ───────────────────────────────────────────
   epic-1: in-progress
-  1-1-core-error-types-logging-and-transaction-infrastructure: review
-  1-2-concurrency-primitives-and-coordinator-error-channel: backlog
+  1-1-core-error-types-logging-and-transaction-infrastructure: in-progress
+  1-2-concurrency-primitives-and-coordinator-error-channel: review
   1-3-worktree-resolver-named-functions-and-test-harness: backlog
   epic-1-retrospective: optional
 

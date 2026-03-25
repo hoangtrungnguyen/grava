@@ -138,15 +138,3 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 
 var subtaskAffectedFiles []string
 
-func init() {
-	rootCmd.AddCommand(subtaskCmd)
-
-	subtaskCmd.Flags().StringP("title", "t", "", "Subtask title (required)")
-	subtaskCmd.Flags().StringP("desc", "d", "", "Subtask description")
-	subtaskCmd.Flags().String("type", "task", "Subtask type (task, bug, epic, story)")
-	subtaskCmd.Flags().StringP("priority", "p", "medium", "Subtask priority (low, medium, high, critical)")
-	subtaskCmd.Flags().Bool("ephemeral", false, "Mark subtask as ephemeral (Wisp)")
-	subtaskCmd.Flags().StringSliceVar(&subtaskAffectedFiles, "files", []string{}, "Affected files (comma separated)")
-
-	subtaskCmd.MarkFlagRequired("title") //nolint:errcheck
-}

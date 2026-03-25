@@ -62,6 +62,3 @@ Example:
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(assignCmd)
-}

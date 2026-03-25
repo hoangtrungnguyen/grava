@@ -53,7 +53,3 @@ Example:
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(commentCmd)
-	commentCmd.Flags().StringVar(&commentLastCommit, "last-commit", "", "Store the last session's commit hash")
-}
