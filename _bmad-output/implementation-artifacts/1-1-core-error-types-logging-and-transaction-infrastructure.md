@@ -321,6 +321,8 @@ claude-sonnet-4-6
 - [ ] [AI-Review][LOW] `pkg/devlog/devlog.go` — Story requires a deprecation notice/stub, but the file is fully operational with no deprecation annotation. Add `// Deprecated: use pkg/log (zerolog) instead.` to exported functions. [pkg/devlog/devlog.go]
 - [ ] [AI-Review][LOW] `pkg/cmd/show.go:141` and `pkg/cmd/issues/issues.go:377` — bare `fmt.Println()` calls write to `os.Stdout` instead of cobra's `cmd.OutOrStdout()`, breaking test output capture. [pkg/cmd/show.go:141]
 - [ ] [AI-Review][LOW] `pkg/log/log.go` JSON mode comment is misleading — "cleaner for piped consumers" is incorrect since ConsoleWriter with NoColor still produces human text, not JSON. Update comment to accurately describe the current behavior or fix the implementation per H3. [pkg/log/log.go:33]
+- [ ] [AI-Review][MEDIUM] `pkg/cmd/root.go:76-78` — Schema check is silently skipped when `ResolveGravaDir()` returns an error (i.e., user runs `grava list` outside an initialised repo). Code falls through to DB connect, which fails with a raw MySQL error instead of the user-friendly `NOT_INITIALIZED` GravaError. The `if gravaDir != "" {}` guard swallows the `ResolveGravaDir` error entirely — it should be returned so the user sees "run 'grava init' first". [pkg/cmd/root.go:76]
+- [ ] [AI-Review][LOW] `pkg/cmd/version.go:15` — `fmt.Printf("Grava CLI version %s\n", Version)` writes to process stdout directly, bypassing cobra's `cmd.OutOrStdout()`. Breaks test output capture and is inconsistent with cobra patterns used everywhere else in the codebase. [pkg/cmd/version.go:15]
 
 ### File List
 

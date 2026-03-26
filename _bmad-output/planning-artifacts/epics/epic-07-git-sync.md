@@ -1,6 +1,7 @@
 # Epic 7: Git Sync — Export, Import & Hook Pipeline
 
 **Status:** Planned
+**Grava ID:** grava-089b
 **Matrix Score:** 4.20
 **FRs covered:** FR20, FR21, FR24, FR25
 *(FR22 — 3-way merge driver — moved to Epic 10: Advanced Merge Driver)*
@@ -65,7 +66,7 @@ Before any import:
 
 ## Stories
 
-### Story 7.1: Export DB State to JSONL
+### Story 7.1: Export DB State to JSONL *(grava-7ce0)*
 
 As a developer or agent,
 I want to export the full Grava database state to a portable JSONL file,
@@ -83,7 +84,7 @@ So that the current issue tracking state can be committed to Git and shared acro
 
 ---
 
-### Story 7.2: Import with Dual-Safety Check (All-or-Nothing)
+### Story 7.2: Import with Dual-Safety Check (All-or-Nothing) *(grava-2d87)*
 
 As a developer or agent,
 I want to import a Grava JSONL export into the local database with a safety check against data loss,
@@ -102,7 +103,7 @@ So that workspace state is fully restored after a `git pull` or clone without ri
 
 ---
 
-### Story 7.3: Register Git Hook Stubs (Idempotent)
+### Story 7.3: Register Git Hook Stubs (Idempotent) *(grava-5827)*
 
 As a developer,
 I want `grava init` to register Git hook stubs for `post-merge` and `pre-commit`,
@@ -119,7 +120,7 @@ So that the sync pipeline runs automatically on every `git pull`/merge without m
 
 ---
 
-### Story 7.4: Automatic Sync on `git pull` via Post-Merge Hook
+### Story 7.4: Automatic Sync on `git pull` via Post-Merge Hook *(grava-1259)*
 
 As a developer or agent,
 I want the `issues.jsonl` to be automatically imported after every `git pull`/merge,

@@ -1,6 +1,7 @@
 # Epic 11: Sandbox Validation — Integration Gate
 
 **Status:** Planned
+**Grava ID:** grava-9507
 **Matrix Score:** 3.55 *(C=2 by design — gate epic, not standalone feature)*
 **FRs covered:** *(cross-cutting — validates all FRs under concurrent, fault-injected conditions)*
 
@@ -69,7 +70,7 @@ C=2 (Standalone Deliverability) is **by design** — this is a gate epic, not a 
 
 ## Stories
 
-### Story 11.1: `grava sandbox run` CLI (Prerequisite — blocks all scenario stories)
+### Story 11.1: `grava sandbox run` CLI (Prerequisite — blocks all scenario stories) *(grava-445d)*
 
 As a developer or CI system,
 I want a single command that executes named sandbox scenarios and reports pass/fail,
@@ -88,7 +89,7 @@ So that every Epic 11 scenario story produces a CI-invocable executable artifact
 
 ---
 
-### Story 11.2: TS-01 — Basic Issue Lifecycle (Epic 2 Gate)
+### Story 11.2: TS-01 — Basic Issue Lifecycle (Epic 2 Gate) *(grava-fc24)*
 
 As a developer,
 I want the basic issue lifecycle scenario to execute automatically in the sandbox,
@@ -105,7 +106,7 @@ So that Epic 2 delivery is validated end-to-end under realistic conditions.
 
 ---
 
-### Story 11.3: TS-02 — Concurrent Atomic Claim (Epic 3 Gate)
+### Story 11.3: TS-02 — Concurrent Atomic Claim (Epic 3 Gate) *(grava-a66d)*
 
 As a developer,
 I want the concurrent claim scenario to prove NFR3 atomicity under realistic conditions,
@@ -122,7 +123,7 @@ So that Epic 3's guarantee is validated beyond unit tests.
 
 ---
 
-### Story 11.4: TS-04 & TS-07 — Export/Import Round-Trip and Conflict Detection (Epic 7 + Epic 10 Gate)
+### Story 11.4: TS-04 & TS-07 — Export/Import Round-Trip and Conflict Detection (Epic 7 + Epic 10 Gate) *(grava-0a16)*
 
 As a developer,
 I want the export/import round-trip and conflict detection scenarios to validate NFR4 and the merge driver,
@@ -139,7 +140,7 @@ So that zero-loss handoff and conflict isolation are verified end-to-end.
 
 ---
 
-### Story 11.5: TS-03, TS-05, TS-06, TS-08, TS-09, TS-10 — Remaining Phase 1 Scenarios
+### Story 11.5: TS-03, TS-05, TS-06, TS-08, TS-09, TS-10 — Remaining Phase 1 Scenarios *(grava-c395)*
 
 As a developer,
 I want all remaining Phase 1 sandbox scenarios registered and passing,

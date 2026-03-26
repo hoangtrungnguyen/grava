@@ -1,6 +1,7 @@
 # Epic 5: Workspace Health & Maintenance
 
 **Status:** Planned
+**Grava ID:** grava-46af
 **Matrix Score:** 4.15
 **FRs covered:** FR14, FR15, FR16, FR17
 
@@ -69,7 +70,7 @@ Developers can audit the full command history, safely undo recent state changes,
 
 ## Stories
 
-### Story 5.1: Command History Ledger
+### Story 5.1: Command History Ledger *(grava-25ea)*
 
 As a developer or agent,
 I want to retrieve a ledger of all previously executed Grava commands,
@@ -87,7 +88,7 @@ So that I can audit what actions were taken and by whom in the workspace.
 
 ---
 
-### Story 5.2: Undo Recent State Changes
+### Story 5.2: Undo Recent State Changes *(grava-cdd0)*
 
 As a developer,
 I want to safely revert the most recent state-altering commands,
@@ -105,7 +106,7 @@ So that I can recover from accidental or incorrect operations without manual DB 
 
 ---
 
-### Story 5.3: Compact Stale and Deleted Data
+### Story 5.3: Compact Stale and Deleted Data *(grava-213e)*
 
 As a developer or agent,
 I want to prune expired and soft-deleted data from the database,
@@ -124,7 +125,7 @@ So that query performance is maintained as the workspace grows.
 
 ---
 
-### Story 5.4: Doctor — Diagnostic Health Report
+### Story 5.4: Doctor — Diagnostic Health Report *(grava-490e)*
 
 As a developer,
 I want to run `grava doctor` to get a full health report of my workspace,
@@ -142,7 +143,7 @@ So that I can proactively detect issues before they become failures.
 
 ---
 
-### Story 5.5: Doctor — Semi-Automatic Repair with Backup Safety
+### Story 5.5: Doctor — Semi-Automatic Repair with Backup Safety *(grava-c472)*
 
 As a developer,
 I want to run `grava doctor --fix` to semi-automatically repair detected issues,

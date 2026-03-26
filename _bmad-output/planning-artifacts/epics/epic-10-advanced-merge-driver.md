@@ -1,6 +1,7 @@
 # Epic 10: Advanced Merge Driver — Schema-Aware 3-Way Merge
 
 **Status:** Planned
+**Grava ID:** grava-7dd9
 **Matrix Score:** 4.25
 **FRs covered:** FR22
 
@@ -82,7 +83,7 @@ CREATE TABLE conflict_records (
 
 ## Stories
 
-### Story 10.1: ⚠️ SPIKE — Validate `grava-merge` Git Driver Invocation
+### Story 10.1: ⚠️ SPIKE — Validate `grava-merge` Git Driver Invocation *(grava-3440)*
 
 As a developer,
 I want to validate that a custom Git merge driver can access Dolt SQL state during invocation,
@@ -102,7 +103,7 @@ So that we have proof-of-concept evidence before committing the remaining merge 
 
 ---
 
-### Story 10.2: Register `grava-merge` Driver and Parse 3-Way Input
+### Story 10.2: Register `grava-merge` Driver and Parse 3-Way Input *(grava-6ad9)*
 
 As a developer,
 I want `grava init` to register the `grava-merge` driver via `.gitattributes`,
@@ -120,7 +121,7 @@ So that Git automatically invokes the driver on `issues.jsonl` conflicts without
 
 ---
 
-### Story 10.3: LWW Resolution and Conflict Isolation
+### Story 10.3: LWW Resolution and Conflict Isolation *(grava-08f9)*
 
 As an agent,
 I want the merge driver to automatically resolve field-level conflicts using last-write-wins,
@@ -138,7 +139,7 @@ So that the majority of concurrent edits are merged without human intervention.
 
 ---
 
-### Story 10.4: View and Resolve Conflicts
+### Story 10.4: View and Resolve Conflicts *(grava-785b)*
 
 As a developer,
 I want to view and dismiss unresolvable merge conflicts,

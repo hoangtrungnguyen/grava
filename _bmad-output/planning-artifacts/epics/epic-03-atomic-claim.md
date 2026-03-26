@@ -1,6 +1,7 @@
 # Epic 3: Atomic Work Claiming & Ephemeral State
 
 **Status:** Planned
+**Grava ID:** grava-a0df
 **Matrix Score:** 4.60 *(highest score — highest confidence)*
 **FRs covered:** FR5, FR18, FR19
 
@@ -45,7 +46,7 @@ Agents can atomically claim an issue (guaranteeing exactly one claimant under co
 
 ## Stories
 
-### Story 3.1: Atomic Issue Claim
+### Story 3.1: Atomic Issue Claim *(grava-e4b2)*
 
 As an agent,
 I want to atomically claim an unassigned issue under concurrent conditions,
@@ -63,7 +64,7 @@ So that exactly one agent owns the issue and no two agents work on the same task
 
 ---
 
-### Story 3.2: Write and Read Wisp Ephemeral State
+### Story 3.2: Write and Read Wisp Ephemeral State *(grava-4474)*
 
 As an agent,
 I want to write and read key-value pairs to an issue's Wisp (ephemeral state store),
@@ -82,7 +83,7 @@ So that my working artifacts and execution checkpoints survive a crash and can b
 
 ---
 
-### Story 3.3: Retrieve Issue Progression History
+### Story 3.3: Retrieve Issue Progression History *(grava-09ee)*
 
 As a developer or agent,
 I want to retrieve the full ordered progression log of an issue,

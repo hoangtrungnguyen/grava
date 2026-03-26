@@ -1,6 +1,7 @@
 # Epic 2: Issue Lifecycle — Create, Track & Manage
 
 **Status:** Planned
+**Grava ID:** grava-8f07
 **Matrix Score:** 4.40
 **FRs covered:** FR1, FR2, FR3, FR4, FR6, FR7
 
@@ -49,7 +50,7 @@ Agents and developers can create issues and macro-epics, break them into subtask
 
 ## Stories
 
-### Story 2.1: Create Issues and Macro-Epics
+### Story 2.1: Create Issues and Macro-Epics *(grava-2735)*
 
 As a developer or agent,
 I want to create a new issue or macro-epic with a title, description, and priority,
@@ -67,7 +68,7 @@ So that work items are tracked in the Grava database from the moment they are id
 
 ---
 
-### Story 2.2: Break Issues into Subtasks
+### Story 2.2: Break Issues into Subtasks *(grava-baa2)*
 
 As a developer or agent,
 I want to decompose an existing issue into numbered subtasks,
@@ -84,7 +85,7 @@ So that large issues can be tracked at a granular level with parent-child relati
 
 ---
 
-### Story 2.3: Update Issue Fields and Assign Actors
+### Story 2.3: Update Issue Fields and Assign Actors *(grava-166b)*
 
 As a developer or agent,
 I want to update an issue's status, priority, and assignee,
@@ -103,7 +104,7 @@ So that the current state of work is always accurately reflected in the tracker.
 
 ---
 
-### Story 2.4: Track Work Start and Stop
+### Story 2.4: Track Work Start and Stop *(grava-1073)*
 
 As a developer or agent,
 I want to explicitly record when I start and stop working on an issue,
@@ -121,7 +122,7 @@ So that cycle time and work-in-progress can be measured accurately.
 
 ---
 
-### Story 2.5: Label and Comment on Issues
+### Story 2.5: Label and Comment on Issues *(grava-73e8)*
 
 As a developer or agent,
 I want to add labels and text comments to issues,
@@ -138,7 +139,7 @@ So that contextual metadata and discussion are captured alongside the work item.
 
 ---
 
-### Story 2.6: Archive and Purge Issues
+### Story 2.6: Archive and Purge Issues *(grava-ec8e)*
 
 As a developer or agent,
 I want to safely remove or archive issues from the active tracking space,

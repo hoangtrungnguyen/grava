@@ -1,6 +1,7 @@
 # Epic 8: File Reservation & Concurrent Edit Safety
 
 **Status:** Planned
+**Grava ID:** grava-3abb
 **Matrix Score:** 4.05 *(raised from 3.45 after FR-ECS-1a–d split)*
 **FRs covered:** FR-ECS-1a, FR-ECS-1b, FR-ECS-1c, FR-ECS-1d
 
@@ -72,7 +73,7 @@ CREATE TABLE file_reservations (
 
 ## Stories
 
-### Story 8.1: Declare and Release File Leases (FR-ECS-1a)
+### Story 8.1: Declare and Release File Leases (FR-ECS-1a) *(grava-370c)*
 
 As an agent,
 I want to declare an advisory lease on file paths before modifying them,
@@ -90,7 +91,7 @@ So that other agents know which files I intend to modify and can avoid concurren
 
 ---
 
-### Story 8.2: Pre-Commit Hook Enforcement (FR-ECS-1b)
+### Story 8.2: Pre-Commit Hook Enforcement (FR-ECS-1b) *(grava-41e3)*
 
 As an agent,
 I want the pre-commit Git hook to block commits to paths held by another agent's exclusive lease,

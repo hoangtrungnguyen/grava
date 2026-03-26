@@ -1,6 +1,7 @@
 # Epic 6: Developer Onboarding — Zero-Friction Setup
 
 **Status:** Planned
+**Grava ID:** grava-157a
 **Matrix Score:** 3.85
 **FRs covered:** FR26, FR27, FR28
 
@@ -54,7 +55,7 @@ Non-technical users and developers can set up a fully operational Grava environm
 
 ## Stories
 
-### Story 6.1: Automated Install Script for macOS and Linux
+### Story 6.1: Automated Install Script for macOS and Linux *(grava-2d42)*
 
 As a developer or non-technical user on macOS or Linux,
 I want a single shell command to install Grava and my chosen AI CLI backend,
@@ -72,7 +73,7 @@ So that I can be fully operational without manual dependency management.
 
 ---
 
-### Story 6.2: PowerShell Install Script for Windows
+### Story 6.2: PowerShell Install Script for Windows *(grava-084c)*
 
 As a developer on Windows x86-64,
 I want a PowerShell script to install Grava and my chosen AI CLI backend,
@@ -90,7 +91,7 @@ So that I have the same zero-friction setup experience as macOS/Linux users.
 
 ---
 
-### Story 6.3: Install Validation via grava doctor
+### Story 6.3: Install Validation via grava doctor *(grava-4d02)*
 
 As a developer,
 I want the install script to automatically validate my environment when it completes,

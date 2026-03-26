@@ -1,6 +1,7 @@
 # Epic 9: Worktree Orchestration — Multi-Agent Isolation
 
 **Status:** Planned
+**Grava ID:** grava-add5
 **Matrix Score:** 4.05
 **FRs covered:** FR23 (worktree init extension), FR5 (claim + worktree creation extended), FR4 (close/stop teardown extended)
 
@@ -71,7 +72,7 @@ Developers can initialize Grava in worktree mode (`--enable-worktrees`), giving 
 
 ## Stories
 
-### Story 9.1: Initialize Grava in Worktree Mode
+### Story 9.1: Initialize Grava in Worktree Mode *(grava-355a)*
 
 As a developer,
 I want to initialize Grava with worktree mode enabled,
@@ -89,7 +90,7 @@ So that the coordinator starts managing the Dolt server lifecycle and each agent
 
 ---
 
-### Story 9.2: Claim an Issue with Worktree Creation
+### Story 9.2: Claim an Issue with Worktree Creation *(grava-02b0)*
 
 As an agent,
 I want `grava claim` to automatically create a dedicated Git worktree and branch for the claimed issue,
@@ -108,7 +109,7 @@ So that my work is isolated from other agents and I have a clean directory to wo
 
 ---
 
-### Story 9.3: Complete Work — Atomic Teardown with `grava close`
+### Story 9.3: Complete Work — Atomic Teardown with `grava close` *(grava-e2b4)*
 
 As an agent,
 I want to atomically tear down my worktree when I complete an issue,
@@ -125,7 +126,7 @@ So that the branch and directory are cleaned up without leaving orphaned state.
 
 ---
 
-### Story 9.4: Pause Work — Atomic Teardown with `grava stop`
+### Story 9.4: Pause Work — Atomic Teardown with `grava stop` *(grava-7825)*
 
 As an agent,
 I want to pause and abandon my worktree without losing the issue state for the next agent,

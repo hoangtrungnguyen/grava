@@ -1,6 +1,7 @@
 # Epic 1: Foundation & Scaffold
 
 **Status:** Planned
+**Grava ID:** grava-05c6
 **Matrix Score:** 3.80
 **FRs covered:** FR23 (partial — basic init/config scaffold), FR17 (partial — schema version check)
 
@@ -60,7 +61,7 @@ None — this is the root epic.
 
 ## Stories
 
-### Story 1.1: Core Error Types, Logging & Transaction Infrastructure (Story 0a)
+### Story 1.1: Core Error Types, Logging & Transaction Infrastructure (Story 0a) *(grava-480f)*
 
 As a Grava developer,
 I want structured error types, zerolog, and audited transaction wrappers in place,
@@ -79,7 +80,7 @@ So that all subsequent feature work has a consistent foundation for error report
 
 ---
 
-### Story 1.2: Concurrency Primitives & Coordinator Error Channel (Story 0b)
+### Story 1.2: Concurrency Primitives & Coordinator Error Channel (Story 0b) *(grava-364d)*
 
 As a Grava developer,
 I want deadlock-retry logic, a safe coordinator error channel, and a Notifier interface,
@@ -97,7 +98,7 @@ So that concurrent writes never deadlock and goroutines never call `os.Exit` dir
 
 ---
 
-### Story 1.3: Worktree Resolver, Named Functions & Test Harness (Story 0c)
+### Story 1.3: Worktree Resolver, Named Functions & Test Harness (Story 0c) *(grava-094a)*
 
 As a Grava developer,
 I want a testable named-function architecture with a worktree resolver and testutil package,
