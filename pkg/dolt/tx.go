@@ -44,5 +44,8 @@ func WithAuditedTx(ctx context.Context, store Store, events []AuditEvent, fn fun
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return gravaerrors.New("DB_COMMIT_FAILED", "failed to commit transaction", err)
+	}
+	return nil
 }

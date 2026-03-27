@@ -9,7 +9,6 @@
 package log
 
 import (
-	"io"
 	"os"
 
 	"github.com/rs/zerolog"
@@ -21,20 +20,17 @@ var Logger zerolog.Logger
 // Init configures the global Logger.
 //
 // level is parsed from GRAVA_LOG_LEVEL; falls back to warn on parse error.
-// jsonMode switches from pretty console output to plain-text JSON-friendly output.
+// jsonMode switches from human-readable console output to machine-parseable JSON log lines.
 func Init(level string, jsonMode bool) {
 	lvl, err := zerolog.ParseLevel(level)
 	if err != nil {
 		lvl = zerolog.WarnLevel
 	}
 
-	var writer io.Writer
 	if jsonMode {
-		// No colour/formatting when in JSON output mode — cleaner for piped consumers
-		writer = zerolog.ConsoleWriter{Out: os.Stderr, NoColor: true}
+		// Raw JSON writer: each log line is a valid JSON object, safe for piped consumers.
+		Logger = zerolog.New(os.Stderr).Level(lvl).With().Timestamp().Logger()
 	} else {
-		writer = zerolog.ConsoleWriter{Out: os.Stderr}
+		Logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(lvl).With().Timestamp().Logger()
 	}
-
-	Logger = zerolog.New(writer).Level(lvl).With().Timestamp().Logger()
 }

@@ -40,7 +40,7 @@ var showCmd = &cobra.Command{
 		id := args[0]
 
 		if showTree {
-			return showTreeVisualization(id)
+			return showTreeVisualization(cmd, id)
 		}
 
 		query := `SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files 
@@ -126,7 +126,7 @@ var showCmd = &cobra.Command{
 }
 
 
-func showTreeVisualization(rootID string) error {
+func showTreeVisualization(cmd *cobra.Command, rootID string) error {
 	dag, err := graph.LoadGraphFromDB(Store)
 	if err != nil {
 		return fmt.Errorf("failed to load graph: %w", err)
@@ -136,9 +136,9 @@ func showTreeVisualization(rootID string) error {
 		return fmt.Errorf("issue %s not found in graph", rootID)
 	}
 
-	fmt.Printf("Hierarchical Tree for %s:\n\n", rootID)
+	cmd.Printf("Hierarchical Tree for %s:\n\n", rootID)
 	renderTreeNode(dag, rootID, "", true, true)
-	fmt.Println()
+	cmd.Println()
 	return nil
 }
 

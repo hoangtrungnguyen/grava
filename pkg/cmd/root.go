@@ -13,6 +13,7 @@ import (
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/maintenance"
 	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
+	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	gravelog "github.com/hoangtrungnguyen/grava/pkg/log"
 	"github.com/hoangtrungnguyen/grava/pkg/notify"
 	"github.com/hoangtrungnguyen/grava/pkg/utils"
@@ -73,8 +74,7 @@ leveraging the power of a version-controlled database.`,
 		// Step 3: Resolve .grava/ directory (simple resolution; full ADR-004 chain in Story 1.3)
 		gravaDir, err := utils.ResolveGravaDir()
 		if err != nil {
-			gravelog.Logger.Debug().Err(err).Msg("could not resolve .grava/ directory; skipping schema check")
-			// Non-fatal: allow commands to run even if not initialised (they will fail on DB connect)
+			return gravaerrors.New("NOT_INITIALIZED", "grava is not initialized in this directory; run 'grava init' first", err)
 		}
 
 		// Step 4: Check schema version — replaces migrate.Run() in PersistentPreRunE (ADR-FM6)
@@ -103,7 +103,7 @@ leveraging the power of a version-controlled database.`,
 		// Step 6: Connect to Dolt
 		Store, err = dolt.NewClient(dbURL)
 		if err != nil {
-			return fmt.Errorf("failed to connect to database: %w", err)
+			return gravaerrors.New("DB_UNREACHABLE", "failed to connect to database", err)
 		}
 
 		return nil

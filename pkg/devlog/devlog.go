@@ -14,6 +14,8 @@ var (
 
 // Init initializes the development logger if enabled.
 // If not enabled, the underlying logger remains nil (no-op).
+//
+// Deprecated: use pkg/log (zerolog) instead.
 func Init(enabled bool, logFilePath string) error {
 	if !enabled {
 		return nil
@@ -44,6 +46,8 @@ func Init(enabled bool, logFilePath string) error {
 }
 
 // Close closes the underlying log file, if any.
+//
+// Deprecated: use pkg/log (zerolog) instead.
 func Close() error {
 	if file != nil {
 		err := file.Close()
@@ -55,6 +59,8 @@ func Close() error {
 }
 
 // Printf logs a formatted message if the logger is enabled.
+//
+// Deprecated: use pkg/log (zerolog) instead.
 func Printf(format string, v ...interface{}) {
 	if logger != nil {
 		// Call Output with calldepth 2 so it shows the caller of Printf
@@ -63,6 +69,8 @@ func Printf(format string, v ...interface{}) {
 }
 
 // Println logs a message with a newline if the logger is enabled.
+//
+// Deprecated: use pkg/log (zerolog) instead.
 func Println(v ...interface{}) {
 	if logger != nil {
 		// Call Output with calldepth 2 so it shows the caller of Println

@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/hoangtrungnguyen/grava/pkg/idgen"
 	"github.com/hoangtrungnguyen/grava/pkg/validation"
 	"github.com/spf13/cobra"
@@ -67,65 +69,60 @@ You can specify title, description, type, and priority.`,
 		}
 
 		ctx := context.Background()
-		tx, err := Store.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("failed to start transaction: %w", err)
+
+		// 4. Pre-build audit events (all values are known before the transaction)
+		auditEvents := []dolt.AuditEvent{
+			{
+				IssueID:   id,
+				EventType: dolt.EventCreate,
+				Actor:     actor,
+				Model:     agentModel,
+				OldValue:  nil,
+				NewValue: map[string]interface{}{
+					"title":    title,
+					"type":     issueType,
+					"priority": pInt,
+					"status":   "open",
+				},
+			},
 		}
-		defer tx.Rollback() //nolint:errcheck
-
-		query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-
-		_, err = tx.ExecContext(ctx, query, id, title, desc, issueType, pInt, "open", ephemeralVal, time.Now(), time.Now(), actor, actor, agentModel, affectedFilesJSON)
-		if err != nil {
-			return fmt.Errorf("failed to insert issue: %w", err)
-		}
-
-		// 4. Add subtask-of dependency if parent is specified
 		if parentID != "" {
-			// Check if parent exists
-			var exists int
-			err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM issues WHERE id = ?", parentID).Scan(&exists)
-			if err != nil {
-				return fmt.Errorf("failed to check parent existence: %w", err)
-			}
-			if exists == 0 {
-				return fmt.Errorf("parent issue %s not found", parentID)
-			}
-
-			// Epic 2.4 specifies 'subtask-of' for hierarchical breakdown
-			depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
-			// Direction: child --subtask-of--> parent
-			_, err = tx.ExecContext(ctx, depQuery, id, parentID, "subtask-of", actor, actor, agentModel)
-			if err != nil {
-				return fmt.Errorf("failed to create subtask-of dependency: %w", err)
-			}
-		}
-
-		// Audit Log
-		err = Store.LogEventTx(ctx, tx, id, "create", actor, agentModel, nil, map[string]interface{}{
-			"title":    title,
-			"type":     issueType,
-			"priority": pInt,
-			"status":   "open",
-		})
-		if err != nil {
-			return fmt.Errorf("failed to log event: %w", err)
-		}
-
-		if parentID != "" {
-			// Audit Log for the edge (on the child node)
-			err = Store.LogEventTx(ctx, tx, id, "dependency_add", actor, agentModel, nil, map[string]interface{}{
-				"to_id": parentID,
-				"type":  "subtask-of",
+			auditEvents = append(auditEvents, dolt.AuditEvent{
+				IssueID:   id,
+				EventType: dolt.EventDependencyAdd,
+				Actor:     actor,
+				Model:     agentModel,
+				OldValue:  nil,
+				NewValue:  map[string]interface{}{"to_id": parentID, "type": "subtask-of"},
 			})
-			if err != nil {
-				return fmt.Errorf("failed to log dependency event: %w", err)
-			}
 		}
 
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("failed to commit transaction: %w", err)
+		if err := dolt.WithAuditedTx(ctx, Store, auditEvents, func(tx *sql.Tx) error {
+			query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			if _, err := tx.ExecContext(ctx, query, id, title, desc, issueType, pInt, "open", ephemeralVal, time.Now(), time.Now(), actor, actor, agentModel, affectedFilesJSON); err != nil {
+				return fmt.Errorf("failed to insert issue: %w", err)
+			}
+
+			// Add subtask-of dependency if parent is specified
+			if parentID != "" {
+				var exists int
+				if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM issues WHERE id = ?", parentID).Scan(&exists); err != nil {
+					return fmt.Errorf("failed to check parent existence: %w", err)
+				}
+				if exists == 0 {
+					return fmt.Errorf("parent issue %s not found", parentID)
+				}
+
+				// Epic 2.4 specifies 'subtask-of' for hierarchical breakdown; direction: child --subtask-of--> parent
+				depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
+				if _, err := tx.ExecContext(ctx, depQuery, id, parentID, "subtask-of", actor, actor, agentModel); err != nil {
+					return fmt.Errorf("failed to create subtask-of dependency: %w", err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 
 		if outputJSON {

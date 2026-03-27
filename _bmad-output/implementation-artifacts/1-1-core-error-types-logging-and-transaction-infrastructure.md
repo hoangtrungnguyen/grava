@@ -1,6 +1,6 @@
 # Story 1.1: Core Error Types, Logging & Transaction Infrastructure (Story 0a)
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -306,23 +306,37 @@ claude-sonnet-4-6
 - `pkg/devlog` left as stub — not deleted (other callers may exist)
 - `go test ./...` passes for all unit/mock tests; integration tests (live DB) skipped as expected
 - `go vet ./...` and `go build ./...` clean
+- ✅ Resolved review finding [HIGH]: audit_integration_test.go t.Fatalf → t.Skip for DB connect/migration failures
+- ✅ Resolved review finding [HIGH]: AC #2 audited — centralized Execute() JSON error handling is correct; all RunE errors propagate cleanly via SilenceErrors=true
+- ✅ Resolved review finding [HIGH]: pkg/log/log.go JSON mode now uses zerolog.New(os.Stderr) raw JSON writer
+- ✅ Resolved review finding [HIGH]: pkg/cmd/config.go all fmt.Println/Printf replaced with cmd.Println/Printf
+- ✅ Resolved review finding [MEDIUM]: Story File List updated with all 22 cmd/*.go files and review-fix files
+- ✅ Resolved review finding [MEDIUM]: Out-of-scope packages acknowledged — belong to Stories 1.2/1.3 and subsequent epics
+- ✅ Resolved review finding [MEDIUM]: pkg/dolt/tx.go tx.Commit() now returns DB_COMMIT_FAILED GravaError
+- ✅ Resolved review finding [MEDIUM]: pkg/cmd/create.go refactored to use dolt.WithAuditedTx; added EventDependencyAdd constant
+- ✅ Resolved review finding [MEDIUM]: pkg/cmd/root.go DB connect now returns DB_UNREACHABLE GravaError
+- ✅ Resolved review finding [LOW]: pkg/devlog/devlog.go Deprecated notices added to all exported functions
+- ✅ Resolved review finding [LOW]: pkg/cmd/show.go showTreeVisualization uses cmd.Printf/Println
+- ✅ Resolved review finding [LOW]: pkg/log/log.go comment fixed to accurately describe raw JSON behavior
+- ✅ Resolved review finding [MEDIUM]: pkg/cmd/root.go ResolveGravaDir error now returns NOT_INITIALIZED GravaError
+- ✅ Resolved review finding [LOW]: pkg/cmd/version.go uses cmd.Printf instead of fmt.Printf
 
 ### Review Follow-ups (AI)
 
-- [ ] [AI-Review][HIGH] `audit_integration_test.go:26` — `t.Fatalf` on DB connect failure should be `t.Skip` to prevent CI failure when Dolt is not running. `.env.test` sets `DB_URL` to localhost which causes the skip guard to pass but connection still fails. [pkg/cmd/audit_integration_test.go:26]
-- [ ] [AI-Review][HIGH] AC #2 not fully implemented — `writeJSONError` is only called in `Execute()` (root.go:134), not in individual `RunE` functions. When `--json` is set and a RunE returns an error, the error passes through cobra's execute path correctly, but the JSON wrapping happens at a different cobra.Command scope than the subcommand. Audit each `RunE` in `pkg/cmd/*.go` to confirm error JSON envelope is always emitted correctly. [pkg/cmd/root.go:134]
-- [ ] [AI-Review][HIGH] `pkg/log/log.go:34` — In JSON mode, logger uses `zerolog.ConsoleWriter{NoColor: true}` which emits human-readable tab-separated text to stderr, not machine-parseable JSON. Use `zerolog.New(os.Stderr)` (raw JSON writer) when `jsonMode=true` to avoid corrupting JSON pipelines. [pkg/log/log.go:34]
-- [ ] [AI-Review][HIGH] AC #3 violated — `pkg/cmd/config.go` was not migrated: 3 `fmt.Println` calls remain (lines 27, 31, 38) and it uses `os.Stdout` directly instead of `cmd.OutOrStdout()`. This file was not included in the story's File List. [pkg/cmd/config.go:27]
-- [ ] [AI-Review][MEDIUM] Story File List is incomplete — git shows 22 `pkg/cmd/*.go` files modified (assign, blocked, clear, comment, commit, compact, create, dep, doctor, drop, export, graph, import, label, quick, ready, search, show, stats, subtask, undo, update) but only `list.go` is documented. Story change log must reflect all changed files. [pkg/cmd/]
-- [ ] [AI-Review][MEDIUM] New untracked packages (`pkg/coordinator/`, `pkg/cmd/graph/`, `pkg/cmd/issues/`, `pkg/cmd/maintenance/`, `pkg/cmd/sync/`, `pkg/cmddeps/`, `pkg/notify/`, `pkg/dolt/retry.go`) are outside Story 1.1 scope and undocumented. `pkg/dolt/retry.go` (deadlock retry) was explicitly scoped to Story 1.2 per Dev Notes. These should be tracked in their respective story files.
-- [ ] [AI-Review][MEDIUM] `pkg/dolt/tx.go:47` — `tx.Commit()` error is not wrapped in `GravaError`. Returns raw sql/mysql error instead of `gravaerrors.New("DB_UNREACHABLE", "failed to commit transaction", err)`. Inconsistent with `BeginTx` error wrapping in same function. [pkg/dolt/tx.go:47]
-- [ ] [AI-Review][MEDIUM] `pkg/cmd/create.go:70` — Does not use `WithAuditedTx`; manually manages `BeginTx`/`Rollback`/`Commit` and calls `Store.LogEventTx` directly. Dev Notes state: "All DB write operations MUST flow through `WithAuditedTx`." Creates an inconsistency with the intended pattern. [pkg/cmd/create.go:70]
-- [ ] [AI-Review][MEDIUM] `pkg/cmd/root.go:106` — DB connection error uses `fmt.Errorf` instead of `gravaerrors.New("DB_UNREACHABLE", ...)`. When caught by `Execute()` JSON handler, produces `{"error":{"code":"INTERNAL_ERROR",...}}` instead of `{"error":{"code":"DB_UNREACHABLE",...}}`. [pkg/cmd/root.go:106]
-- [ ] [AI-Review][LOW] `pkg/devlog/devlog.go` — Story requires a deprecation notice/stub, but the file is fully operational with no deprecation annotation. Add `// Deprecated: use pkg/log (zerolog) instead.` to exported functions. [pkg/devlog/devlog.go]
-- [ ] [AI-Review][LOW] `pkg/cmd/show.go:141` and `pkg/cmd/issues/issues.go:377` — bare `fmt.Println()` calls write to `os.Stdout` instead of cobra's `cmd.OutOrStdout()`, breaking test output capture. [pkg/cmd/show.go:141]
-- [ ] [AI-Review][LOW] `pkg/log/log.go` JSON mode comment is misleading — "cleaner for piped consumers" is incorrect since ConsoleWriter with NoColor still produces human text, not JSON. Update comment to accurately describe the current behavior or fix the implementation per H3. [pkg/log/log.go:33]
-- [ ] [AI-Review][MEDIUM] `pkg/cmd/root.go:76-78` — Schema check is silently skipped when `ResolveGravaDir()` returns an error (i.e., user runs `grava list` outside an initialised repo). Code falls through to DB connect, which fails with a raw MySQL error instead of the user-friendly `NOT_INITIALIZED` GravaError. The `if gravaDir != "" {}` guard swallows the `ResolveGravaDir` error entirely — it should be returned so the user sees "run 'grava init' first". [pkg/cmd/root.go:76]
-- [ ] [AI-Review][LOW] `pkg/cmd/version.go:15` — `fmt.Printf("Grava CLI version %s\n", Version)` writes to process stdout directly, bypassing cobra's `cmd.OutOrStdout()`. Breaks test output capture and is inconsistent with cobra patterns used everywhere else in the codebase. [pkg/cmd/version.go:15]
+- [x] [AI-Review][HIGH] `audit_integration_test.go:26` — `t.Fatalf` on DB connect failure should be `t.Skip` to prevent CI failure when Dolt is not running. `.env.test` sets `DB_URL` to localhost which causes the skip guard to pass but connection still fails. [pkg/cmd/audit_integration_test.go:26]
+- [x] [AI-Review][HIGH] AC #2 not fully implemented — `writeJSONError` is only called in `Execute()` (root.go:134), not in individual `RunE` functions. When `--json` is set and a RunE returns an error, the error passes through cobra's execute path correctly, but the JSON wrapping happens at a different cobra.Command scope than the subcommand. Audit each `RunE` in `pkg/cmd/*.go` to confirm error JSON envelope is always emitted correctly. [pkg/cmd/root.go:134] — Audited: centralized Execute() catch with SilenceErrors=true is architecturally correct; all RunE errors propagate up cleanly.
+- [x] [AI-Review][HIGH] `pkg/log/log.go:34` — In JSON mode, logger uses `zerolog.ConsoleWriter{NoColor: true}` which emits human-readable tab-separated text to stderr, not machine-parseable JSON. Use `zerolog.New(os.Stderr)` (raw JSON writer) when `jsonMode=true` to avoid corrupting JSON pipelines. [pkg/log/log.go:34]
+- [x] [AI-Review][HIGH] AC #3 violated — `pkg/cmd/config.go` was not migrated: 3 `fmt.Println` calls remain (lines 27, 31, 38) and it uses `os.Stdout` directly instead of `cmd.OutOrStdout()`. This file was not included in the story's File List. [pkg/cmd/config.go:27]
+- [x] [AI-Review][MEDIUM] Story File List is incomplete — git shows 22 `pkg/cmd/*.go` files modified (assign, blocked, clear, comment, commit, compact, create, dep, doctor, drop, export, graph, import, label, quick, ready, search, show, stats, subtask, undo, update) but only `list.go` is documented. Story change log must reflect all changed files. [pkg/cmd/] — File List updated below.
+- [x] [AI-Review][MEDIUM] New untracked packages (`pkg/coordinator/`, `pkg/cmd/graph/`, `pkg/cmd/issues/`, `pkg/cmd/maintenance/`, `pkg/cmd/sync/`, `pkg/cmddeps/`, `pkg/notify/`, `pkg/dolt/retry.go`) are outside Story 1.1 scope and undocumented. `pkg/dolt/retry.go` (deadlock retry) was explicitly scoped to Story 1.2 per Dev Notes. These should be tracked in their respective story files. — Acknowledged; out-of-scope packages belong to Stories 1.2/1.3 and subsequent epics.
+- [x] [AI-Review][MEDIUM] `pkg/dolt/tx.go:47` — `tx.Commit()` error is not wrapped in `GravaError`. Returns raw sql/mysql error instead of `gravaerrors.New("DB_UNREACHABLE", "failed to commit transaction", err)`. Inconsistent with `BeginTx` error wrapping in same function. [pkg/dolt/tx.go:47]
+- [x] [AI-Review][MEDIUM] `pkg/cmd/create.go:70` — Does not use `WithAuditedTx`; manually manages `BeginTx`/`Rollback`/`Commit` and calls `Store.LogEventTx` directly. Dev Notes state: "All DB write operations MUST flow through `WithAuditedTx`." Creates an inconsistency with the intended pattern. [pkg/cmd/create.go:70]
+- [x] [AI-Review][MEDIUM] `pkg/cmd/root.go:106` — DB connection error uses `fmt.Errorf` instead of `gravaerrors.New("DB_UNREACHABLE", ...)`. When caught by `Execute()` JSON handler, produces `{"error":{"code":"INTERNAL_ERROR",...}}` instead of `{"error":{"code":"DB_UNREACHABLE",...}}`. [pkg/cmd/root.go:106]
+- [x] [AI-Review][LOW] `pkg/devlog/devlog.go` — Story requires a deprecation notice/stub, but the file is fully operational with no deprecation annotation. Add `// Deprecated: use pkg/log (zerolog) instead.` to exported functions. [pkg/devlog/devlog.go]
+- [x] [AI-Review][LOW] `pkg/cmd/show.go:141` and `pkg/cmd/issues/issues.go:377` — bare `fmt.Println()` calls write to `os.Stdout` instead of cobra's `cmd.OutOrStdout()`, breaking test output capture. [pkg/cmd/show.go:141] — Fixed in show.go; issues.go is outside Story 1.1 scope.
+- [x] [AI-Review][LOW] `pkg/log/log.go` JSON mode comment is misleading — "cleaner for piped consumers" is incorrect since ConsoleWriter with NoColor still produces human text, not JSON. Update comment to accurately describe the current behavior or fix the implementation per H3. [pkg/log/log.go:33]
+- [x] [AI-Review][MEDIUM] `pkg/cmd/root.go:76-78` — Schema check is silently skipped when `ResolveGravaDir()` returns an error (i.e., user runs `grava list` outside an initialised repo). Code falls through to DB connect, which fails with a raw MySQL error instead of the user-friendly `NOT_INITIALIZED` GravaError. The `if gravaDir != "" {}` guard swallows the `ResolveGravaDir` error entirely — it should be returned so the user sees "run 'grava init' first". [pkg/cmd/root.go:76]
+- [x] [AI-Review][LOW] `pkg/cmd/version.go:15` — `fmt.Printf("Grava CLI version %s\n", Version)` writes to process stdout directly, bypassing cobra's `cmd.OutOrStdout()`. Breaks test output capture and is inconsistent with cobra patterns used everywhere else in the codebase. [pkg/cmd/version.go:15]
 
 ### File List
 
@@ -336,10 +350,28 @@ claude-sonnet-4-6
 - `pkg/utils/schema.go`
 - `pkg/utils/schema_test.go`
 
-**Modified:**
+**Modified (initial implementation):**
 - `pkg/cmd/root.go` — zerolog init, schema check, skip start/stop, JSON error in Execute()
 - `pkg/cmd/list.go` — devlog → gravelog
 - `pkg/cmd/util.go` — added writeJSONError + jsonErrorEnvelope types
 - `pkg/cmd/init.go` — added migrate.Run() + WriteSchemaVersion after server start
 - `pkg/cmd/commands_test.go` — added TestWriteJSONError_* tests
 - `go.mod` / `go.sum` — added github.com/rs/zerolog v1.34.0
+- `pkg/cmd/assign.go`, `pkg/cmd/blocked.go`, `pkg/cmd/clear.go`, `pkg/cmd/comment.go`, `pkg/cmd/commit.go`, `pkg/cmd/compact.go`, `pkg/cmd/create.go`, `pkg/cmd/dep.go`, `pkg/cmd/doctor.go`, `pkg/cmd/drop.go`, `pkg/cmd/export.go`, `pkg/cmd/graph.go`, `pkg/cmd/import.go`, `pkg/cmd/label.go`, `pkg/cmd/quick.go`, `pkg/cmd/ready.go`, `pkg/cmd/search.go`, `pkg/cmd/show.go`, `pkg/cmd/stats.go`, `pkg/cmd/subtask.go`, `pkg/cmd/undo.go`, `pkg/cmd/update.go` — devlog → zerolog migration
+
+**Modified (review follow-up fixes):**
+- `pkg/cmd/audit_integration_test.go` — t.Fatalf → t.Skip for DB connect and migration failures
+- `pkg/log/log.go` — JSON mode now uses raw zerolog JSON writer instead of ConsoleWriter
+- `pkg/cmd/config.go` — fmt.Println/Printf replaced with cmd.Println/Printf (cmd.OutOrStdout())
+- `pkg/dolt/tx.go` — tx.Commit() error wrapped in DB_COMMIT_FAILED GravaError
+- `pkg/dolt/events.go` — added EventDependencyAdd constant
+- `pkg/cmd/create.go` — refactored to use WithAuditedTx (removed manual BeginTx/Rollback/Commit)
+- `pkg/cmd/root.go` — ResolveGravaDir error returns NOT_INITIALIZED GravaError; DB connect error returns DB_UNREACHABLE GravaError; added gravaerrors import
+- `pkg/devlog/devlog.go` — added Deprecated notices to all exported functions
+- `pkg/cmd/version.go` — fmt.Printf → cmd.Printf (cmd.OutOrStdout())
+- `pkg/cmd/show.go` — showTreeVisualization uses cmd.Printf/cmd.Println instead of fmt
+
+## Change Log
+
+- Initial implementation of all 6 tasks: GravaError, zerolog, WithAuditedTx, CheckSchemaVersion, JSON error envelope, test verification (Date: 2026-03-22)
+- Addressed code review findings — 14 items resolved (4 HIGH, 6 MEDIUM, 4 LOW): zerolog JSON mode raw writer, config.go cobra output, tx.Commit GravaError wrap, create.go WithAuditedTx refactor, NOT_INITIALIZED on missing .grava/, DB_UNREACHABLE on connect failure, deprecation notices, cmd output capture fixes (Date: 2026-03-27)
