@@ -44,7 +44,7 @@ development_status:
   epic-1: in-progress
   1-1-core-error-types-logging-and-transaction-infrastructure: review
   1-2-concurrency-primitives-and-coordinator-error-channel: review
-  1-3-worktree-resolver-named-functions-and-test-harness: review
+  1-3-worktree-resolver-named-functions-and-test-harness: done
   epic-1-retrospective: optional
 
   # ─── Epic 2: Issue Lifecycle — Create, Track & Manage ────────────────────────
