@@ -50,6 +50,9 @@ func (m *MockStore) GetNextChildSequence(parentID string) (int, error) {
 	return 0, nil
 }
 
+// BeginTx returns (nil, nil) when BeginTxFn is not set.
+// Any code that uses the returned *sql.Tx will panic; set BeginTxFn for tests
+// that exercise transaction paths directly (prefer NewTestDB + sqlmock instead).
 func (m *MockStore) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	if m.BeginTxFn != nil {
 		return m.BeginTxFn(ctx, opts)
@@ -79,6 +82,9 @@ func (m *MockStore) QueryRow(query string, args ...any) *sql.Row {
 	return nil
 }
 
+// QueryRowContext returns nil when QueryRowContextFn is not set.
+// Callers will panic on .Scan(); set QueryRowContextFn for tests that need this
+// method, or use NewTestDB + sqlmock for full query simulation.
 func (m *MockStore) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	if m.QueryRowContextFn != nil {
 		return m.QueryRowContextFn(ctx, query, args...)

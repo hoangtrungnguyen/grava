@@ -135,27 +135,30 @@ func TestResolveGravaDir(t *testing.T) {
 	t.Run("no .grava directory found returns NOT_INITIALIZED", func(t *testing.T) {
 		t.Setenv("GRAVA_DIR", "")
 
-		// Use a temp dir with no .grava anywhere. We can't walk all the way
-		// to the filesystem root in a test, so we set CWD to a known temp dir
-		// and trust the walk will fail eventually at root.
-		// The simplest approach: use a temp dir that doesn't have .grava.
 		base := t.TempDir()
+
+		// Skip if any ancestor of the temp dir already has a .grava/ — that would
+		// make it impossible to test the NOT_INITIALIZED case from this path.
+		dir := base
+		for {
+			if _, statErr := os.Stat(filepath.Join(dir, ".grava")); statErr == nil {
+				t.Skip("skipping: .grava/ found in ancestry of temp dir; cannot isolate NOT_INITIALIZED case")
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
 
 		origDir, _ := os.Getwd()
 		t.Cleanup(func() { _ = os.Chdir(origDir) })
 		require.NoError(t, os.Chdir(base))
 
-		// Remove any .grava that might exist up the tree from the temp dir
-		// by overriding with GRAVA_DIR to ensure no match and then testing NOT_INITIALIZED.
-		// Since t.TempDir() typically returns /tmp/TestXXX paths that have no .grava,
-		// we expect NOT_INITIALIZED.
 		_, err := ResolveGravaDir()
-		// This test may pass or fail depending on whether /tmp has a .grava.
-		// We verify the result is either success (found somewhere) or NOT_INITIALIZED.
-		if err != nil {
-			var gravaErr *gravaerrors.GravaError
-			require.True(t, errors.As(err, &gravaErr))
-			assert.Equal(t, "NOT_INITIALIZED", gravaErr.Code)
-		}
+		require.Error(t, err, "expected NOT_INITIALIZED error when no .grava/ exists")
+		var gravaErr *gravaerrors.GravaError
+		require.True(t, errors.As(err, &gravaErr))
+		assert.Equal(t, "NOT_INITIALIZED", gravaErr.Code)
 	})
 }

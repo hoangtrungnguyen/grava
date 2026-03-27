@@ -14,6 +14,7 @@ import (
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
+	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -246,7 +247,7 @@ type ImportResult struct {
 func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite, skipExisting bool) (ImportResult, error) {
 	tx, err := store.BeginTx(ctx, nil)
 	if err != nil {
-		return ImportResult{}, fmt.Errorf("failed to start transaction: %w", err)
+		return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to start transaction", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
@@ -264,14 +265,14 @@ func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite,
 
 		var item ExportItem
 		if err := json.Unmarshal(line, &item); err != nil {
-			return ImportResult{}, fmt.Errorf("failed to parse JSON line: %w", err)
+			return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to parse JSON line", err)
 		}
 
 		switch item.Type {
 		case "issue":
 			var i IssueExportData
 			if err := json.Unmarshal(item.Data, &i); err != nil {
-				return ImportResult{}, fmt.Errorf("failed to parse issue data: %w", err)
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to parse issue data", err)
 			}
 
 			baseQuery := `INTO issues (
@@ -303,7 +304,7 @@ func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite,
 				string(i.AffectedFiles), i.Ephemeral,
 			)
 			if err != nil {
-				return ImportResult{}, fmt.Errorf("failed to insert issue %s: %w", i.ID, err)
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", fmt.Sprintf("failed to insert issue %s", i.ID), err)
 			}
 
 			affected, _ := res.RowsAffected()
@@ -318,7 +319,7 @@ func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite,
 		case "dependency":
 			var dep DependencyExportData
 			if err := json.Unmarshal(item.Data, &dep); err != nil {
-				return ImportResult{}, fmt.Errorf("failed to parse dependency data: %w", err)
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to parse dependency data", err)
 			}
 
 			baseQuery := `INTO dependencies (
@@ -337,21 +338,27 @@ func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite,
 				created_by=VALUES(created_by), updated_by=VALUES(updated_by), agent_model=VALUES(agent_model)`
 			}
 
-			_, err := tx.ExecContext(ctx, query,
+			res, err := tx.ExecContext(ctx, query,
 				dep.FromID, dep.ToID, dep.Type, dep.CreatedBy, dep.UpdatedBy, dep.AgentModel,
 			)
 			if err != nil {
-				return ImportResult{}, fmt.Errorf("failed to insert dependency %s->%s: %w", dep.FromID, dep.ToID, err)
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", fmt.Sprintf("failed to insert dependency %s->%s", dep.FromID, dep.ToID), err)
+			}
+			depAffected, _ := res.RowsAffected()
+			if depAffected == 0 {
+				result.Skipped++
+			} else {
+				result.Imported++
 			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return ImportResult{}, fmt.Errorf("error reading import file: %w", err)
+		return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "error reading import file", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return ImportResult{}, fmt.Errorf("failed to commit transaction: %w", err)
+		return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to commit transaction", err)
 	}
 
 	return result, nil

@@ -78,21 +78,29 @@ func TestImportIssues_SkipExisting(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestImportIssues_MutuallyExclusiveFlagsNotEnforced(t *testing.T) {
-	// importIssues itself does not validate mutual exclusivity — that's the cmd's job.
-	// This test documents the behavior: overwrite takes precedence over skipExisting
-	// since overwrite adds ON DUPLICATE KEY UPDATE, skipExisting sets INSERT IGNORE.
-	// In practice they should never both be true; callers must guard.
-	// We just verify no panic occurs with both set to false (already tested above).
+func TestImportIssues_TwoIssuesImported(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
 
+	now := time.Now().UTC().Truncate(time.Second)
+	agentModel := "model1"
+	makeLine := func(id string) string {
+		return `{"type":"issue","data":{"id":"` + id + `","title":"Issue ` + id + `","description":"desc","issue_type":"task","priority":2,"status":"open","metadata":{},"created_at":"` +
+			now.Format(time.RFC3339) + `","updated_at":"` + now.Format(time.RFC3339) + `","created_by":"actor1","updated_by":"actor1","agent_model":"` + agentModel + `","affected_files":[],"ephemeral":false}}`
+	}
+	input := makeLine("grava-aaa001") + "\n" + makeLine("grava-bbb002")
+
 	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO issues").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO issues").WillReturnResult(sqlmock.NewResult(2, 1))
 	mock.ExpectCommit()
 
 	store := dolt.NewClientFromDB(db)
-	_, err = importIssues(context.Background(), store, strings.NewReader(""), false, false)
+	result, err := importIssues(context.Background(), store, strings.NewReader(input), false, false)
 	require.NoError(t, err)
+	assert.Equal(t, 2, result.Imported)
+	assert.Equal(t, 0, result.Updated)
+	assert.Equal(t, 0, result.Skipped)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

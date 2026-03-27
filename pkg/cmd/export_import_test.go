@@ -98,7 +98,7 @@ func TestImportCmd(t *testing.T) {
 
 	output, err := executeCommand(rootCmd, "import", "--file", tmpFile.Name())
 	assert.NoError(t, err)
-	assert.Contains(t, output, "Imported 1 items")
+	assert.Contains(t, output, "Imported 2 items") // 1 issue + 1 dependency both count
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
