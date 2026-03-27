@@ -59,6 +59,16 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			return fmt.Errorf("failed to create .grava directory: %w", err)
 		}
 
+		// 2a. Add .grava/ to .git/info/exclude (ADR-H5)
+		if migrated, excludeErr := utils.WriteGitExclude(cwd); excludeErr != nil {
+			// Non-fatal: warn but continue
+			if !outputJSON {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Warning: failed to update .git/info/exclude: %v\n", excludeErr)
+			}
+		} else if migrated && !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Migrated .grava/ from .gitignore to .git/info/exclude")
+		}
+
 		// 3. Initialize Dolt Repo in .grava/dolt
 		doltRepoDir := filepath.Join(gravaDir, "dolt")
 		if err := os.MkdirAll(doltRepoDir, 0755); err != nil {

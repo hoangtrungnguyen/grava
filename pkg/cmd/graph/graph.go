@@ -5,6 +5,7 @@
 package cmdgraph
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
+	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	"github.com/hoangtrungnguyen/grava/pkg/graph"
 	"github.com/spf13/cobra"
 )
@@ -408,6 +411,23 @@ func newGraphVisualizeCmd(d *cmddeps.Deps) *cobra.Command {
 	return cmd
 }
 
+// readyQueue loads the dependency graph from the database and computes the set
+// of tasks that are ready to be worked on (not blocked by any open dependency).
+// ctx is accepted for future compatibility — graph.LoadGraphFromDB does not currently use it.
+func readyQueue(ctx context.Context, store dolt.Store, limit int) ([]*graph.ReadyTask, error) {
+	_ = ctx // reserved for future context propagation into LoadGraphFromDB
+	dag, err := graph.LoadGraphFromDB(store)
+	if err != nil {
+		return nil, gravaerrors.New("DB_UNREACHABLE", "failed to load graph", err)
+	}
+	engine := graph.NewReadyEngine(dag, graph.DefaultReadyEngineConfig())
+	tasks, err := engine.ComputeReady(limit)
+	if err != nil {
+		return nil, gravaerrors.New("DB_UNREACHABLE", "failed to compute ready queue", err)
+	}
+	return tasks, nil
+}
+
 func newReadyCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ready",
@@ -415,15 +435,9 @@ func newReadyCmd(d *cmddeps.Deps) *cobra.Command {
 		Long: `Ready computes tasks that are not blocked by any open dependencies or gates.
 Tasks are sorted by their effective priority (highest first) and age.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dag, err := graph.LoadGraphFromDB(*d.Store)
+			tasks, err := readyQueue(cmd.Context(), *d.Store, readyLimit)
 			if err != nil {
-				return fmt.Errorf("failed to load graph: %w", err)
-			}
-
-			engine := graph.NewReadyEngine(dag, graph.DefaultReadyEngineConfig())
-			tasks, err := engine.ComputeReady(readyLimit)
-			if err != nil {
-				return fmt.Errorf("failed to compute ready tasks: %w", err)
+				return err
 			}
 
 			if readyPriority != -1 {

@@ -56,7 +56,9 @@ func WriteSchemaVersion(gravaDir string, version int) error {
 // ResolveGravaDir returns the path to the .grava/ directory for the current workspace.
 // Resolution order: GRAVA_DIR env var → CWD walk.
 // Returns an error if no .grava/ directory is found.
-// Note: Full ADR-004 redirect chain (redirect file support) is implemented in Story 1.3.
+//
+// Deprecated: Use pkg/grava.ResolveGravaDir() for the full ADR-004 redirect chain.
+// Kept for backward compatibility with existing tests.
 func ResolveGravaDir() (string, error) {
 	// 1. Explicit override via env var
 	if dir := os.Getenv("GRAVA_DIR"); dir != "" {

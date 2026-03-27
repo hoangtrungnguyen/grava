@@ -14,6 +14,7 @@ import (
 	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
+	"github.com/hoangtrungnguyen/grava/pkg/grava"
 	gravelog "github.com/hoangtrungnguyen/grava/pkg/log"
 	"github.com/hoangtrungnguyen/grava/pkg/notify"
 	"github.com/hoangtrungnguyen/grava/pkg/utils"
@@ -71,8 +72,8 @@ leveraging the power of a version-controlled database.`,
 			return nil
 		}
 
-		// Step 3: Resolve .grava/ directory (simple resolution; full ADR-004 chain in Story 1.3)
-		gravaDir, err := utils.ResolveGravaDir()
+		// Step 3: Resolve .grava/ directory using full ADR-004 priority chain
+		gravaDir, err := grava.ResolveGravaDir()
 		if err != nil {
 			return gravaerrors.New("NOT_INITIALIZED", "grava is not initialized in this directory; run 'grava init' first", err)
 		}
