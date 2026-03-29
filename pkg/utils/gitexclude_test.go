@@ -125,6 +125,36 @@ func TestWriteGitExclude_NoGitignoreNoMigration(t *testing.T) {
 	assert.False(t, migrated)
 }
 
+func TestWriteGitExclude_CommentContainingGravaNotFalsePositive(t *testing.T) {
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+	infoDir := filepath.Join(gitDir, "info")
+	require.NoError(t, os.MkdirAll(infoDir, 0755))
+
+	// Exclude file has a comment mentioning .grava/ but not an actual entry
+	excludeFile := filepath.Join(infoDir, "exclude")
+	require.NoError(t, os.WriteFile(excludeFile, []byte("# ignore .grava/ stuff\n*.log\n"), 0644))
+
+	migrated, err := WriteGitExclude(dir)
+	require.NoError(t, err)
+	assert.False(t, migrated)
+
+	data, err := os.ReadFile(excludeFile)
+	require.NoError(t, err)
+	content := string(data)
+	// The real .grava/ entry should have been added (comment is not a real entry)
+	assert.Contains(t, content, "# ignore .grava/ stuff") // comment preserved
+	// Count actual .grava/ lines (not in comments)
+	lines := strings.Split(content, "\n")
+	exactCount := 0
+	for _, line := range lines {
+		if strings.TrimSpace(line) == ".grava/" {
+			exactCount++
+		}
+	}
+	assert.Equal(t, 1, exactCount, "expected exactly one .grava/ entry line")
+}
+
 func TestWriteGitExclude_GitignoreWithoutGravaEntry(t *testing.T) {
 	dir := t.TempDir()
 	gitDir := filepath.Join(dir, ".git")

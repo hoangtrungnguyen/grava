@@ -1,6 +1,6 @@
 # Story 1.3: Worktree Resolver, Named Functions & Test Harness (Story 0c)
 
-Status: review (code-review-findings-open)
+Status: done
 
 ## Story
 
@@ -715,27 +715,39 @@ claude-sonnet-4-6
 - `pkg/cmd/graph/graph.go` — added `readyQueue()` named function, updated `newReadyCmd.RunE`
 - `pkg/cmd/init.go` — added `utils.WriteGitExclude(cwd)` call after `.grava/` creation
 - `pkg/utils/schema.go` — added `Deprecated:` comment to `ResolveGravaDir()`
+- `pkg/cmd/ready_test.go` — tests `TestReadyCmd`/`TestBlockedCmd` through `rootCmd` (already existed, not in original File List)
+
+**Modified (review follow-up fixes):**
+- `pkg/utils/gitexclude.go` — replaced `strings.Contains` with line-exact `hasExactLine` check (AI-H2)
+- `pkg/utils/gitexclude_test.go` — added `TestWriteGitExclude_CommentContainingGravaNotFalsePositive` (AI-H2)
+- `pkg/cmd/sync/sync.go` — added `overwrite && skipExisting` mutual-exclusion guard (AI-M1)
+- `pkg/cmd/graph/graph.go` — added `ctx.Err()` pre-flight check in `readyQueue` (AI-M2)
+- `pkg/cmd/issues/claim.go` — added ✅ emoji to claim output (AI-L1)
+
+**Deleted (review follow-up):**
+- `pkg/cmd/ready.go` — dead code, orphan from Story 1.2 reorganization (AI-H1)
 
 
 ## Code Review Action Items
 
 Adversarial code review performed 2026-03-29 (claude-sonnet-4-6). 2 HIGH, 3 MEDIUM, 2 LOW findings. Must resolve HIGH and MEDIUM before marking `done`.
 
-- [ ] [AI-H1] **Delete `pkg/cmd/ready.go`** — declares `readyCmd` (106 lines) with no `func init()`, never registered; dead code since Story 1.2 reorganization moved `ready` to `pkg/cmd/graph/`. `TestReadyCmd` in `pkg/cmd/ready_test.go` already tests the real implementation via `rootCmd`. File must be deleted to prevent future duplicate-registration confusion.
+- [x] [AI-H1] **Delete `pkg/cmd/ready.go`** — declares `readyCmd` (106 lines) with no `func init()`, never registered; dead code since Story 1.2 reorganization moved `ready` to `pkg/cmd/graph/`. `TestReadyCmd` in `pkg/cmd/ready_test.go` already tests the real implementation via `rootCmd`. File must be deleted to prevent future duplicate-registration confusion.
 
-- [ ] [AI-H2] **Fix `WriteGitExclude` idempotency check** (`pkg/utils/gitexclude.go:29`) — `strings.Contains(string(existing), ".grava/")` matches `.grava/` as substring (e.g., `# .grava/` comment in exclude file triggers false-positive, real entry never added). Replace with line-exact check: `strings.TrimSpace(line) == ".grava/"` matching pattern used in `migrateGitignore`. Add test case: exclude file has `# .grava/` comment → entry still added.
+- [x] [AI-H2] **Fix `WriteGitExclude` idempotency check** (`pkg/utils/gitexclude.go:29`) — `strings.Contains(string(existing), ".grava/")` matches `.grava/` as substring (e.g., `# .grava/` comment in exclude file triggers false-positive, real entry never added). Replace with line-exact check: `strings.TrimSpace(line) == ".grava/"` matching pattern used in `migrateGitignore`. Add test case: exclude file has `# .grava/` comment → entry still added.
 
-- [ ] [AI-M1] **Add mutual-exclusion guard inside `importIssues`** (`pkg/cmd/sync/sync.go:247`) — `overwrite=true, skipExisting=true` together produce silent wrong behavior (MySQL INSERT IGNORE suppresses ON DUPLICATE KEY UPDATE). Validate at function entry: `if overwrite && skipExisting { return ImportResult{}, gravaerrors.New("INVALID_ARGS", ...) }`. Epic 7 hook pipeline will call this directly, bypassing `newImportCmd` validation.
+- [x] [AI-M1] **Add mutual-exclusion guard inside `importIssues`** (`pkg/cmd/sync/sync.go:247`) — `overwrite=true, skipExisting=true` together produce silent wrong behavior (MySQL INSERT IGNORE suppresses ON DUPLICATE KEY UPDATE). Validate at function entry: `if overwrite && skipExisting { return ImportResult{}, gravaerrors.New("INVALID_ARGS", ...) }`. Epic 7 hook pipeline will call this directly, bypassing `newImportCmd` validation.
 
-- [ ] [AI-M2] **Pre-flight context check in `readyQueue`** (`pkg/cmd/graph/graph.go:418`) — `_ = ctx` silently discards context; Ctrl+C / timeouts never abort graph loading. Add `if err := ctx.Err(); err != nil { return nil, gravaerrors.New("CANCELLED", "readyQueue cancelled", err) }` before calling `graph.LoadGraphFromDB`.
+- [x] [AI-M2] **Pre-flight context check in `readyQueue`** (`pkg/cmd/graph/graph.go:418`) — `_ = ctx` silently discards context; Ctrl+C / timeouts never abort graph loading. Add `if err := ctx.Err(); err != nil { return nil, gravaerrors.New("CANCELLED", "readyQueue cancelled", err) }` before calling `graph.LoadGraphFromDB`.
 
-- [ ] [AI-M3] **Add `pkg/cmd/ready_test.go` to File List** — `TestReadyCmd` / `TestBlockedCmd` test the `graph/` implementation through `rootCmd` but were not listed in modified files. No code change needed; update File List below.
+- [x] [AI-M3] **Add `pkg/cmd/ready_test.go` to File List** — `TestReadyCmd` / `TestBlockedCmd` test the `graph/` implementation through `rootCmd` but were not listed in modified files. No code change needed; update File List below.
 
-- [ ] [AI-L1] **Add ✅ emoji to `claimCmd` output** (`pkg/cmd/issues/claim.go:87`) — story spec says `"✅ Claimed %s..."` but implementation outputs `"Claimed %s..."`. One-character fix for consistency with other commands.
+- [x] [AI-L1] **Add ✅ emoji to `claimCmd` output** (`pkg/cmd/issues/claim.go:87`) — story spec says `"✅ Claimed %s..."` but implementation outputs `"Claimed %s..."`. One-character fix for consistency with other commands.
 
-- [ ] [AI-L2] **Update story `Status` field to `done`** — sprint-status.yaml was updated to `done` by commit `d0744d4` but story file header still says `review`. Update after all other action items resolved.
+- [x] [AI-L2] **Update story `Status` field to `done`** — sprint-status.yaml was updated to `done` by commit `d0744d4` but story file header still says `review`. Update after all other action items resolved.
 
 ## Change Log
 
 - Initial implementation of all 7 tasks: full ADR-004 resolver, claimIssue named function + grava claim command, importIssues/readyQueue extractions, internal/testutil harness, WriteGitExclude ADR-H5 (Date: 2026-03-27)
 - Code review performed, 7 action items added (Date: 2026-03-29)
+- All 7 review action items resolved: deleted dead code ready.go (H1), fixed WriteGitExclude substring bug (H2), added importIssues mutual-exclusion guard (M1), added readyQueue context pre-flight (M2), updated File List (M3), added claim emoji (L1), status → done (L2) (Date: 2026-03-29)

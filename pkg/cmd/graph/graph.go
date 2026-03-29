@@ -415,7 +415,9 @@ func newGraphVisualizeCmd(d *cmddeps.Deps) *cobra.Command {
 // of tasks that are ready to be worked on (not blocked by any open dependency).
 // ctx is accepted for future compatibility — graph.LoadGraphFromDB does not currently use it.
 func readyQueue(ctx context.Context, store dolt.Store, limit int) ([]*graph.ReadyTask, error) {
-	_ = ctx // reserved for future context propagation into LoadGraphFromDB
+	if err := ctx.Err(); err != nil {
+		return nil, gravaerrors.New("CANCELLED", "readyQueue cancelled", err)
+	}
 	dag, err := graph.LoadGraphFromDB(store)
 	if err != nil {
 		return nil, gravaerrors.New("DB_UNREACHABLE", "failed to load graph", err)

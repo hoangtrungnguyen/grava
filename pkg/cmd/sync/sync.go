@@ -245,6 +245,10 @@ type ImportResult struct {
 // overwrite enables upsert on duplicate keys; skipExisting silently ignores duplicates.
 // The two flags are mutually exclusive — callers must validate before calling.
 func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite, skipExisting bool) (ImportResult, error) {
+	if overwrite && skipExisting {
+		return ImportResult{}, gravaerrors.New("INVALID_ARGS",
+			"overwrite and skip-existing are mutually exclusive", nil)
+	}
 	tx, err := store.BeginTx(ctx, nil)
 	if err != nil {
 		return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to start transaction", err)

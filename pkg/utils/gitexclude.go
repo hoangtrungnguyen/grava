@@ -26,7 +26,7 @@ func WriteGitExclude(repoRoot string) (migrated bool, err error) {
 
 	excludeFile := filepath.Join(infoDir, "exclude")
 	existing, _ := os.ReadFile(excludeFile)
-	if strings.Contains(string(existing), gravaExcludeEntry) {
+	if hasExactLine(string(existing), gravaExcludeEntry) {
 		// Already present — still try to migrate .gitignore
 		return migrateGitignore(repoRoot)
 	}
@@ -47,6 +47,16 @@ func WriteGitExclude(repoRoot string) (migrated bool, err error) {
 	}
 
 	return migrateGitignore(repoRoot)
+}
+
+// hasExactLine checks if any trimmed line in content exactly matches target.
+func hasExactLine(content, target string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func migrateGitignore(repoRoot string) (bool, error) {

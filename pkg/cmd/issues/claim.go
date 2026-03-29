@@ -84,7 +84,7 @@ func newClaimCmd(d *cmddeps.Deps) *cobra.Command {
 			if *d.OutputJSON {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Claimed %s (status: in_progress, actor: %s)\n",
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Claimed %s (status: in_progress, actor: %s)\n",
 				result.IssueID, result.Actor)
 			return nil
 		},
