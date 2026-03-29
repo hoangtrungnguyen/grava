@@ -1,5 +1,9 @@
 // Package errors provides structured error types for the Grava CLI.
 //
+// Matching by error code:
+//
+//	if errors.Is(err, gravaerrors.New("DB_UNREACHABLE", "", nil)) { ... }
+//
 // All error codes use SCREAMING_SNAKE_CASE with a domain prefix:
 //
 //	Init/Setup:    NOT_INITIALIZED, SCHEMA_MISMATCH, ALREADY_INITIALIZED
@@ -34,4 +38,11 @@ func (e *GravaError) Error() string {
 // Unwrap returns the underlying cause, enabling errors.Is / errors.As traversal.
 func (e *GravaError) Unwrap() error {
 	return e.Cause
+}
+
+// Is reports whether target is a *GravaError with the same Code.
+// This enables errors.Is(err, gravaerrors.New("SOME_CODE", "", nil)) for code-based matching.
+func (e *GravaError) Is(target error) bool {
+	t, ok := target.(*GravaError)
+	return ok && e.Code == t.Code
 }

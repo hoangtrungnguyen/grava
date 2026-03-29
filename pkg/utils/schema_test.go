@@ -2,6 +2,7 @@ package utils_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,22 +21,22 @@ func writeSchemaFile(t *testing.T, dir, content string) {
 
 func TestCheckSchemaVersion_Match(t *testing.T) {
 	dir := t.TempDir()
-	writeSchemaFile(t, dir, "3")
-	err := utils.CheckSchemaVersion(dir, 3)
+	writeSchemaFile(t, dir, fmt.Sprint(utils.SchemaVersion))
+	err := utils.CheckSchemaVersion(dir, utils.SchemaVersion)
 	assert.NoError(t, err)
 }
 
 func TestCheckSchemaVersion_MatchWithNewline(t *testing.T) {
 	dir := t.TempDir()
-	writeSchemaFile(t, dir, "3\n")
-	err := utils.CheckSchemaVersion(dir, 3)
+	writeSchemaFile(t, dir, fmt.Sprint(utils.SchemaVersion)+"\n")
+	err := utils.CheckSchemaVersion(dir, utils.SchemaVersion)
 	assert.NoError(t, err)
 }
 
 func TestCheckSchemaVersion_Mismatch(t *testing.T) {
 	dir := t.TempDir()
-	writeSchemaFile(t, dir, "2")
-	err := utils.CheckSchemaVersion(dir, 3)
+	writeSchemaFile(t, dir, fmt.Sprint(utils.SchemaVersion-1))
+	err := utils.CheckSchemaVersion(dir, utils.SchemaVersion)
 	require.Error(t, err)
 	var gravaErr *gravaerrors.GravaError
 	require.True(t, errors.As(err, &gravaErr))
@@ -45,7 +46,7 @@ func TestCheckSchemaVersion_Mismatch(t *testing.T) {
 func TestCheckSchemaVersion_FileMissing(t *testing.T) {
 	dir := t.TempDir()
 	// No schema_version file written
-	err := utils.CheckSchemaVersion(dir, 3)
+	err := utils.CheckSchemaVersion(dir, utils.SchemaVersion)
 	require.Error(t, err)
 	var gravaErr *gravaerrors.GravaError
 	require.True(t, errors.As(err, &gravaErr))
@@ -55,7 +56,7 @@ func TestCheckSchemaVersion_FileMissing(t *testing.T) {
 func TestCheckSchemaVersion_CorruptFile(t *testing.T) {
 	dir := t.TempDir()
 	writeSchemaFile(t, dir, "not-a-number")
-	err := utils.CheckSchemaVersion(dir, 3)
+	err := utils.CheckSchemaVersion(dir, utils.SchemaVersion)
 	require.Error(t, err)
 	var gravaErr *gravaerrors.GravaError
 	require.True(t, errors.As(err, &gravaErr))
@@ -64,8 +65,24 @@ func TestCheckSchemaVersion_CorruptFile(t *testing.T) {
 
 func TestWriteSchemaVersion_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, utils.WriteSchemaVersion(dir, 3))
-	require.NoError(t, utils.CheckSchemaVersion(dir, 3))
+	require.NoError(t, utils.WriteSchemaVersion(dir, utils.SchemaVersion))
+	require.NoError(t, utils.CheckSchemaVersion(dir, utils.SchemaVersion))
+}
+
+func TestSchemaVersion_MatchesMigrationFileCount(t *testing.T) {
+	// Sentinel: SchemaVersion must equal the number of files in pkg/migrate/migrations/.
+	// If this test fails, update SchemaVersion in schema.go to match the migration count.
+	entries, err := os.ReadDir("../../pkg/migrate/migrations")
+	require.NoError(t, err, "could not read pkg/migrate/migrations/ directory")
+	migrationCount := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			migrationCount++
+		}
+	}
+	assert.Equal(t, migrationCount, utils.SchemaVersion,
+		"SchemaVersion (%d) must equal migration file count (%d) in pkg/migrate/migrations/",
+		utils.SchemaVersion, migrationCount)
 }
 
 func TestResolveGravaDir_EnvVar(t *testing.T) {

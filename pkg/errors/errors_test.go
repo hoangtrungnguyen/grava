@@ -63,3 +63,24 @@ func TestGravaError_ImplementsErrorInterface(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Equal(t, "test message", err.Error())
 }
+
+func TestGravaError_Is_MatchesByCode(t *testing.T) {
+	err := gravaerrors.New("DB_UNREACHABLE", "connection refused", nil)
+	assert.True(t, errors.Is(err, gravaerrors.New("DB_UNREACHABLE", "", nil)),
+		"errors.Is should match when Code is equal, regardless of Message")
+	assert.False(t, errors.Is(err, gravaerrors.New("ISSUE_NOT_FOUND", "", nil)),
+		"errors.Is should not match when Code differs")
+}
+
+func TestGravaError_Is_ThroughWrapChain(t *testing.T) {
+	inner := gravaerrors.New("DB_UNREACHABLE", "inner db error", nil)
+	wrapped := fmt.Errorf("outer: %w", inner)
+	assert.True(t, errors.Is(wrapped, gravaerrors.New("DB_UNREACHABLE", "", nil)),
+		"errors.Is should traverse fmt.Errorf wrap chain")
+}
+
+func TestGravaError_Is_NonGravaTarget(t *testing.T) {
+	err := gravaerrors.New("DB_UNREACHABLE", "db error", nil)
+	assert.False(t, errors.Is(err, fmt.Errorf("plain error")),
+		"errors.Is must return false for non-GravaError target")
+}

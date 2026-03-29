@@ -63,12 +63,12 @@ func addCommentToIssue(id string, text string) error {
 	row := Store.QueryRow(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`, id)
 	var rawMeta string
 	if err := row.Scan(&rawMeta); err != nil {
-		return fmt.Errorf("issue %s not found: %w", id, err)
+		return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", id), err)
 	}
 
 	var meta map[string]any
 	if err := json.Unmarshal([]byte(rawMeta), &meta); err != nil {
-		return fmt.Errorf("failed to parse metadata for %s: %w", id, err)
+		return gravaerrors.New("DB_UNREACHABLE", fmt.Sprintf("failed to parse metadata for %s", id), err)
 	}
 
 	// 2. Append comment
@@ -89,7 +89,7 @@ func addCommentToIssue(id string, text string) error {
 func updateIssueMetadata(id string, meta map[string]any) error {
 	updated, err := json.Marshal(meta)
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return gravaerrors.New("INTERNAL_ERROR", "failed to marshal metadata", err)
 	}
 
 	_, err = Store.Exec(
@@ -97,7 +97,7 @@ func updateIssueMetadata(id string, meta map[string]any) error {
 		string(updated), actor, agentModel, id,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to save metadata for %s: %w", id, err)
+		return gravaerrors.New("DB_UNREACHABLE", fmt.Sprintf("failed to save metadata for %s", id), err)
 	}
 
 	return nil
@@ -109,12 +109,12 @@ func setLastCommit(id string, hash string) error {
 	row := Store.QueryRow(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`, id)
 	var rawMeta string
 	if err := row.Scan(&rawMeta); err != nil {
-		return fmt.Errorf("issue %s not found: %w", id, err)
+		return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", id), err)
 	}
 
 	var meta map[string]any
 	if err := json.Unmarshal([]byte(rawMeta), &meta); err != nil {
-		return fmt.Errorf("failed to parse metadata for %s: %w", id, err)
+		return gravaerrors.New("DB_UNREACHABLE", fmt.Sprintf("failed to parse metadata for %s", id), err)
 	}
 
 	// 2. Set last_commit

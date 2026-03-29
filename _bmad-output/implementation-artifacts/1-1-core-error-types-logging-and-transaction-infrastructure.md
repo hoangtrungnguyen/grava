@@ -1,6 +1,6 @@
 # Story 1.1: Core Error Types, Logging & Transaction Infrastructure (Story 0a)
 
-Status: review
+Status: done
 
 ## Story
 

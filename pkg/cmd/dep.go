@@ -198,10 +198,10 @@ var depPathCmd = &cobra.Command{
 			return err
 		}
 		if path == nil {
-			fmt.Printf("No blocking path found between %s and %s\n", from, to)
+			cmd.Printf("No blocking path found between %s and %s\n", from, to)
 			return nil
 		}
-		fmt.Printf("Blocking path: %s\n", strings.Join(path, " -> "))
+		cmd.Printf("Blocking path: %s\n", strings.Join(path, " -> "))
 		return nil
 	},
 }
