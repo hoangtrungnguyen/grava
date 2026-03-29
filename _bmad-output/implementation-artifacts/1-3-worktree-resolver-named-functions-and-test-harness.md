@@ -717,6 +717,25 @@ claude-sonnet-4-6
 - `pkg/utils/schema.go` — added `Deprecated:` comment to `ResolveGravaDir()`
 
 
+## Code Review Action Items
+
+Adversarial code review performed 2026-03-29 (claude-sonnet-4-6). 2 HIGH, 3 MEDIUM, 2 LOW findings. Must resolve HIGH and MEDIUM before marking `done`.
+
+- [ ] [AI-H1] **Delete `pkg/cmd/ready.go`** — declares `readyCmd` (106 lines) with no `func init()`, never registered; dead code since Story 1.2 reorganization moved `ready` to `pkg/cmd/graph/`. `TestReadyCmd` in `pkg/cmd/ready_test.go` already tests the real implementation via `rootCmd`. File must be deleted to prevent future duplicate-registration confusion.
+
+- [ ] [AI-H2] **Fix `WriteGitExclude` idempotency check** (`pkg/utils/gitexclude.go:29`) — `strings.Contains(string(existing), ".grava/")` matches `.grava/` as substring (e.g., `# .grava/` comment in exclude file triggers false-positive, real entry never added). Replace with line-exact check: `strings.TrimSpace(line) == ".grava/"` matching pattern used in `migrateGitignore`. Add test case: exclude file has `# .grava/` comment → entry still added.
+
+- [ ] [AI-M1] **Add mutual-exclusion guard inside `importIssues`** (`pkg/cmd/sync/sync.go:247`) — `overwrite=true, skipExisting=true` together produce silent wrong behavior (MySQL INSERT IGNORE suppresses ON DUPLICATE KEY UPDATE). Validate at function entry: `if overwrite && skipExisting { return ImportResult{}, gravaerrors.New("INVALID_ARGS", ...) }`. Epic 7 hook pipeline will call this directly, bypassing `newImportCmd` validation.
+
+- [ ] [AI-M2] **Pre-flight context check in `readyQueue`** (`pkg/cmd/graph/graph.go:418`) — `_ = ctx` silently discards context; Ctrl+C / timeouts never abort graph loading. Add `if err := ctx.Err(); err != nil { return nil, gravaerrors.New("CANCELLED", "readyQueue cancelled", err) }` before calling `graph.LoadGraphFromDB`.
+
+- [ ] [AI-M3] **Add `pkg/cmd/ready_test.go` to File List** — `TestReadyCmd` / `TestBlockedCmd` test the `graph/` implementation through `rootCmd` but were not listed in modified files. No code change needed; update File List below.
+
+- [ ] [AI-L1] **Add ✅ emoji to `claimCmd` output** (`pkg/cmd/issues/claim.go:87`) — story spec says `"✅ Claimed %s..."` but implementation outputs `"Claimed %s..."`. One-character fix for consistency with other commands.
+
+- [ ] [AI-L2] **Update story `Status` field to `done`** — sprint-status.yaml was updated to `done` by commit `d0744d4` but story file header still says `review`. Update after all other action items resolved.
+
 ## Change Log
 
 - Initial implementation of all 7 tasks: full ADR-004 resolver, claimIssue named function + grava claim command, importIssues/readyQueue extractions, internal/testutil harness, WriteGitExclude ADR-H5 (Date: 2026-03-27)
+- Code review performed, 7 action items added (Date: 2026-03-29)
