@@ -63,7 +63,7 @@ func (s *auditedStore) LogEventTx(ctx context.Context, tx *sql.Tx, issueID, even
 func TestWithAuditedTx_CommitsOnSuccess(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectCommit()
@@ -90,7 +90,7 @@ func TestWithAuditedTx_CommitsOnSuccess(t *testing.T) {
 func TestWithAuditedTx_RollsBackOnFnError(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectRollback()
@@ -115,7 +115,7 @@ func TestWithAuditedTx_RollsBackOnFnError(t *testing.T) {
 func TestWithAuditedTx_RollsBackOnAuditLogError(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectRollback()
@@ -143,7 +143,7 @@ func TestWithAuditedTx_RollsBackOnAuditLogError(t *testing.T) {
 func TestWithAuditedTx_NoEvents_StillCommits(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectCommit()
@@ -160,7 +160,7 @@ func TestWithAuditedTx_NoEvents_StillCommits(t *testing.T) {
 func TestWithAuditedTx_MultipleEvents_AllLogged(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectCommit()

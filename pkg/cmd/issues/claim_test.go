@@ -15,7 +15,7 @@ import (
 func TestClaimIssue_HappyPath(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT status FROM issues WHERE id").
@@ -40,7 +40,7 @@ func TestClaimIssue_HappyPath(t *testing.T) {
 func TestClaimIssue_NotFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT status FROM issues WHERE id").
@@ -59,7 +59,7 @@ func TestClaimIssue_NotFound(t *testing.T) {
 func TestClaimIssue_AlreadyClaimed(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT status FROM issues WHERE id").
@@ -78,7 +78,7 @@ func TestClaimIssue_AlreadyClaimed(t *testing.T) {
 func TestClaimIssue_InvalidTransition(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT status FROM issues WHERE id").

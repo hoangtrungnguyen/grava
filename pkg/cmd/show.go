@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -137,12 +138,12 @@ func showTreeVisualization(cmd *cobra.Command, rootID string) error {
 	}
 
 	cmd.Printf("Hierarchical Tree for %s:\n\n", rootID)
-	renderTreeNode(dag, rootID, "", true, true)
+	renderTreeNode(cmd.OutOrStdout(), dag, rootID, "", true, true)
 	cmd.Println()
 	return nil
 }
 
-func renderTreeNode(dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool) {
+func renderTreeNode(w io.Writer, dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool) {
 	node, _ := dag.GetNode(id)
 	children := dag.GetTreeChildren(id)
 
@@ -190,7 +191,7 @@ func renderTreeNode(dag *graph.AdjacencyDAG, id string, indent string, isLast bo
 		progress = fmt.Sprintf(" [%s] %d%%", bar, percentage)
 	}
 
-	fmt.Printf("%s%s%s%s%s %s (%s)%s %s\n",
+	_, _ = fmt.Fprintf(w, "%s%s%s%s%s %s (%s)%s %s\n",
 		indent, marker, color, glyph, reset, id, node.Type, progress, node.Title)
 
 	newIndent := indent
@@ -203,6 +204,6 @@ func renderTreeNode(dag *graph.AdjacencyDAG, id string, indent string, isLast bo
 	}
 
 	for i, cid := range children {
-		renderTreeNode(dag, cid, newIndent, i == len(children)-1, false)
+		renderTreeNode(w, dag, cid, newIndent, i == len(children)-1, false)
 	}
 }

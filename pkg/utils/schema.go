@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +13,7 @@ import (
 
 // SchemaVersion is the expected database schema version.
 // Must match the number of migration files in pkg/migrate/migrations/.
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 // schemaVersionFile is the name of the version file inside the .grava/ directory.
 const schemaVersionFile = "schema_version"
@@ -24,7 +25,7 @@ func CheckSchemaVersion(gravaDir string, expectedVersion int) error {
 
 	data, err := os.ReadFile(versionPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return gravaerrors.New("NOT_INITIALIZED",
 				"grava is not initialised: run 'grava init' first", err)
 		}

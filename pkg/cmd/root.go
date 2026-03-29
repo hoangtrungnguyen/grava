@@ -79,10 +79,8 @@ leveraging the power of a version-controlled database.`,
 		}
 
 		// Step 4: Check schema version — replaces migrate.Run() in PersistentPreRunE (ADR-FM6)
-		if gravaDir != "" {
-			if err := utils.CheckSchemaVersion(gravaDir, utils.SchemaVersion); err != nil {
-				return err
-			}
+		if err := utils.CheckSchemaVersion(gravaDir, utils.SchemaVersion); err != nil {
+			return err
 		}
 
 		// Step 5: Resolve DB URL (flag → viper → env → default)
@@ -186,6 +184,8 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err == nil {
-		_, _ = fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		if !outputJSON {
+			_, _ = fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		}
 	}
 }

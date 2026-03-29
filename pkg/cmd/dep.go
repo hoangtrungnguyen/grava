@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -175,8 +176,8 @@ var depTreeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Dependency ancestry for %s:\n", id)
-		printTree(dag, id, "", true, true, make(map[string]bool))
+		cmd.Printf("Dependency ancestry for %s:\n", id)
+		printTree(cmd.OutOrStdout(), dag, id, "", true, true, make(map[string]bool))
 		return nil
 	},
 }
@@ -216,51 +217,51 @@ var depImpactCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Downstream impact of %s:\n", id)
-		printImpactTree(dag, id, "", true, true, make(map[string]bool))
+		cmd.Printf("Downstream impact of %s:\n", id)
+		printImpactTree(cmd.OutOrStdout(), dag, id, "", true, true, make(map[string]bool))
 		return nil
 	},
 }
 
-func printTree(dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool, visited map[string]bool) {
+func printTree(w io.Writer, dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool, visited map[string]bool) {
 	node, err := dag.GetNode(id)
 	if err != nil {
-		fmt.Printf("%s%s %s [Missing]\n", indent, getMarker(isLast, isRoot), id)
+		_, _ = fmt.Fprintf(w, "%s%s %s [Missing]\n", indent, getMarker(isLast, isRoot), id)
 		return
 	}
 
-	fmt.Printf("%s%s %s: %s [%s]\n", indent, getMarker(isLast, isRoot), node.ID, node.Title, node.Status)
+	_, _ = fmt.Fprintf(w, "%s%s %s: %s [%s]\n", indent, getMarker(isLast, isRoot), node.ID, node.Title, node.Status)
 
 	if visited[id] {
-		fmt.Printf("%s    (cycle/already shown)\n", indent+getFill(isLast, isRoot))
+		_, _ = fmt.Fprintf(w, "%s    (cycle/already shown)\n", indent+getFill(isLast, isRoot))
 		return
 	}
 	visited[id] = true
 
 	preds, _ := dag.GetPredecessors(id)
 	for i, predID := range preds {
-		printTree(dag, predID, indent+getFill(isLast, isRoot), i == len(preds)-1, false, visited)
+		printTree(w, dag, predID, indent+getFill(isLast, isRoot), i == len(preds)-1, false, visited)
 	}
 }
 
-func printImpactTree(dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool, visited map[string]bool) {
+func printImpactTree(w io.Writer, dag *graph.AdjacencyDAG, id string, indent string, isLast bool, isRoot bool, visited map[string]bool) {
 	node, err := dag.GetNode(id)
 	if err != nil {
-		fmt.Printf("%s%s %s [Missing]\n", indent, getMarker(isLast, isRoot), id)
+		_, _ = fmt.Fprintf(w, "%s%s %s [Missing]\n", indent, getMarker(isLast, isRoot), id)
 		return
 	}
 
-	fmt.Printf("%s%s %s: %s [%s]\n", indent, getMarker(isLast, isRoot), node.ID, node.Title, node.Status)
+	_, _ = fmt.Fprintf(w, "%s%s %s: %s [%s]\n", indent, getMarker(isLast, isRoot), node.ID, node.Title, node.Status)
 
 	if visited[id] {
-		fmt.Printf("%s    (cycle/already shown)\n", indent+getFill(isLast, isRoot))
+		_, _ = fmt.Fprintf(w, "%s    (cycle/already shown)\n", indent+getFill(isLast, isRoot))
 		return
 	}
 	visited[id] = true
 
 	successors, _ := dag.GetSuccessors(id)
 	for i, succID := range successors {
-		printImpactTree(dag, succID, indent+getFill(isLast, isRoot), i == len(successors)-1, false, visited)
+		printImpactTree(w, dag, succID, indent+getFill(isLast, isRoot), i == len(successors)-1, false, visited)
 	}
 }
 
