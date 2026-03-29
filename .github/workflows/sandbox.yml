@@ -1,10 +1,7 @@
 name: Sandbox Validation
 
 on:
-  pull_request:
-    branches: [ "main", "release" ]
-  push:
-    branches: [ "main", "release" ]
+  workflow_dispatch:  # automated triggers disabled — re-enable when sandbox scenarios are ready
 
 jobs:
   sandbox:
