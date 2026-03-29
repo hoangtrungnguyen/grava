@@ -1,62 +1,95 @@
+# Protocol: Landing the Plane (Grava Edition)
+
+**Trigger:** When the user says "Let's land the plane" or runs `/landing-the-plane`.
+
+**Objective:** Finalize the current session, ensure code is verified, and use the `grava` CLI to track progress instead of manual tracker files.
+
 ---
-description: Complete a task by running tests, creating commits, and updating tracker
-trigger: When user runs '/landing-the-plane' or asks to finalize/complete a ticket
+
+### Step 1: Verification & Cleanup
+
+1.  **Run Tests:**
+    // turbo
+    ```bash
+    go test ./...
+    ```
+2.  **Verify Build:**
+    // turbo
+    ```bash
+    go build ./...
+    ```
+3.  **Run Linter:**
+    // turbo
+    ```bash
+    golangci-lint run ./...
+    ```
+4.  **Cleanup Artifacts:** Delete any temporary debugging files, print statements, or console logs.
+
+
+4.     If update/create a command, you also document the changes into docs folder
 ---
 
-# Landing the Plane
+### Step 2: Git Hygiene & Persistence
 
-Finalize and close out a ticket properly after implementation is complete.
+1.  **Commit Changes:**
+    *   Stage all relevant files.
+    *   Commit with a clear message following the project's convention (e.g., `feat(cli): [Description] ([Issue-ID])`).
+2.  **Verify Git State:**
+    ```bash
+    git status
+    ```
 
-## Your Task
+---
 
-Execute the following checklist to properly close out the current ticket:
+### Step 3: Issue Tracking (via Grava)
 
-### 1. ✅ Run Tests
-- Execute the test suite: `go test ./...`
-- Run any relevant integration tests
-- Verify all tests pass
-- If tests fail, fix issues before proceeding
+**Action:** Update the database to reflect the session's achievements.
 
-### 2. 🏗️ Build Verification (if applicable)
-- Run build commands to verify compilation
-- Check for any build warnings or errors
-- For Go: `go build ./...`
+1.  **Add Completion Summary & Link Commit:**
+    // turbo
+    ```bash
+    ./grava comment <issue_id> "Session Summary: [List key changes, decisions, and tests passed]" --last-commit <hash>
+    ```
+//update effected files 
+     ```bash
+     ./grava update <issue_id> --files <files_path> --status [closed|in_progress] --last-commit <hash>
+     ```
 
-### 3. 📝 Update Tracker
-- Identify the current ticket being worked on
-- Update the tracker file in `tracker/[TICKET-ID].md`:
-  - Set status to 'Completed' or 'Done'
-  - Add completion date
-  - Summarize what was implemented
-  - Note any architectural decisions or trade-offs
+2.  **Verify Progress:** Run `./grava show <issue_id>` to ensure everything looks correct.
 
-### 4. 💾 Create Commit
-- Stage all relevant files
-- Create a descriptive commit message following project conventions
-- Reference the ticket ID in the commit message
-- Include co-author tag: `Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>`
+3.  **Handoff Note:** Update the parent epic if significant milestones were reached.
+    // turbo
+    ```bash
+    ./grava comment <epic_id> "Milestone reached: [Description]. Subtask [id] is now closed."
+    ```
 
-### 5. 📊 Summary Report
-Present a completion summary to the user:
+---
+
+### Step 4: Continuity (The Handoff)
+
+1.  **Identify Next Task:**
+    // turbo
+    ```bash
+    ./grava quick --priority 1 --limit 5
+    ```
+2.  **Draft Next Session Prompt:**
+    Draft a context-rich prompt for the next agent, summarizing what was done and what the immediate goal for the next session is (e.g., "Starting on Issue X-123: Sub-task Y").
+
+Note: Do not proceed next issue without user permission
+
+---
+
+### Step 5: Final Verdict
+
+Present a completion summary:
+```markdown
+## ✅ Session Completed
+- **Verified:** Tests Passing & Build Clean
+- **Git:** Changes committed ([Hash])
+- **Grava:** Issue [ID] updated to [Status]
+- **Summary:** [Brief list of changes]
 ```
-## ✅ Ticket [ID] Completed
 
-**What was done:**
-- [Brief list of changes]
-
-**Files modified:**
-- [List key files]
-
-**Tests:** ✅ Passing
-**Commit:** [commit hash or "ready to commit"]
-**Tracker:** Updated
-
-**Next steps:**
-- Review the changes
-- Push to remote (if ready)
-- Move to next ticket
-```
-
-### 6. 🔄 Ask About Next Steps
-- "Would you like to push these changes?"
-- "Shall we move to the next ticket? I can run /are-u-ready to check."
+---
+## Note
+- Do not use `grava clear` and `grava drop` commands without user's permission

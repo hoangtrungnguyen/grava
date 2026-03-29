@@ -13,7 +13,7 @@ import (
 func TestReadyQueue_EmptyDB(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	// graph.LoadGraphFromDB runs two queries:
 	// 1. SELECT issues WHERE status != 'tombstone'
@@ -37,7 +37,7 @@ func TestReadyQueue_EmptyDB(t *testing.T) {
 func TestReadyQueue_LimitZero(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectQuery("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status").
 		WillReturnRows(sqlmock.NewRows([]string{

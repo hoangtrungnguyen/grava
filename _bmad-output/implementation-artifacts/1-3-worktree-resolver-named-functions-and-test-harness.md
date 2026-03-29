@@ -1,6 +1,6 @@
 # Story 1.3: Worktree Resolver, Named Functions & Test Harness (Story 0c)
 
-Status: review
+Status: review (code-review-findings-open)
 
 ## Story
 

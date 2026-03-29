@@ -15,7 +15,7 @@ import (
 func TestImportIssues_EmptyInput(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
 	mock.ExpectCommit()
@@ -32,7 +32,7 @@ func TestImportIssues_EmptyInput(t *testing.T) {
 func TestImportIssues_SingleIssue(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	now := time.Now().UTC().Truncate(time.Second)
 	agentModel := "model1"
@@ -56,7 +56,7 @@ func TestImportIssues_SingleIssue(t *testing.T) {
 func TestImportIssues_SkipExisting(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	now := time.Now().UTC().Truncate(time.Second)
 	agentModel := "model1"
@@ -81,7 +81,7 @@ func TestImportIssues_SkipExisting(t *testing.T) {
 func TestImportIssues_TwoIssuesImported(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	now := time.Now().UTC().Truncate(time.Second)
 	agentModel := "model1"
