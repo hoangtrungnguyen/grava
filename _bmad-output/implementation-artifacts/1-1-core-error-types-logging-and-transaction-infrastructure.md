@@ -338,6 +338,16 @@ claude-sonnet-4-6
 - [x] [AI-Review][MEDIUM] `pkg/cmd/root.go:76-78` — Schema check is silently skipped when `ResolveGravaDir()` returns an error (i.e., user runs `grava list` outside an initialised repo). Code falls through to DB connect, which fails with a raw MySQL error instead of the user-friendly `NOT_INITIALIZED` GravaError. The `if gravaDir != "" {}` guard swallows the `ResolveGravaDir` error entirely — it should be returned so the user sees "run 'grava init' first". [pkg/cmd/root.go:76]
 - [x] [AI-Review][LOW] `pkg/cmd/version.go:15` — `fmt.Printf("Grava CLI version %s\n", Version)` writes to process stdout directly, bypassing cobra's `cmd.OutOrStdout()`. Breaks test output capture and is inconsistent with cobra patterns used everywhere else in the codebase. [pkg/cmd/version.go:15]
 
+#### Round 2 Review Follow-ups (2026-03-27)
+
+- [x] [AI-Review][CRITICAL] `pkg/utils/schema.go:15` — `SchemaVersion = 3` but 4 migration files exist (`001`–`004`). Task 4 spec says "match migration count". `WriteSchemaVersion` writes `3` after 4 migrations run — schema state is misrepresented by 1. Fix: set `SchemaVersion = 4`. [pkg/utils/schema.go:15]
+- [x] [AI-Review][HIGH] `pkg/cmd/root.go:189` — `initConfig` prints `"Using config file: ..."` to stderr via `fmt.Fprintln(os.Stderr, ...)` on every invocation, including `--json` mode. Callers using `2>&1` get mixed non-JSON + JSON output. Fix: guard with `if !outputJSON`. [pkg/cmd/root.go:189]
+- [x] [AI-Review][HIGH] `pkg/cmd/show.go:193` — `renderTreeNode` uses `fmt.Printf` to process stdout, bypassing `cmd.OutOrStdout()`. Previous review fixed `fmt.Println` at show.go:141 but missed this. In `--json` mode, `grava show --tree` emits mixed text+JSON to stdout. Fix: pass `io.Writer` to `renderTreeNode`. [pkg/cmd/show.go:193]
+- [x] [AI-Review][HIGH] `pkg/cmd/dep.go:178,200,203,219,228,232,235,249,253,256` — `renderBlockedNode` and `renderImpactNode` use `fmt.Printf` to process stdout. Same problem as show.go:193 — file was in story File List, dep tree output uncapturable in tests. Fix: pass `io.Writer` to both helpers. [pkg/cmd/dep.go:178]
+- [x] [AI-Review][MEDIUM] `pkg/cmd/root.go:82` — `if gravaDir != ""` guard is dead code. `gravaDir` is always non-empty by this line because `ResolveGravaDir()` now returns an error (and exits early) when it would be empty. Leftover from the previous buggy implementation. Remove the guard. [pkg/cmd/root.go:82]
+- [x] [AI-Review][MEDIUM] `pkg/dolt/tx_test.go:66,93,118` — three `defer db.Close()` calls missing `//nolint:errcheck`. Golangci-lint errcheck fires on all three. Inconsistent with the rest of the codebase that always adds the suppression comment. [pkg/dolt/tx_test.go:66]
+- [x] [AI-Review][LOW] `pkg/utils/schema.go:27` — `os.IsNotExist(err)` is the deprecated pre-1.13 API. Use `errors.Is(err, os.ErrNotExist)` per modern Go idiom (same issue flagged in Story 1.3 review for gitexclude.go). [pkg/utils/schema.go:27]
+
 ### File List
 
 **Created:**
