@@ -2,7 +2,6 @@ package notify
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"testing"
 
@@ -21,14 +20,14 @@ func TestConsoleNotifier_Send_WritesToStderr(t *testing.T) {
 	n := NewConsoleNotifier()
 	sendErr := n.Send("Test Title", "test body message")
 
-	w.Close()
+	w.Close() //nolint:errcheck
 	os.Stderr = origStderr
 
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(r)
 
 	assert.NoError(t, sendErr, "Send should always return nil")
-	expected := fmt.Sprintf("[GRAVA ALERT] Test Title: test body message\n")
+	expected := "[GRAVA ALERT] Test Title: test body message\n"
 	assert.Equal(t, expected, buf.String())
 }
 

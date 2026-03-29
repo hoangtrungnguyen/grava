@@ -36,6 +36,10 @@ func New(n notify.Notifier, log zerolog.Logger) *Coordinator {
 //
 // Buffer size 1 prevents goroutine leak if caller abandons the channel.
 // The channel is closed when the goroutine exits (signals clean shutdown).
+//
+// NOTE: c.notifier is reserved for Phase 2 work loops. Future error paths will call
+// c.notifier.Send(...) before writing to errCh so operators are alerted before the
+// channel is drained. Do NOT remove the field — it is part of the designed API.
 func (c *Coordinator) Start(ctx context.Context) <-chan error {
 	errCh := make(chan error, 1)
 	go func() {
@@ -43,11 +47,9 @@ func (c *Coordinator) Start(ctx context.Context) <-chan error {
 		// Coordinator work loop.
 		// ctx cancellation is the graceful shutdown signal.
 		// NEVER call log.Fatal, os.Exit, or panic inside this goroutine.
-		select {
-		case <-ctx.Done():
-			c.log.Debug().Msg("coordinator: context cancelled, shutting down")
-			return
-		}
+		// Future: add select cases for actual work here; send errors via errCh <- err.
+		<-ctx.Done()
+		c.log.Debug().Msg("coordinator: context cancelled, shutting down")
 	}()
 	return errCh
 }

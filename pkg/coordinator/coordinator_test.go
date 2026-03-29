@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -53,8 +54,11 @@ func TestCoordinator_Start_BufferedChannel(t *testing.T) {
 }
 
 func TestCoordinator_NoOsExitOrLogFatal(t *testing.T) {
-	// Static verification: coordinator.go must not import "os" for Exit
-	// or "log" for Fatal. This is verified by compilation success + code review.
-	// The test here documents the contract.
-	t.Log("Contract: coordinator goroutines never call os.Exit, log.Fatal, or panic")
+	// Verify coordinator.go does not import "os" (for os.Exit) or "log" (for log.Fatal).
+	// These imports would violate the error-channel contract (AC #5).
+	src, err := os.ReadFile("coordinator.go")
+	require.NoError(t, err)
+	content := string(src)
+	assert.NotContains(t, content, `"os"`, `coordinator.go must not import "os" (would allow os.Exit)`)
+	assert.NotContains(t, content, `"log"`, `coordinator.go must not import "log" (would allow log.Fatal)`)
 }

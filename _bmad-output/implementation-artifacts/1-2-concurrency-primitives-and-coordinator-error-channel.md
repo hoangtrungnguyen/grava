@@ -1,6 +1,6 @@
 # Story 1.2: Concurrency Primitives & Coordinator Error Channel (Story 0b)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -427,3 +427,23 @@ for _, tc := range testCases {
 ### Completion Notes List
 
 ### File List
+
+**New files created:**
+- `pkg/dolt/retry.go` — WithDeadlockRetry + isMySQLDeadlock
+- `pkg/dolt/retry_test.go` — 7 unit tests (success, deadlock retry, non-deadlock, error type)
+- `pkg/notify/notifier.go` — Notifier interface + ConsoleNotifier
+- `pkg/notify/notifier_test.go` — ConsoleNotifier stderr capture + nil-error contract
+- `pkg/notify/mock/notifier_mock.go` — MockNotifier for test injection
+- `pkg/notify/mock/notifier_mock_test.go` — MockNotifier call capture + error return tests
+- `pkg/coordinator/coordinator.go` — Coordinator struct + Start(<-chan error) pattern
+- `pkg/coordinator/coordinator_test.go` — buffered channel, ctx cancellation, no-os-exit contract
+- `pkg/cmddeps/deps.go` — pointer-based Deps struct for circular-import-safe injection
+- `pkg/cmd/issues/issues.go` — issues sub-package (create, show, list, update, drop, assign, label, comment, subtask, quick)
+- `pkg/cmd/graph/graph.go` — cmdgraph sub-package (dep, graph, ready, blocked, search, stats)
+- `pkg/cmd/maintenance/maintenance.go` — maintenance sub-package (compact, doctor, undo, clear, history)
+- `pkg/cmd/sync/sync.go` — synccmd sub-package (commit, import, export)
+
+**Modified files:**
+- `pkg/cmd/root.go` — added Notifier var, cmddeps.Deps, sub-package AddCommands registrations
+- `pkg/cmd/assign.go`, `blocked.go`, `clear.go`, `cmd_history.go`, `comment.go`, `commit.go`, `compact.go`, `create.go`, `dep.go`, `doctor.go`, `drop.go`, `export.go`, `graph.go`, `import.go`, `label.go`, `list.go`, `quick.go`, `ready.go`, `search.go`, `show.go`, `stats.go`, `subtask.go`, `undo.go`, `update.go` — removed `init()` to prevent double-registration
+- `pkg/cmd/clear_test.go`, `commands_test.go` — updated to use sub-package StdinReader vars
