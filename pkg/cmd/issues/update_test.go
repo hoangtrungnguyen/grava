@@ -98,6 +98,18 @@ func TestUpdateIssue_InvalidPriority(t *testing.T) {
 	testutil.AssertGravaError(t, err, "INVALID_PRIORITY")
 }
 
+func TestUpdateIssue_InvalidIssueType(t *testing.T) {
+	store := testutil.NewMockStore()
+	_, err := updateIssue(context.Background(), store, UpdateParams{
+		ID:            "grava-abc",
+		IssueType:     "invalid-type",
+		Actor:         "test-actor",
+		Model:         "test-model",
+		ChangedFields: []string{"type"},
+	})
+	testutil.AssertGravaError(t, err, "INVALID_ISSUE_TYPE")
+}
+
 func TestUpdateIssue_NoFieldsChanged(t *testing.T) {
 	store := testutil.NewMockStore()
 	_, err := updateIssue(context.Background(), store, UpdateParams{

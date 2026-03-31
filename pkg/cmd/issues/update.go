@@ -26,7 +26,6 @@ type UpdateParams struct {
 	Priority      string
 	Status        string
 	AffectedFiles []string
-	LastCommit    string
 	Actor         string
 	Model         string
 	ChangedFields []string // e.g., ["title", "priority"] — only these fields are written

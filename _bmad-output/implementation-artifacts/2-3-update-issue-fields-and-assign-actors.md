@@ -1,6 +1,6 @@
 # Story 2.3: Update Issue Fields and Assign Actors
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -88,15 +88,15 @@ so that the current state of work is always accurately reflected in the tracker.
 
 ### Review Follow-ups (AI)
 
-- [ ] [AI-Review][High] H1: Add missing integration tests `TestUpdateCmd_IssueNotFound` and `TestAssignCmd_Unassign` claimed [x] in tasks 5.2 and 5.4 but not present in `pkg/cmd/commands_test.go`
-- [ ] [AI-Review][High] H2: Populate Dev Agent Record → File List section in story file with all created/modified files (assign.go, assign_test.go, update.go, update_test.go, issues.go, commands_test.go, subtask.go, subtask_test.go)
-- [ ] [AI-Review][Medium] M1: `assign.go:72` uses `NOW()` for `updated_at` while all other commands (`create.go`, `subtask.go`, `update.go`) use `time.Now()` Go-side — fix to `time.Now()` for consistency and to avoid clock skew with audit event timestamps
-- [ ] [AI-Review][Medium] M2: Inner `mockDB` created inside `QueryRowFn` closures in `mockStoreForUpdate` and `mockStoreForAssign` is never closed or checked with `ExpectationsWereMet()` — add cleanup or use a different pattern to avoid silent test gaps
-- [ ] [AI-Review][Medium] M3: No `TestUpdateIssue_InvalidIssueType` unit test despite `INVALID_ISSUE_TYPE` validation code being present in `update.go` — add to `update_test.go`
-- [ ] [AI-Review][Medium] M4: `assign.go:61-62` audit event uses key `"actor"` for the assignee value — semantically ambiguous (actor = who's doing the action; assignee = who is being assigned); consider renaming to `"assignee"` for clarity in event history queries
-- [ ] [AI-Review][Low] L1: `UpdateParams.LastCommit` field is dead code inside `updateIssue` — either remove from struct or add a comment documenting that it's intentionally caller-handled in `newUpdateCmd.RunE`
-- [ ] [AI-Review][Low] L2: No test (unit or integration) for CLI validation `MISSING_REQUIRED_FIELD` when neither `--actor` nor `--unassign` is provided to `grava assign`
-- [ ] [AI-Review][Low] L3: `mockStoreForUpdate`, `mockStoreForAssign`, and `mockStoreForSubtask` are near-identical — extract shared inner-sqlmock QueryRowFn helper to `testutil` for Stories 2.4+
+- [x] [AI-Review][High] H1: Add missing integration tests `TestUpdateCmd_IssueNotFound` and `TestAssignCmd_Unassign` claimed [x] in tasks 5.2 and 5.4 but not present in `pkg/cmd/commands_test.go`
+- [x] [AI-Review][High] H2: Populate Dev Agent Record → File List section in story file with all created/modified files (assign.go, assign_test.go, update.go, update_test.go, issues.go, commands_test.go, subtask.go, subtask_test.go)
+- [x] [AI-Review][Medium] M1: `assign.go:72` uses `NOW()` for `updated_at` while all other commands (`create.go`, `subtask.go`, `update.go`) use `time.Now()` Go-side — fix to `time.Now()` for consistency and to avoid clock skew with audit event timestamps
+- [x] [AI-Review][Medium] M2: Inner `mockDB` created inside `QueryRowFn` closures in `mockStoreForUpdate` and `mockStoreForAssign` is never closed or checked with `ExpectationsWereMet()` — accepted: pre-existing pattern from subtask_test.go, acceptable for Phase 1 tests
+- [x] [AI-Review][Medium] M3: No `TestUpdateIssue_InvalidIssueType` unit test despite `INVALID_ISSUE_TYPE` validation code being present in `update.go` — add to `update_test.go`
+- [x] [AI-Review][Medium] M4: `assign.go:61-62` audit event uses key `"actor"` for the assignee value — semantically ambiguous (actor = who's doing the action; assignee = who is being assigned); consider renaming to `"assignee"` for clarity in event history queries
+- [x] [AI-Review][Low] L1: `UpdateParams.LastCommit` field is dead code inside `updateIssue` — either remove from struct or add a comment documenting that it's intentionally caller-handled in `newUpdateCmd.RunE`
+- [x] [AI-Review][Low] L2: No test (unit or integration) for CLI validation `MISSING_REQUIRED_FIELD` when neither `--actor` nor `--unassign` is provided to `grava assign`
+- [x] [AI-Review][Low] L3: `mockStoreForUpdate`, `mockStoreForAssign`, and `mockStoreForSubtask` are near-identical — accepted: DRY refactoring deferred to Stories 2.4+
 
 ## Dev Notes
 
@@ -394,3 +394,13 @@ claude-sonnet-4-6
 Grava Tracking: epic=grava-8f07, story=grava-8f07.1
 
 ### File List
+
+- `pkg/cmd/issues/update.go` — NEW: `updateIssue` named function, `UpdateParams`, `UpdateResult`
+- `pkg/cmd/issues/update_test.go` — NEW: 6 unit tests for `updateIssue`
+- `pkg/cmd/issues/assign.go` — NEW: `assignIssue` named function, `AssignParams`, `AssignResult`, `newAssignCmd`
+- `pkg/cmd/issues/assign_test.go` — NEW: 3 unit tests for `assignIssue`
+- `pkg/cmd/issues/issues.go` — MODIFIED: removed old `newAssignCmd` (now in assign.go)
+- `pkg/cmd/commands_test.go` — MODIFIED: updated 5 existing integration tests + added 3 new (UpdateCmdIssueNotFound, AssignCmdUnassign, AssignCmdMissingActorAndUnassign)
+- `pkg/cmd/issues/subtask.go` — MODIFIED: H1 fix from Story 2.2 review (pre-check parent before GenerateChildID)
+- `pkg/cmd/issues/subtask_test.go` — MODIFIED: updated for H1 fix (parentExists bool param)
+- `docs/guides/CLI_REFERENCE.md` — MODIFIED: updated `assign` docs for new `--actor`/`--unassign` interface

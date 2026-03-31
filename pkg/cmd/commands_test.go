@@ -637,6 +637,52 @@ func TestLabelCmdIdempotent(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestUpdateCmdIssueNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// Pre-read returns ErrNoRows → ISSUE_NOT_FOUND
+	mock.ExpectQuery(`SELECT title, description, issue_type, priority, status`).
+		WithArgs("grava-missing").
+		WillReturnRows(sqlmock.NewRows([]string{}))
+
+	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
+	_, err = executeCommand(rootCmd, "update", "grava-missing", "--title", "New Title")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "grava-missing not found")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAssignCmdUnassign(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// Pre-read current assignee
+	mock.ExpectQuery(`SELECT COALESCE\(assignee`).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"assignee"}).AddRow("alice"))
+
+	// WithAuditedTx for unassign
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE issues SET assignee`).
+		WithArgs(nil, sqlmock.AnyArg(), "unknown", "", "grava-123").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "assign", "grava-123", "--unassign")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Assignee cleared on grava-123")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAssignCmd(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
@@ -647,10 +693,10 @@ func TestAssignCmd(t *testing.T) {
 		WithArgs("grava-123").
 		WillReturnRows(sqlmock.NewRows([]string{"assignee"}).AddRow(""))
 
-	// WithAuditedTx for assign
+	// WithAuditedTx for assign (assigneeVal, now, actor, model, id)
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE issues SET assignee`).
-		WithArgs("alice", "unknown", "", "grava-123").
+		WithArgs("alice", sqlmock.AnyArg(), "unknown", "", "grava-123").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -681,6 +727,17 @@ func TestAssignCmdNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "grava-999 not found")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAssignCmdMissingActorAndUnassign(t *testing.T) {
+	db, _, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// Neither --actor nor --unassign → MISSING_REQUIRED_FIELD
+	_, err = executeCommand(rootCmd, "assign", "grava-123")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "either --actor")
 }
 
 func TestSearchCmd(t *testing.T) {

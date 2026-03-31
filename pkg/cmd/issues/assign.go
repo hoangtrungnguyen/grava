@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
@@ -58,10 +59,12 @@ func assignIssue(ctx context.Context, store dolt.Store, params AssignParams) (As
 			EventType: dolt.EventAssign,
 			Actor:     params.Actor,
 			Model:     params.Model,
-			OldValue:  map[string]any{"actor": currentAssignee},
-			NewValue:  map[string]any{"actor": newAssignee},
+			OldValue:  map[string]any{"assignee": currentAssignee},
+			NewValue:  map[string]any{"assignee": newAssignee},
 		},
 	}
+
+	now := time.Now()
 
 	err := dolt.WithAuditedTx(ctx, store, auditEvents, func(tx *sql.Tx) error {
 		var assigneeVal any = newAssignee
@@ -69,8 +72,8 @@ func assignIssue(ctx context.Context, store dolt.Store, params AssignParams) (As
 			assigneeVal = nil // store NULL in DB when clearing
 		}
 		if _, err := tx.ExecContext(ctx,
-			"UPDATE issues SET assignee = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?",
-			assigneeVal, params.Actor, params.Model, params.ID,
+			"UPDATE issues SET assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?",
+			assigneeVal, now, params.Actor, params.Model, params.ID,
 		); err != nil {
 			return gravaerrors.New("DB_UNREACHABLE", "failed to assign issue", err)
 		}
