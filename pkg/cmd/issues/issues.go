@@ -14,7 +14,6 @@ import (
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/graph"
-	"github.com/hoangtrungnguyen/grava/pkg/validation"
 	"github.com/spf13/cobra"
 )
 
@@ -175,15 +174,19 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 				`SELECT d.from_id FROM dependencies d WHERE d.to_id = ? AND d.type = 'subtask-of' ORDER BY d.from_id`,
 				id,
 			)
+			if err != nil {
+				return fmt.Errorf("failed to query subtasks for %s: %w", id, err)
+			}
+			defer subtaskRows.Close() //nolint:errcheck
 			var subtasks []string
-			if err == nil {
-				defer subtaskRows.Close() //nolint:errcheck
-				for subtaskRows.Next() {
-					var childID string
-					if scanErr := subtaskRows.Scan(&childID); scanErr == nil {
-						subtasks = append(subtasks, childID)
-					}
+			for subtaskRows.Next() {
+				var childID string
+				if scanErr := subtaskRows.Scan(&childID); scanErr == nil {
+					subtasks = append(subtasks, childID)
 				}
+			}
+			if err := subtaskRows.Err(); err != nil {
+				return fmt.Errorf("error reading subtask rows for %s: %w", id, err)
 			}
 
 			if *d.OutputJSON {
@@ -433,118 +436,6 @@ You can filter by status or type, and sort by various criteria.`,
 	return cmd
 }
 
-func newUpdateCmd(d *cmddeps.Deps) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "update <id>",
-		Short: "Update an existing issue",
-		Long: `Update specific fields of an existing issue.
-Only the flags provided will be updated.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
-
-			query := "UPDATE issues SET updated_at = ?, updated_by = ?, agent_model = ?"
-			queryParams := []any{time.Now(), *d.Actor, *d.AgentModel}
-
-			if cmd.Flags().Changed("title") {
-				val, _ := cmd.Flags().GetString("title")
-				query += ", title = ?"
-				queryParams = append(queryParams, val)
-			}
-			if cmd.Flags().Changed("desc") {
-				val, _ := cmd.Flags().GetString("desc")
-				query += ", description = ?"
-				queryParams = append(queryParams, val)
-			}
-			if cmd.Flags().Changed("type") {
-				val, _ := cmd.Flags().GetString("type")
-				if err := validation.ValidateIssueType(val); err != nil {
-					return err
-				}
-				query += ", issue_type = ?"
-				queryParams = append(queryParams, val)
-			}
-			if cmd.Flags().Changed("priority") {
-				query += ", priority = ?"
-				val, _ := cmd.Flags().GetString("priority")
-				pInt, err := validation.ValidatePriority(val)
-				if err != nil {
-					return err
-				}
-				queryParams = append(queryParams, pInt)
-			}
-			if cmd.Flags().Changed("status") {
-				statusVal, _ := cmd.Flags().GetString("status")
-				if err := validation.ValidateStatus(statusVal); err != nil {
-					return err
-				}
-
-				dag, err := graph.LoadGraphFromDB(*d.Store)
-				if err != nil {
-					return fmt.Errorf("failed to load graph for status propagation: %w", err)
-				}
-				dag.SetSession(*d.Actor, *d.AgentModel)
-
-				err = dag.SetNodeStatus(id, graph.IssueStatus(statusVal))
-				if err != nil {
-					return fmt.Errorf("failed to update status via graph: %w", err)
-				}
-			}
-			if cmd.Flags().Changed("files") {
-				query += ", affected_files = ?"
-				val := UpdateAffectedFiles
-				b, _ := json.Marshal(val)
-				queryParams = append(queryParams, string(b))
-			}
-
-			query += " WHERE id = ?"
-			queryParams = append(queryParams, id)
-
-			result, err := (*d.Store).Exec(query, queryParams...)
-			if err != nil {
-				return fmt.Errorf("failed to update issue %s: %w", id, err)
-			}
-
-			if cmd.Flags().Changed("last-commit") {
-				val, _ := cmd.Flags().GetString("last-commit")
-				if err := setLastCommit(d, id, val); err != nil {
-					return err
-				}
-			}
-
-			rowsAffected, err := result.RowsAffected()
-			if err != nil {
-				return fmt.Errorf("failed to get rows affected: %w", err)
-			}
-
-			if rowsAffected == 0 && !cmd.Flags().Changed("last-commit") {
-				return fmt.Errorf("issue %s not found or no changes made", id)
-			}
-
-			if *d.OutputJSON {
-				resp := map[string]string{
-					"id":     id,
-					"status": "updated",
-				}
-				b, _ := json.MarshalIndent(resp, "", "  ")
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
-				return nil
-			}
-
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Updated issue %s\n", id)
-			return nil
-		},
-	}
-
-	cmd.Flags().StringP("title", "t", "", "Update title")
-	cmd.Flags().StringP("desc", "d", "", "Update description")
-	cmd.Flags().String("type", "", "Update type")
-	cmd.Flags().StringP("priority", "p", "", "Update priority")
-	cmd.Flags().StringP("status", "s", "", "Update status")
-	cmd.Flags().StringSliceVar(&UpdateAffectedFiles, "files", []string{}, "Update affected files")
-	cmd.Flags().String("last-commit", "", "Store the last session's commit hash")
-	return cmd
-}
 
 func newDropCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
@@ -621,62 +512,6 @@ Example:
 
 	cmd.Flags().BoolVar(&dropForce, "force", false, "Skip interactive confirmation prompt")
 	return cmd
-}
-
-func newAssignCmd(d *cmddeps.Deps) *cobra.Command {
-	return &cobra.Command{
-		Use:   "assign <id> <user>",
-		Short: "Assign an issue to a user or agent",
-		Long: `Set the assignee field on an existing issue.
-
-The assignee can be a human username or an agent identity string.
-Passing an empty string ("") clears the assignee.
-
-Example:
-  grava assign grava-abc alice
-  grava assign grava-abc "agent:planner-v2"
-  grava assign grava-abc ""   # unassign`,
-		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
-			user := args[1]
-
-			result, err := (*d.Store).Exec(
-				`UPDATE issues SET assignee = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`,
-				user, *d.Actor, *d.AgentModel, id,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to assign issue %s: %w", id, err)
-			}
-
-			rowsAffected, err := result.RowsAffected()
-			if err != nil {
-				return fmt.Errorf("failed to get rows affected: %w", err)
-			}
-			if rowsAffected == 0 {
-				return fmt.Errorf("issue %s not found", id)
-			}
-
-			if *d.OutputJSON {
-				resp := map[string]string{
-					"id":       id,
-					"status":   "updated",
-					"field":    "assignee",
-					"assignee": user,
-				}
-				b, _ := json.MarshalIndent(resp, "", "  ")
-				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
-				return nil
-			}
-
-			if user == "" {
-				cmd.Printf("👤 Assignee cleared on %s\n", id)
-			} else {
-				cmd.Printf("👤 Assigned %s to %s\n", id, user)
-			}
-			return nil
-		},
-	}
 }
 
 func newLabelCmd(d *cmddeps.Deps) *cobra.Command {

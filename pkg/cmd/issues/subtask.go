@@ -59,6 +59,20 @@ func subtaskIssue(ctx context.Context, store dolt.Store, params SubtaskParams) (
 			fmt.Sprintf("invalid priority: '%s'", params.Priority), err)
 	}
 
+	// Verify parent exists before generating a child ID. GenerateChildID increments
+	// child_counters in its own committed transaction and cannot be rolled back.
+	// Checking the parent first avoids wasting sequence numbers on invalid parents.
+	// TOCTOU note: concurrent parent deletion between this check and the insert is
+	// acceptable — grava does not support concurrent issue deletion in Phase 1.
+	var parentCount int
+	if err := store.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", params.ParentID).Scan(&parentCount); err != nil {
+		return SubtaskResult{}, gravaerrors.New("DB_UNREACHABLE", "failed to check parent existence", err)
+	}
+	if parentCount == 0 {
+		return SubtaskResult{}, gravaerrors.New("ISSUE_NOT_FOUND",
+			fmt.Sprintf("Issue %s not found", params.ParentID), nil)
+	}
+
 	// Generate child ID BEFORE opening the transaction — GenerateChildID opens its own
 	// internal transaction; nesting it inside WithAuditedTx causes conflicts with sqlmock.
 	generator := idgen.NewStandardGenerator(store)
@@ -105,17 +119,6 @@ func subtaskIssue(ctx context.Context, store dolt.Store, params SubtaskParams) (
 	}
 
 	err = dolt.WithAuditedTx(ctx, store, auditEvents, func(tx *sql.Tx) error {
-		// Verify parent exists inside the transaction
-		var count int
-		if err := tx.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM issues WHERE id = ?", params.ParentID).Scan(&count); err != nil {
-			return gravaerrors.New("DB_UNREACHABLE", "failed to check parent existence", err)
-		}
-		if count == 0 {
-			return gravaerrors.New("ISSUE_NOT_FOUND",
-				fmt.Sprintf("Issue %s not found", params.ParentID), nil)
-		}
-
 		insertQuery := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files)
 		                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		if _, err := tx.ExecContext(ctx, insertQuery,

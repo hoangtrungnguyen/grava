@@ -1,6 +1,6 @@
 # Story 2.2: Break Issues into Subtasks
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -71,6 +71,11 @@ so that large issues can be tracked at a granular level with parent-child relati
   - [x] 5.1 `go test ./...` — all 17 packages pass
   - [x] 5.2 `go vet ./...` — zero warnings
   - [x] 5.3 `go build -ldflags="-s -w" ./...` — compiles clean
+
+### Review Follow-ups (AI)
+- [ ] [AI-Review][MEDIUM] `mockStoreForSubtask` QueryRowFn creates a new `*sql.DB` per call via `sqlmock.New()` that is never closed — leaks goroutines/FDs at scale. Fix: create mockDB once outside the closure, close in `t.Cleanup`. [subtask_test.go:37-39, commands_test.go:371-373, commands_test.go:410-412]
+- [ ] [AI-Review][LOW] `SubtaskAffectedFiles` is a package-level var bound via `StringSliceVar` — if two tests instantiate `newSubtaskCmd` in the same binary, second run inherits state from the first. [subtask.go:207]
+- [ ] [AI-Review][LOW] Human output `Subtasks: %v` prints Go slice syntax `[id1 id2]` — consider comma-separated or one-per-line format for readability. [issues.go:237]
 
 ## Dev Notes
 

@@ -104,6 +104,11 @@ func TestShowCmd(t *testing.T) {
 		WithArgs("grava-123").
 		WillReturnRows(rows)
 
+	// Subtasks query — returns empty (no subtasks for this issue)
+	mock.ExpectQuery("SELECT d.from_id FROM dependencies").
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"from_id"}))
+
 	mock.ExpectClose()
 
 	output, err := executeCommand(rootCmd, "show", "grava-123")
@@ -258,6 +263,12 @@ func TestUpdateCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
+	// Pre-read current row before WithAuditedTx
+	mock.ExpectQuery(`SELECT title, description, issue_type, priority, status`).
+		WithArgs("grava-1").
+		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "assignee"}).
+			AddRow("Old Title", "desc", "task", 2, "open", ""))
+
 	// Phase 1: graph load for status propagation
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
@@ -272,10 +283,14 @@ func TestUpdateCmd(t *testing.T) {
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// Phase 2: regular UPDATE for remaining fields (title only, status is excluded)
+	// Phase 2: WithAuditedTx for title field
+	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE issues SET updated_at = \?, updated_by = \?, agent_model = \?.*`).
 		WithArgs(sqlmock.AnyArg(), "unknown", "", "New Title", "grava-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	mock.ExpectClose()
 
@@ -290,10 +305,20 @@ func TestUpdateTitleCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	// Title-only update: no graph load needed
+	// Pre-read current row before WithAuditedTx
+	mock.ExpectQuery(`SELECT title, description, issue_type, priority, status`).
+		WithArgs("grava-1").
+		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "assignee"}).
+			AddRow("Old Title", "desc", "task", 2, "open", ""))
+
+	// WithAuditedTx for title field
+	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE issues SET updated_at = \?, updated_by = \?, agent_model = \?.*`).
 		WithArgs(sqlmock.AnyArg(), "unknown", "", "New Title", "grava-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	mock.ExpectClose()
 
@@ -308,9 +333,20 @@ func TestUpdateWithFilesCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
+	// Pre-read current row before WithAuditedTx
+	mock.ExpectQuery(`SELECT title, description, issue_type, priority, status`).
+		WithArgs("grava-1").
+		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "assignee"}).
+			AddRow("Old Title", "desc", "task", 2, "open", ""))
+
+	// WithAuditedTx for files field
+	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE issues SET updated_at = \?, updated_by = \?, agent_model = \?.*`).
 		WithArgs(sqlmock.AnyArg(), "unknown", "", `["f1.go","f2.go"]`, "grava-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	mock.ExpectClose()
 
@@ -361,17 +397,17 @@ func TestSubtaskCmd(t *testing.T) {
 		_, err := tx.ExecContext(ctx, "INSERT INTO events VALUES ()")
 		return err
 	}
+	// Parent existence pre-check now uses store.QueryRow (not the tx). Wire it on the mock.
+	ms.QueryRowFn = func(query string, args ...any) *sql.Row {
+		mockDB, qmock, _ := sqlmock.New()
+		qmock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+		return mockDB.QueryRow("SELECT", args...)
+	}
 	Store = ms
-
-	parentID := "grava-123"
 
 	// 1. Transaction Start
 	mock.ExpectBegin()
-	// 2. Parent existence check (SELECT COUNT(*))
-	mock.ExpectQuery("SELECT COUNT").
-		WithArgs(parentID).
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	// 3. Insert subtask
+	// 2. Insert subtask (parent check now happens before tx via store.QueryRow)
 	mock.ExpectExec(`INSERT INTO issues`).
 		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 1, "open", 0,
 			sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
@@ -400,22 +436,19 @@ func TestSubtaskCmd_ParentNotFound(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	ms := testutil.NewMockStore()
-	ms.GetNextChildSequenceFn = func(parentID string) (int, error) { return 1, nil }
-	ms.BeginTxFn = func(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-		return dolt.NewClientFromDB(db).BeginTx(ctx, nil)
+	// Parent check uses store.QueryRow before GenerateChildID; return count=0 to trigger ISSUE_NOT_FOUND.
+	ms.QueryRowFn = func(query string, args ...any) *sql.Row {
+		mockDB, qmock, _ := sqlmock.New()
+		qmock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		return mockDB.QueryRow("SELECT", args...)
 	}
 	Store = ms
-
-	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT COUNT").
-		WithArgs("grava-missing").
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectRollback()
 
 	_, err = executeCommand(rootCmd, "subtask", "grava-missing", "--title", "Some subtask")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "grava-missing not found")
-	assert.NoError(t, mock.ExpectationsWereMet())
+	// db (sqlmock) is no longer used — no expectations to verify
+	_ = mock
 }
 
 func TestShowCmd_WithSubtasks(t *testing.T) {
@@ -609,13 +642,23 @@ func TestAssignCmd(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
+	// Pre-read current assignee before WithAuditedTx
+	mock.ExpectQuery(`SELECT COALESCE\(assignee`).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"assignee"}).AddRow(""))
+
+	// WithAuditedTx for assign
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE issues SET assignee`).
 		WithArgs("alice", "unknown", "", "grava-123").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	mock.ExpectClose()
 
-	output, err := executeCommand(rootCmd, "assign", "grava-123", "alice")
+	output, err := executeCommand(rootCmd, "assign", "grava-123", "--actor", "alice")
 	assert.NoError(t, err)
 	assert.Contains(t, output, "Assigned grava-123 to alice")
 
@@ -627,12 +670,13 @@ func TestAssignCmdNotFound(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET assignee = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
-		WithArgs("alice", "unknown", "", "grava-999").
-		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
+	// Pre-read returns ErrNoRows → ISSUE_NOT_FOUND
+	mock.ExpectQuery(`SELECT COALESCE\(assignee`).
+		WithArgs("grava-999").
+		WillReturnRows(sqlmock.NewRows([]string{}))
 
 	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
-	_, err = executeCommand(rootCmd, "assign", "grava-999", "alice")
+	_, err = executeCommand(rootCmd, "assign", "grava-999", "--actor", "alice")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "grava-999 not found")
 

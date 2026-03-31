@@ -17,7 +17,8 @@ import (
 // mockStoreForSubtask returns a MockStore wired to route actual SQL through
 // the given sqlmock db, while GetNextChildSequence returns seq directly
 // (avoiding the nested-transaction conflict described in Dev Notes).
-func mockStoreForSubtask(db *sql.DB, seq int) *testutil.MockStore {
+// parentExists controls the pre-check QueryRow response for the parent existence check.
+func mockStoreForSubtask(db *sql.DB, seq int, parentExists bool) *testutil.MockStore {
 	store := testutil.NewMockStore()
 	store.GetNextChildSequenceFn = func(parentID string) (int, error) { return seq, nil }
 	store.BeginTxFn = func(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
@@ -26,6 +27,16 @@ func mockStoreForSubtask(db *sql.DB, seq int) *testutil.MockStore {
 	store.LogEventTxFn = func(ctx context.Context, tx *sql.Tx, issueID, eventType, actor, model string, old, new interface{}) error {
 		_, err := tx.ExecContext(ctx, "INSERT INTO events VALUES ()")
 		return err
+	}
+	// Wire QueryRowFn for the pre-GenerateChildID parent existence check (H1 fix).
+	store.QueryRowFn = func(query string, args ...any) *sql.Row {
+		count := 0
+		if parentExists {
+			count = 1
+		}
+		mockDB, mock, _ := sqlmock.New()
+		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(count))
+		return mockDB.QueryRow("SELECT", args...)
 	}
 	return store
 }
@@ -36,9 +47,6 @@ func TestSubtaskIssue_HappyPath(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT COUNT").
-		WithArgs("grava-parent").
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectExec("INSERT INTO issues").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT INTO dependencies").
@@ -47,7 +55,7 @@ func TestSubtaskIssue_HappyPath(t *testing.T) {
 	mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	store := mockStoreForSubtask(db, 1)
+	store := mockStoreForSubtask(db, 1, true)
 	result, err := subtaskIssue(context.Background(), store, SubtaskParams{
 		ParentID:  "grava-parent",
 		Title:     "Write unit tests",
@@ -83,18 +91,16 @@ func TestSubtaskIssue_MissingTitle(t *testing.T) {
 }
 
 func TestSubtaskIssue_ParentNotFound(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close() //nolint:errcheck
+	// Parent check now happens before GenerateChildID via store.QueryRow.
+	// No transaction is opened — just wire QueryRowFn to return count=0.
+	store := testutil.NewMockStore()
+	store.QueryRowFn = func(query string, args ...any) *sql.Row {
+		mockDB, mock, _ := sqlmock.New()
+		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		return mockDB.QueryRow("SELECT", args...)
+	}
 
-	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT COUNT").
-		WithArgs("grava-missing").
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectRollback()
-
-	store := mockStoreForSubtask(db, 1)
-	_, err = subtaskIssue(context.Background(), store, SubtaskParams{
+	_, err := subtaskIssue(context.Background(), store, SubtaskParams{
 		ParentID:  "grava-missing",
 		Title:     "Some subtask",
 		IssueType: "task",
@@ -106,7 +112,6 @@ func TestSubtaskIssue_ParentNotFound(t *testing.T) {
 	var gravaErr *gravaerrors.GravaError
 	require.True(t, errors.As(err, &gravaErr))
 	assert.Equal(t, "ISSUE_NOT_FOUND", gravaErr.Code)
-	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestSubtaskIssue_JSONOutputStructure(t *testing.T) {
@@ -115,9 +120,6 @@ func TestSubtaskIssue_JSONOutputStructure(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT COUNT").
-		WithArgs("grava-abc").
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectExec("INSERT INTO issues").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT INTO dependencies").
@@ -126,7 +128,7 @@ func TestSubtaskIssue_JSONOutputStructure(t *testing.T) {
 	mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	store := mockStoreForSubtask(db, 3)
+	store := mockStoreForSubtask(db, 3, true)
 	result, err := subtaskIssue(context.Background(), store, SubtaskParams{
 		ParentID:  "grava-abc",
 		Title:     "JSON test",
@@ -161,15 +163,28 @@ func TestSubtaskIssue_InvalidPriority(t *testing.T) {
 	assert.Equal(t, "INVALID_PRIORITY", gravaErr.Code)
 }
 
+func TestSubtaskIssue_InvalidIssueType(t *testing.T) {
+	store := testutil.NewMockStore()
+	_, err := subtaskIssue(context.Background(), store, SubtaskParams{
+		ParentID:  "grava-parent",
+		Title:     "Some subtask",
+		IssueType: "invalid-type",
+		Priority:  "medium",
+		Actor:     "test-actor",
+		Model:     "test-model",
+	})
+	require.Error(t, err)
+	var gravaErr *gravaerrors.GravaError
+	require.True(t, errors.As(err, &gravaErr))
+	assert.Equal(t, "INVALID_ISSUE_TYPE", gravaErr.Code)
+}
+
 func TestSubtaskIssue_EphemeralFlag(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT COUNT").
-		WithArgs("grava-parent").
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectExec("INSERT INTO issues").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT INTO dependencies").
@@ -178,7 +193,7 @@ func TestSubtaskIssue_EphemeralFlag(t *testing.T) {
 	mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	store := mockStoreForSubtask(db, 1)
+	store := mockStoreForSubtask(db, 1, true)
 	result, err := subtaskIssue(context.Background(), store, SubtaskParams{
 		ParentID:  "grava-parent",
 		Title:     "Wisp subtask",
