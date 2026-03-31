@@ -185,9 +185,11 @@ grava update <id> [flags]
 **Flags:**
 - `-t, --title string`: New title.
 - `-d, --desc string`: New description.
+- `--type string`: Update issue type.
 - `--status string`: New status (e.g., `open`, `in_progress`, `closed`, `blocked`).
 - `-p, --priority string`: New priority.
 - `--files strings`: Update the list of affected files.
+- `--last-commit string`: Store the last session's commit hash.
 
 **Example:**
 ```bash
@@ -495,26 +497,30 @@ grava label grava-abc "needs-review"
 
 ### `assign`
 
-Sets the `assignee` field on an existing issue. The assignee can be a human username or an agent identity string. Passing an empty string clears the assignee.
+Sets or clears the `assignee` field on an existing issue. The assignee can be a human username or an agent identity string. Use `--unassign` to clear the assignee.
 
 **Usage:**
 ```bash
-grava assign <id> <user>
+grava assign <id> --actor <user>
+grava assign <id> --unassign
 ```
 
 **Arguments:**
 - `<id>`: The issue ID to assign.
-- `<user>`: The username or agent identity. Pass `""` to unassign.
+
+**Flags:**
+- `--actor <user>`: The username or agent identity to assign.
+- `--unassign`: Clear the assignee field.
 
 **Examples:**
 ```bash
-grava assign grava-abc alice
+grava assign grava-abc --actor alice
 # Output: 👤 Assigned grava-abc to alice
 
-grava assign grava-abc "agent:planner-v2"
+grava assign grava-abc --actor "agent:planner-v2"
 # Output: 👤 Assigned grava-abc to agent:planner-v2
 
-grava assign grava-abc ""
+grava assign grava-abc --unassign
 # Output: 👤 Assignee cleared on grava-abc
 ```
 
