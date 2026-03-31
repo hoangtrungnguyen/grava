@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
+	"github.com/hoangtrungnguyen/grava/internal/testutil"
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/spf13/cobra"
@@ -344,76 +347,105 @@ func TestCreateWithFilesCmd(t *testing.T) {
 
 func TestSubtaskCmd(t *testing.T) {
 	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
-	}
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
 
-	Store = dolt.NewClientFromDB(db)
+	// Use MockStore: GetNextChildSequence returns 5 directly (no nested tx against sqlmock),
+	// while BeginTx routes actual SQL through the sqlmock-backed db.
+	ms := testutil.NewMockStore()
+	ms.GetNextChildSequenceFn = func(parentID string) (int, error) { return 5, nil }
+	ms.BeginTxFn = func(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+		return dolt.NewClientFromDB(db).BeginTx(ctx, nil)
+	}
+	ms.LogEventTxFn = func(ctx context.Context, tx *sql.Tx, issueID, eventType, actor, model string, old, new interface{}) error {
+		_, err := tx.ExecContext(ctx, "INSERT INTO events VALUES ()")
+		return err
+	}
+	Store = ms
 
 	parentID := "grava-123"
 
-	// 1. Transaction Start (main)
+	// 1. Transaction Start
 	mock.ExpectBegin()
-
-	// 2. Verify Parent Exists
-	mock.ExpectQuery(`SELECT 1 FROM issues WHERE id = \?`).
+	// 2. Parent existence check (SELECT COUNT(*))
+	mock.ExpectQuery("SELECT COUNT").
 		WithArgs(parentID).
-		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
-
-	// 3. ID Generation (GetNextChildSequence)
-	// GetNextChildSequence now starts its own transaction
-	mock.ExpectBegin()
-
-	// Atomic increment using INSERT ... ON DUPLICATE KEY UPDATE
-	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO child_counters (parent_id, next_child, updated_by)
-		VALUES (?, LAST_INSERT_ID(2), ?)
-		ON DUPLICATE KEY UPDATE
-			next_child = LAST_INSERT_ID(next_child + 1),
-			updated_by = VALUES(updated_by)`)).
-		WithArgs(parentID, sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-
-	// Get the value set by LAST_INSERT_ID
-	mock.ExpectQuery(`SELECT LAST_INSERT_ID\(\)`).
-		WillReturnRows(sqlmock.NewRows([]string{"LAST_INSERT_ID()"}).AddRow(6))
-
-	// Commit (INNER)
-	mock.ExpectCommit()
-
-	// 4. Insert Subtask (after generator returns)
-	mock.ExpectExec(`INSERT INTO issues .* VALUES`).
-		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 1, "open", 0, sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	// 3. Insert subtask
+	mock.ExpectExec(`INSERT INTO issues`).
+		WithArgs("grava-123.5", "Subtask Title", "Subtask Desc", "task", 1, "open", 0,
+			sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", "[]").
 		WillReturnResult(sqlmock.NewResult(1, 1))
-
-	// 5. Add subtask-of dependency
-	mock.ExpectExec(`INSERT INTO dependencies .* VALUES`).
+	// 4. Insert dependency
+	mock.ExpectExec(`INSERT INTO dependencies`).
 		WithArgs("grava-123.5", "grava-123", "subtask-of", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
-
-	// 6. Audit Log (create)
-	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
-		WithArgs("grava-123.5", "create", "unknown", "{}", sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-
-	// 7. Audit Log (dependency_add)
-	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
-		WithArgs("grava-123.5", "dependency_add", "unknown", "{}", sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-
-	// 8. Transaction Commit (main)
+	// 5. Audit log (subtask event)
+	mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(1, 1))
+	// 6. Audit log (dependency_add event)
+	mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(1, 1))
+	// 7. Commit
 	mock.ExpectCommit()
-
-	// PersistentPostRunE may close the connection
-	mock.ExpectClose()
-	mock.ExpectClose()
+	// PersistentPostRunE calls Store.Close() — MockStore.Close() is a no-op, no ExpectClose needed
 
 	output, err := executeCommand(rootCmd, "subtask", "grava-123", "--title", "Subtask Title", "--desc", "Subtask Desc", "--priority", "high")
 	assert.NoError(t, err)
 	assert.Contains(t, output, "Created subtask: grava-123.5")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
 
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("there were unfulfilled expectations: %s", err)
+func TestSubtaskCmd_ParentNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	ms := testutil.NewMockStore()
+	ms.GetNextChildSequenceFn = func(parentID string) (int, error) { return 1, nil }
+	ms.BeginTxFn = func(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+		return dolt.NewClientFromDB(db).BeginTx(ctx, nil)
 	}
+	Store = ms
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT COUNT").
+		WithArgs("grava-missing").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectRollback()
+
+	_, err = executeCommand(rootCmd, "subtask", "grava-missing", "--title", "Some subtask")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "grava-missing not found")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestShowCmd_WithSubtasks(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+
+	Store = dolt.NewClientFromDB(db)
+
+	issueRows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files"}).
+		AddRow("Parent Issue", "Desc", "task", 2, "open", time.Now(), time.Now(), "alice", "alice", nil, nil)
+
+	mock.ExpectQuery(`SELECT title`).
+		WithArgs("grava-abc").
+		WillReturnRows(issueRows)
+
+	// Subtask query via dependencies table
+	subtaskRows := sqlmock.NewRows([]string{"from_id"}).
+		AddRow("grava-abc.1").
+		AddRow("grava-abc.2")
+	mock.ExpectQuery(`SELECT d.from_id FROM dependencies`).
+		WithArgs("grava-abc").
+		WillReturnRows(subtaskRows)
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "show", "grava-abc")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Parent Issue")
+	assert.Contains(t, output, "grava-abc.1")
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestCommentCmd(t *testing.T) {
@@ -658,48 +690,28 @@ func TestQuickCmd(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	// Reset flags to defaults
-	quickPriority = 1
-	quickLimit = 20
-
-	rows := sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
-		AddRow("grava-1", "Critical crash fix", "bug", 0, "open", time.Now()).
-		AddRow("grava-2", "High priority refactor", "task", 1, "open", time.Now())
-
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
-		WithArgs(1, 20).
-		WillReturnRows(rows)
-
+	// quick now creates an issue: expect begin, insert, events insert, commit, close
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO issues").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO events").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 	mock.ExpectClose()
 
-	output, err := executeCommand(rootCmd, "quick")
+	output, err := executeCommand(rootCmd, "quick", "Fix login bug")
 	assert.NoError(t, err)
-	assert.Contains(t, output, "grava-1")
-	assert.Contains(t, output, "grava-2")
-	assert.Contains(t, output, "2 high-priority issue(s)")
+	assert.Contains(t, output, "Created issue")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestQuickCmdAllCaughtUp(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	assert.NoError(t, err)
-	Store = dolt.NewClientFromDB(db)
-
-	quickPriority = 1
-	quickLimit = 20
-
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
-		WithArgs(1, 20).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}))
-
-	mock.ExpectClose()
-
-	output, err := executeCommand(rootCmd, "quick")
-	assert.NoError(t, err)
-	assert.Contains(t, output, "all caught up")
-
-	assert.NoError(t, mock.ExpectationsWereMet())
+	// quick no longer has a "caught up" state — it's a create command.
+	// Verify it requires exactly one argument.
+	_, err := executeCommand(rootCmd, "quick")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "accepts 1 arg(s)")
 }
 
 func TestSearchCmdWisp(t *testing.T) {
@@ -731,33 +743,10 @@ func TestSearchCmdWisp(t *testing.T) {
 }
 
 func TestQuickCmdCustomPriority(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	assert.NoError(t, err)
-	Store = dolt.NewClientFromDB(db)
-
-	// --priority 2 should include medium issues too
-	quickPriority = 2
-	quickLimit = 20
-
-	rows := sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
-		AddRow("grava-3", "Medium priority task", "task", 2, "open", time.Now())
-
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
-		WithArgs(2, 20).
-		WillReturnRows(rows)
-
-	mock.ExpectClose()
-
-	output, err := executeCommand(rootCmd, "quick", "--priority", "2")
-	assert.NoError(t, err)
-	assert.Contains(t, output, "grava-3")
-	assert.Contains(t, output, "1 high-priority issue(s)")
-
-	assert.NoError(t, mock.ExpectationsWereMet())
-
-	// Reset flags
-	quickPriority = 1
-	quickLimit = 20
+	// quick no longer accepts --priority flag — verify unknown flag error.
+	_, err := executeCommand(rootCmd, "quick", "Some task", "--priority", "2")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown flag: --priority")
 }
 
 func TestDoctorCmd(t *testing.T) {

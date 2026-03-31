@@ -41,6 +41,36 @@
 
     <invoke-protocol name="discover_inputs" />
     <action>Load {project_context} for coding standards (if exists)</action>
+
+    <!-- Grava availability guard + ID discovery (see: _bmad/bmm/data/grava-integration-pattern.md) -->
+    <action>Run: `which grava` to check if grava CLI is on PATH</action>
+    <action>Check if `.grava/` directory exists in the repository root (or resolvable via GRAVA_DIR / redirect)</action>
+
+    <check if="grava CLI is available AND .grava/ is initialized">
+      <action>Set {{grava_tracking}} = true</action>
+
+      <!-- Try to find the grava story issue ID from the story file's Dev Agent Record -->
+      <action>Search story file Dev Agent Record → Completion Notes for "Grava Tracking: story=" pattern</action>
+      <action>Extract {{grava_story_id}} from the matched line (e.g., "story=grava-abc123def456")</action>
+
+      <check if="grava_story_id NOT found in story file">
+        <!-- Fallback: search grava for the story by title -->
+        <action>Run: `grava list --type story --json` and search for title containing "Story {{story_key}}"</action>
+        <action>If found, store its ID as {{grava_story_id}}</action>
+        <check if="still not found">
+          <output>ℹ️ Grava tracking enabled but no matching story issue found — review comments will be skipped.</output>
+          <action>Set {{grava_tracking}} = false</action>
+        </check>
+      </check>
+
+      <check if="grava_story_id found">
+        <output>📋 Grava tracking active — review comments will be posted to issue {{grava_story_id}}</output>
+      </check>
+    </check>
+
+    <check if="grava CLI is NOT available OR .grava/ is NOT initialized">
+      <action>Set {{grava_tracking}} = false</action>
+    </check>
   </step>
 
   <step n="2" goal="Build review attack plan">
@@ -166,6 +196,33 @@
       <action>Show detailed explanation with code examples</action>
       <action>Return to fix decision</action>
     </check>
+
+    <!-- Grava: post review findings as comments on the story issue -->
+    <check if="{{grava_tracking}} == true AND {{grava_story_id}} is set">
+      <!-- Post a summary comment with overall review results -->
+      <!-- See: _bmad/bmm/data/grava-integration-pattern.md for command reference -->
+      <action>Run: `grava comment {{grava_story_id}} "Code Review ({{date}}): {{high_count}} High, {{medium_count}} Medium, {{low_count}} Low issues found. Fixed: {{fixed_count}}, Action items: {{action_count}}."`</action>
+
+      <!-- Post individual comments for each HIGH finding -->
+      <for-each item="finding" in="high_severity_findings">
+        <action>Run: `grava comment {{grava_story_id}} "[HIGH] {{finding.description}} ({{finding.file}}:{{finding.line}})"`</action>
+        <check if="grava comment fails">
+          <output>⚠️ Grava comment failed for finding — continuing.</output>
+        </check>
+      </for-each>
+
+      <!-- Post individual comments for each MEDIUM finding -->
+      <for-each item="finding" in="medium_severity_findings">
+        <action>Run: `grava comment {{grava_story_id}} "[MEDIUM] {{finding.description}} ({{finding.file}}:{{finding.line}})"`</action>
+        <check if="grava comment fails">
+          <output>⚠️ Grava comment failed for finding — continuing.</output>
+        </check>
+      </for-each>
+
+      <check if="any grava comment calls failed">
+        <output>⚠️ Some Grava review comments could not be posted — review findings are still recorded in the story file.</output>
+      </check>
+    </check>
   </step>
 
   <step n="5" goal="Update story status and sync sprint tracking">
@@ -212,6 +269,20 @@
 
     <check if="{{current_sprint_status}} == 'no-sprint-tracking'">
       <output>ℹ️ Story status updated (no sprint tracking configured)</output>
+    </check>
+
+    <!-- Grava: post final review outcome comment -->
+    <check if="{{grava_tracking}} == true AND {{grava_story_id}} is set">
+      <check if="{{new_status}} == 'done'">
+        <action>Run: `grava comment {{grava_story_id}} "Review APPROVED ({{date}}). Story marked done. {{fixed_count}} issues fixed during review."`</action>
+        <action>Run: `grava update {{grava_story_id}} --status closed`</action>
+      </check>
+      <check if="{{new_status}} == 'in-progress'">
+        <action>Run: `grava comment {{grava_story_id}} "Review CHANGES REQUESTED ({{date}}). {{action_count}} action items pending. Story returned to in-progress."`</action>
+      </check>
+      <check if="grava comment or update fails">
+        <output>⚠️ Grava review outcome update failed — continuing.</output>
+      </check>
     </check>
 
     <output>**✅ Review Complete!**

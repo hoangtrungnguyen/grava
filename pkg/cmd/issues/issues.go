@@ -14,7 +14,6 @@ import (
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/graph"
-	"github.com/hoangtrungnguyen/grava/pkg/idgen"
 	"github.com/hoangtrungnguyen/grava/pkg/validation"
 	"github.com/spf13/cobra"
 )
@@ -33,10 +32,8 @@ var SubtaskAffectedFiles []string
 var StdinReader io.Reader = os.Stdin
 
 var (
-	dropForce     bool
-	showTree      bool
-	quickPriority int
-	quickLimit    int
+	dropForce        bool
+	showTree         bool
 	commentLastCommit string
 )
 
@@ -65,6 +62,7 @@ type IssueDetail struct {
 	UpdatedBy     string    `json:"updated_by"`
 	AgentModel    string    `json:"agent_model,omitempty"`
 	AffectedFiles []string  `json:"affected_files,omitempty"`
+	Subtasks      []string  `json:"subtasks,omitempty"`
 }
 
 // SortColumnMap maps CLI field names to SQL column names.
@@ -127,145 +125,6 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	root.AddCommand(newClaimCmd(d))
 }
 
-func newCreateCmd(d *cmddeps.Deps) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "create",
-		Short: "Create a new issue",
-		Long: `Create a new issue in the Grava tracker.
-You can specify title, description, type, and priority.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			title, _ := cmd.Flags().GetString("title")
-			desc, _ := cmd.Flags().GetString("desc")
-			issueType, _ := cmd.Flags().GetString("type")
-			priority, _ := cmd.Flags().GetString("priority")
-			parentID, _ := cmd.Flags().GetString("parent")
-			ephemeral, _ := cmd.Flags().GetBool("ephemeral")
-
-			affectedFiles := CreateAffectedFiles
-
-			generator := idgen.NewStandardGenerator(*d.Store)
-
-			if err := validation.ValidateIssueType(issueType); err != nil {
-				return err
-			}
-
-			pInt, err := validation.ValidatePriority(priority)
-			if err != nil {
-				return err
-			}
-
-			var id string
-			if parentID != "" {
-				id, err = generator.GenerateChildID(parentID)
-				if err != nil {
-					return fmt.Errorf("failed to generate child ID: %w", err)
-				}
-			} else {
-				id = generator.GenerateBaseID()
-			}
-
-			ephemeralVal := 0
-			if ephemeral {
-				ephemeralVal = 1
-			}
-
-			affectedFilesJSON := "[]"
-			if len(affectedFiles) > 0 {
-				b, _ := json.Marshal(affectedFiles)
-				affectedFilesJSON = string(b)
-			}
-
-			ctx := context.Background()
-			tx, err := (*d.Store).BeginTx(ctx, nil)
-			if err != nil {
-				return fmt.Errorf("failed to start transaction: %w", err)
-			}
-			defer tx.Rollback() //nolint:errcheck
-
-			query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-
-			_, err = tx.ExecContext(ctx, query, id, title, desc, issueType, pInt, "open", ephemeralVal, time.Now(), time.Now(), *d.Actor, *d.Actor, *d.AgentModel, affectedFilesJSON)
-			if err != nil {
-				return fmt.Errorf("failed to insert issue: %w", err)
-			}
-
-			if parentID != "" {
-				var exists int
-				err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM issues WHERE id = ?", parentID).Scan(&exists)
-				if err != nil {
-					return fmt.Errorf("failed to check parent existence: %w", err)
-				}
-				if exists == 0 {
-					return fmt.Errorf("parent issue %s not found", parentID)
-				}
-
-				depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
-				_, err = tx.ExecContext(ctx, depQuery, id, parentID, "subtask-of", *d.Actor, *d.Actor, *d.AgentModel)
-				if err != nil {
-					return fmt.Errorf("failed to create subtask-of dependency: %w", err)
-				}
-			}
-
-			err = (*d.Store).LogEventTx(ctx, tx, id, "create", *d.Actor, *d.AgentModel, nil, map[string]interface{}{
-				"title":    title,
-				"type":     issueType,
-				"priority": pInt,
-				"status":   "open",
-			})
-			if err != nil {
-				return fmt.Errorf("failed to log event: %w", err)
-			}
-
-			if parentID != "" {
-				err = (*d.Store).LogEventTx(ctx, tx, id, "dependency_add", *d.Actor, *d.AgentModel, nil, map[string]interface{}{
-					"to_id": parentID,
-					"type":  "subtask-of",
-				})
-				if err != nil {
-					return fmt.Errorf("failed to log dependency event: %w", err)
-				}
-			}
-
-			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("failed to commit transaction: %w", err)
-			}
-
-			if *d.OutputJSON {
-				resp := map[string]string{
-					"id":     id,
-					"status": "created",
-				}
-				if ephemeral {
-					resp["ephemeral"] = "true"
-				}
-				b, _ := json.MarshalIndent(resp, "", "  ")
-				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
-				return nil
-			}
-
-			if ephemeral {
-				cmd.Printf("👻 Created ephemeral issue (Wisp): %s\n", id)
-			} else {
-				cmd.Printf("✅ Created issue: %s\n", id)
-			}
-
-			return nil
-		},
-	}
-
-	cmd.Flags().StringP("title", "t", "", "Issue title (required)")
-	cmd.Flags().StringP("desc", "d", "", "Issue description")
-	cmd.Flags().String("type", "task", "Issue type (task, bug, epic, story)")
-	cmd.Flags().StringP("priority", "p", "medium", "Issue priority (low, medium, high, critical)")
-	cmd.Flags().String("parent", "", "Parent Issue ID for sub-tasks")
-	cmd.Flags().Bool("ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
-	cmd.Flags().StringSliceVar(&CreateAffectedFiles, "files", []string{}, "Affected files (comma separated)")
-	cmd.MarkFlagRequired("title") //nolint:errcheck
-
-	return cmd
-}
-
 func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <id>",
@@ -311,6 +170,22 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 				_ = json.Unmarshal([]byte(*affectedFilesJSON), &files)
 			}
 
+			// Query child subtasks via the dependencies table (canonical source for parent-child)
+			subtaskRows, err := (*d.Store).Query(
+				`SELECT d.from_id FROM dependencies d WHERE d.to_id = ? AND d.type = 'subtask-of' ORDER BY d.from_id`,
+				id,
+			)
+			var subtasks []string
+			if err == nil {
+				defer subtaskRows.Close() //nolint:errcheck
+				for subtaskRows.Next() {
+					var childID string
+					if scanErr := subtaskRows.Scan(&childID); scanErr == nil {
+						subtasks = append(subtasks, childID)
+					}
+				}
+			}
+
 			if *d.OutputJSON {
 				detail := IssueDetail{
 					ID:            id,
@@ -325,6 +200,7 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 					CreatedBy:     createdBy,
 					UpdatedBy:     updatedBy,
 					AffectedFiles: files,
+					Subtasks:      subtasks,
 				}
 				if agentModelStr != nil {
 					detail.AgentModel = *agentModelStr
@@ -352,6 +228,9 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 			}
 			if len(files) > 0 {
 				cmd.Printf("Files:       %v\n", files)
+			}
+			if len(subtasks) > 0 {
+				cmd.Printf("Subtasks:    %v\n", subtasks)
 			}
 			cmd.Printf("\nDescription:\n%s\n", desc)
 
@@ -926,217 +805,43 @@ Example:
 	return cmd
 }
 
-func newSubtaskCmd(d *cmddeps.Deps) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "subtask <parent_id>",
-		Short: "Create a subtask",
-		Long: `Create a new subtask for an existing issue.
-The subtask ID will be hierarchical (e.g., parent_id.1).`,
+func newQuickCmd(d *cmddeps.Deps) *cobra.Command {
+	return &cobra.Command{
+		Use:   "quick <title>",
+		Short: "Create an issue quickly with defaults",
+		Long: `Quick creates a new issue with a single argument — the title.
+Defaults: type=task, priority=medium. The old list behavior is available via:
+  grava list --sort priority:asc
+
+Examples:
+  grava quick "Fix login bug"
+  grava quick "Add dark mode support"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			parentID := args[0]
-			subtaskTitle, _ := cmd.Flags().GetString("title")
-			subtaskDesc, _ := cmd.Flags().GetString("desc")
-			subtaskType, _ := cmd.Flags().GetString("type")
-			subtaskPriority, _ := cmd.Flags().GetString("priority")
-			subtaskEphemeral, _ := cmd.Flags().GetBool("ephemeral")
-
-			generator := idgen.NewStandardGenerator(*d.Store)
-			ctx := context.Background()
-
-			if err := validation.ValidateIssueType(subtaskType); err != nil {
-				return err
-			}
-
-			pInt, err := validation.ValidatePriority(subtaskPriority)
-			if err != nil {
-				return err
-			}
-
-			tx, err := (*d.Store).BeginTx(ctx, nil)
-			if err != nil {
-				return fmt.Errorf("failed to start transaction: %w", err)
-			}
-			defer tx.Rollback() //nolint:errcheck
-
-			var exists int
-			err = tx.QueryRowContext(ctx, "SELECT 1 FROM issues WHERE id = ?", parentID).Scan(&exists)
-			if err != nil {
-				return fmt.Errorf("parent issue %s not found: %w", parentID, err)
-			}
-
-			id, err := generator.GenerateChildID(parentID)
-			if err != nil {
-				return fmt.Errorf("failed to generate subtask ID: %w", err)
-			}
-
-			ephemeralVal := 0
-			if subtaskEphemeral {
-				ephemeralVal = 1
-			}
-
-			affectedFilesJSON := "[]"
-			if len(SubtaskAffectedFiles) > 0 {
-				b, _ := json.Marshal(SubtaskAffectedFiles)
-				affectedFilesJSON = string(b)
-			}
-
-			query := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-
-			_, err = tx.ExecContext(ctx, query, id, subtaskTitle, subtaskDesc, subtaskType, pInt, "open", ephemeralVal, time.Now(), time.Now(), *d.Actor, *d.Actor, *d.AgentModel, affectedFilesJSON)
-			if err != nil {
-				return fmt.Errorf("failed to insert subtask: %w", err)
-			}
-
-			depQuery := `INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`
-			_, err = tx.ExecContext(ctx, depQuery, id, parentID, "subtask-of", *d.Actor, *d.Actor, *d.AgentModel)
-			if err != nil {
-				return fmt.Errorf("failed to create subtask-of dependency: %w", err)
-			}
-
-			err = (*d.Store).LogEventTx(ctx, tx, id, "create", *d.Actor, *d.AgentModel, nil, map[string]interface{}{
-				"title":     subtaskTitle,
-				"type":      subtaskType,
-				"priority":  pInt,
-				"parent_id": parentID,
+			result, err := createIssue(cmd.Context(), *d.Store, CreateParams{
+				Title:     args[0],
+				IssueType: "task",
+				Priority:  "medium",
+				Actor:     *d.Actor,
+				Model:     *d.AgentModel,
 			})
 			if err != nil {
-				return fmt.Errorf("failed to log event: %w", err)
-			}
-
-			err = (*d.Store).LogEventTx(ctx, tx, id, "dependency_add", *d.Actor, *d.AgentModel, nil, map[string]interface{}{
-				"to_id": parentID,
-				"type":  "subtask-of",
-			})
-			if err != nil {
-				return fmt.Errorf("failed to log dependency event: %w", err)
-			}
-
-			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("failed to commit transaction: %w", err)
+				if *d.OutputJSON {
+					return writeJSONError(cmd, err)
+				}
+				return err
 			}
 
 			if *d.OutputJSON {
-				resp := map[string]string{
-					"id":     id,
-					"status": "created",
-				}
-				if subtaskEphemeral {
-					resp["ephemeral"] = "true"
-				}
-				b, _ := json.MarshalIndent(resp, "", "  ")
+				b, _ := json.MarshalIndent(result, "", "  ")
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 				return nil
 			}
 
-			if subtaskEphemeral {
-				cmd.Printf("👻 Created ephemeral subtask (Wisp): %s\n", id)
-			} else {
-				cmd.Printf("✅ Created subtask: %s\n", id)
-			}
-
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Created issue: %s\n", result.ID)
 			return nil
 		},
 	}
-
-	cmd.Flags().StringP("title", "t", "", "Subtask title (required)")
-	cmd.Flags().StringP("desc", "d", "", "Subtask description")
-	cmd.Flags().String("type", "task", "Subtask type (task, bug, epic, story)")
-	cmd.Flags().StringP("priority", "p", "medium", "Subtask priority (low, medium, high, critical)")
-	cmd.Flags().Bool("ephemeral", false, "Mark subtask as ephemeral (Wisp)")
-	cmd.Flags().StringSliceVar(&SubtaskAffectedFiles, "files", []string{}, "Affected files (comma separated)")
-	cmd.MarkFlagRequired("title") //nolint:errcheck
-	return cmd
-}
-
-func newQuickCmd(d *cmddeps.Deps) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "quick",
-		Short: "List high-priority or quick tasks",
-		Long: `Quick shows open issues at or above the given priority threshold.
-
-Priority levels:
-  0 = critical
-  1 = high      (default threshold)
-  2 = medium
-  3 = low
-  4 = backlog
-
-Examples:
-  grava quick                  # show critical + high priority open issues
-  grava quick --priority 2     # include medium priority as well
-  grava quick --limit 5        # cap results at 5`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			sql := `SELECT id, title, issue_type, priority, status, created_at
-		        FROM issues
-		        WHERE ephemeral = 0
-		          AND status = 'open'
-		          AND priority <= ?
-		        ORDER BY priority ASC, created_at DESC
-		        LIMIT ?`
-
-			rows, err := (*d.Store).Query(sql, quickPriority, quickLimit)
-			if err != nil {
-				return fmt.Errorf("failed to query quick issues: %w", err)
-			}
-			defer rows.Close() //nolint:errcheck
-
-			var results []IssueListItem
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			if !*d.OutputJSON {
-				_, _ = fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
-			}
-
-			found := 0
-			for rows.Next() {
-				var id, title, iType, status string
-				var prio int
-				var createdAt time.Time
-				if err := rows.Scan(&id, &title, &iType, &prio, &status, &createdAt); err != nil {
-					return fmt.Errorf("failed to scan row: %w", err)
-				}
-
-				if *d.OutputJSON {
-					results = append(results, IssueListItem{
-						ID:        id,
-						Title:     title,
-						Type:      iType,
-						Priority:  prio,
-						Status:    status,
-						CreatedAt: createdAt,
-					})
-				} else {
-					if len(title) > 50 {
-						title = title[:47] + "..."
-					}
-					_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
-						id, title, iType, prio, status, createdAt.Format("2006-01-02"))
-				}
-				found++
-			}
-			if err := rows.Err(); err != nil {
-				return fmt.Errorf("row iteration error: %w", err)
-			}
-
-			if *d.OutputJSON {
-				b, _ := json.MarshalIndent(results, "", "  ")
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
-			} else {
-				w.Flush() //nolint:errcheck
-				if found == 0 {
-					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "🎉 No high-priority open issues. You're all caught up!")
-				} else {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n⚡ %d high-priority issue(s) need attention.\n", found)
-				}
-			}
-			return nil
-		},
-	}
-
-	cmd.Flags().IntVar(&quickPriority, "priority", 1, "Show issues at or above this priority level (0=critical, 1=high, 2=medium, 3=low)")
-	cmd.Flags().IntVar(&quickLimit, "limit", 20, "Maximum number of results to return")
-	return cmd
 }
 
 // addCommentToIssue appends a comment to the issue's metadata.

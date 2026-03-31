@@ -174,6 +174,66 @@
     <action>GOTO step 2a</action>
   </step>
 
+  <step n="1b" goal="Create Grava tracking issues for epic and story" tag="grava-tracking">
+    <critical>This step is CONDITIONAL — if grava is not available or not initialized, skip entirely without HALT</critical>
+    <critical>See: _bmad/bmm/data/grava-integration-pattern.md for full command reference and patterns</critical>
+
+    <!-- Grava availability guard (pattern §1) -->
+    <action>Run: `which grava` to check if grava CLI is on PATH</action>
+    <action>Check if `.grava/` directory exists in the repository root (or resolvable via GRAVA_DIR / redirect)</action>
+
+    <check if="grava CLI is NOT available OR .grava/ is NOT initialized">
+      <output>ℹ️ Grava tracking skipped — grava CLI not available or not initialized. Continuing without issue tracking.</output>
+      <action>Set {{grava_tracking}} = false</action>
+      <action>Continue to Step 2</action>
+    </check>
+
+    <check if="grava CLI is available AND .grava/ is initialized">
+      <action>Set {{grava_tracking}} = true</action>
+
+      <!-- Find-or-create the epic issue (pattern §3) -->
+      <action>Run: `grava list --type epic --json` and search results for title containing "Epic {{epic_num}}"</action>
+
+      <check if="epic issue already exists in grava">
+        <action>Store its ID as {{grava_epic_id}}</action>
+        <output>📋 Found existing Grava epic issue: {{grava_epic_id}}</output>
+      </check>
+
+      <check if="epic issue does NOT exist in grava">
+        <!-- Extract epic title from epics content loaded earlier or from sprint_status -->
+        <action>Derive epic title from the sprint-status comment line for epic-{{epic_num}} (e.g., "Epic 2: Issue Lifecycle — Create, Track & Manage")</action>
+        <action>Run: `grava create --title "Epic {{epic_num}}: {{epic_title}}" --type epic --priority medium --json`</action>
+        <action>Parse JSON response to extract the created epic issue ID</action>
+        <action>Store as {{grava_epic_id}}</action>
+
+        <check if="grava create epic fails">
+          <output>⚠️ Failed to create Grava epic issue: {{error_message}}. Continuing without tracking.</output>
+          <action>Set {{grava_tracking}} = false</action>
+          <action>Continue to Step 2</action>
+        </check>
+
+        <output>📋 Created Grava epic issue: {{grava_epic_id}}</output>
+      </check>
+
+      <!-- Create the story issue as a child of the epic -->
+      <action>Derive story title from the story key (e.g., "2-1-create-issues-and-macro-epics" → "Create Issues and Macro-Epics")</action>
+      <action>Run: `grava create --title "Story {{story_id}}: {{story_title_human}}" --type story --parent {{grava_epic_id}} --priority medium --json`</action>
+      <action>Parse JSON response to extract the created story issue ID</action>
+      <action>Store as {{grava_story_id}}</action>
+
+      <check if="grava create story fails">
+        <output>⚠️ Failed to create Grava story issue: {{error_message}}. Continuing without tracking.</output>
+        <action>Set {{grava_tracking}} = false</action>
+        <action>Continue to Step 2</action>
+      </check>
+
+      <output>📋 **Grava Tracking Initialized**
+        - Epic issue: {{grava_epic_id}}
+        - Story issue: {{grava_story_id}} (child of epic)
+      </output>
+    </check>
+  </step>
+
   <step n="2" goal="Load and analyze core artifacts">
     <critical>🔬 EXHAUSTIVE ARTIFACT ANALYSIS - This is where you prevent future developer fuckups!</critical>
 
@@ -304,6 +364,13 @@
     <template-output file="{default_output_file}">
     story_completion_status</template-output>
 
+    <!-- Record grava tracking IDs in the story file Dev Agent Record -->
+    <check if="{{grava_tracking}} == true AND {{grava_story_id}} is set">
+      <action>Append to Dev Agent Record → Completion Notes section in the story file:
+        "Grava Tracking: epic={{grava_epic_id}}, story={{grava_story_id}}"
+      </action>
+    </check>
+
     <!-- CRITICAL: Set status to ready-for-dev -->
     <action>Set story Status to: "ready-for-dev"</action>
     <action>Add completion note: "Ultimate
@@ -322,6 +389,15 @@
       <action>Verify current status is "backlog" (expected previous state)</action>
       <action>Update development_status[{{story_key}}] = "ready-for-dev"</action>
       <action>Save file, preserving ALL comments and structure including STATUS DEFINITIONS</action>
+    </check>
+
+    <!-- Grava: post story-created comment and update status -->
+    <check if="{{grava_tracking}} == true AND {{grava_story_id}} is set">
+      <action>Run: `grava comment {{grava_story_id}} "Story context file created ({{date}}). Status: ready-for-dev. File: {{story_file}}"`</action>
+      <action>Run: `grava comment {{grava_epic_id}} "Story {{story_id}} ({{story_key}}) context created and ready for development."`</action>
+      <check if="any grava comment fails">
+        <output>⚠️ Grava comment failed — story file is still saved correctly.</output>
+      </check>
     </check>
 
     <action>Report completion</action>

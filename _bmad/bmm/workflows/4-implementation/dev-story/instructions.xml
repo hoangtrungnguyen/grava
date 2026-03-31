@@ -221,10 +221,87 @@
     </check>
   </step>
 
+  <step n="4b" goal="Create Grava tracking issues for story and tasks" tag="grava-tracking">
+    <critical>This step is CONDITIONAL — if grava is not available or not initialized, skip entirely without HALT</critical>
+    <critical>See: _bmad/bmm/data/grava-integration-pattern.md for full command reference and patterns</critical>
+
+    <!-- Grava availability guard (pattern §1) -->
+    <action>Run: `which grava` to check if grava CLI is on PATH</action>
+    <action>Check if `.grava/` directory exists in the repository root (or resolvable via GRAVA_DIR / redirect)</action>
+
+    <check if="grava CLI is NOT available OR .grava/ is NOT initialized">
+      <output>ℹ️ Grava tracking skipped — grava CLI not available or not initialized. Continuing without issue tracking.</output>
+      <action>Set {{grava_tracking}} = false</action>
+      <action>Continue to Step 5</action>
+    </check>
+
+    <check if="grava CLI is available AND .grava/ is initialized">
+      <action>Set {{grava_tracking}} = true</action>
+
+      <!-- Try to read existing Grava story ID from Dev Agent Record (propagated from create-story) -->
+      <action>Search story file Dev Agent Record for "Grava Tracking: " line</action>
+      <action>Extract story= value if present → set {{grava_story_id}}</action>
+
+      <!-- Find-or-create story issue (pattern §3) -->
+      <check if="grava_story_id NOT found in story file">
+        <action>Run: `grava list --type story --json` and search for title containing "Story {{story_key}}"</action>
+        <check if="matching story found">
+          <action>Set {{grava_story_id}} = found issue's id</action>
+        </check>
+        <check if="no matching story found">
+          <action>Run: `grava create --title "Story {{story_key}}: {{story_title}}" --type story --priority medium --json`</action>
+          <action>Parse JSON response → extract `id` field → set {{grava_story_id}}</action>
+        </check>
+      </check>
+
+      <check if="grava create fails">
+        <output>⚠️ Failed to create Grava story issue: {{error_message}}. Continuing without tracking.</output>
+        <action>Set {{grava_tracking}} = false</action>
+        <action>Continue to Step 5</action>
+      </check>
+
+      <output>📋 Created Grava story issue: {{grava_story_id}}</output>
+
+      <!-- Create subtask issues for each task in the story -->
+      <action>Parse all top-level tasks from the story file Tasks/Subtasks section (lines starting with `- [ ] Task N:`)</action>
+      <action>For each task, extract the task description (text after `Task N:`)</action>
+
+      <for-each item="task" in="parsed_tasks">
+        <action>Run: `grava create --title "{{task.description}}" --type task --parent {{grava_story_id}} --json`</action>
+        <action>Parse JSON response to extract subtask ID (e.g., "grava-abc123def456.1")</action>
+        <action>Store mapping: task_number → grava_subtask_id in {{grava_task_map}}</action>
+
+        <check if="grava create subtask fails">
+          <output>⚠️ Failed to create subtask for Task {{task.number}}: {{error_message}}. Skipping this subtask.</output>
+        </check>
+      </for-each>
+
+      <output>📋 **Grava Tracking Initialized**
+        - Story issue: {{grava_story_id}}
+        - Subtasks created: {{grava_task_map_count}} / {{total_tasks}}
+      </output>
+
+      <!-- Record grava issue IDs in the story file Dev Agent Record section -->
+      <action>Append to Dev Agent Record → Completion Notes in the story file:
+        "Grava Tracking: story={{grava_story_id}}, subtasks={{grava_task_map_summary}}"
+      </action>
+    </check>
+  </step>
+
   <step n="5" goal="Implement task following red-green-refactor cycle">
     <critical>FOLLOW THE STORY FILE TASKS/SUBTASKS SEQUENCE EXACTLY AS WRITTEN - NO DEVIATION</critical>
 
     <action>Review the current task/subtask from the story file - this is your authoritative implementation guide</action>
+
+    <!-- Grava: mark subtask as in-progress (claim sets status=in_progress + assigns actor) -->
+    <!-- See: _bmad/bmm/data/grava-integration-pattern.md for command reference -->
+    <check if="{{grava_tracking}} == true AND {{grava_task_map}} has entry for current task number">
+      <action>Run: `grava claim {{current_task_grava_id}}`</action>
+      <check if="grava claim fails">
+        <output>⚠️ Grava claim failed for {{current_task_grava_id}} — continuing without tracking.</output>
+      </check>
+    </check>
+
     <action>Plan implementation following red-green-refactor cycle</action>
 
     <!-- RED PHASE -->
@@ -298,6 +375,14 @@
       <action>ONLY THEN mark the task (and subtasks) checkbox with [x]</action>
       <action>Update File List section with ALL new, modified, or deleted files (paths relative to repo root)</action>
       <action>Add completion notes to Dev Agent Record summarizing what was ACTUALLY implemented and tested</action>
+
+      <!-- Grava: mark subtask as closed -->
+      <check if="{{grava_tracking}} == true AND {{grava_task_map}} has entry for current task number">
+        <action>Run: `grava update {{current_task_grava_id}} --status closed`</action>
+        <check if="grava update fails">
+          <output>⚠️ Grava status update failed for {{current_task_grava_id}} — continuing.</output>
+        </check>
+      </check>
     </check>
 
     <check if="ANY validation fails">
@@ -341,6 +426,15 @@
       - Change Log includes summary of changes
       - Only permitted story sections were modified
     </action>
+
+    <!-- Grava: mark parent story issue as closed -->
+    <check if="{{grava_tracking}} == true AND {{grava_story_id}} is set">
+      <action>Run: `grava update {{grava_story_id}} --status closed`</action>
+      <check if="grava update fails">
+        <output>⚠️ Grava story status update failed for {{grava_story_id}} — continuing.</output>
+      </check>
+      <output>📋 Grava story issue {{grava_story_id}} marked as closed</output>
+    </check>
 
     <!-- Mark story ready for review - sprint status conditional -->
     <check if="{sprint_status} file exists AND {{current_sprint_status}} != 'no-sprint-tracking'">
