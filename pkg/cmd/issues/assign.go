@@ -105,17 +105,17 @@ Example:
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
-			actor, _ := cmd.Flags().GetString("actor")
+			assignee, _ := cmd.Flags().GetString("actor")
 			unassign, _ := cmd.Flags().GetBool("unassign")
 
-			if !unassign && actor == "" {
+			if !unassign && assignee == "" {
 				return gravaerrors.New("MISSING_REQUIRED_FIELD",
 					"either --actor <user> or --unassign must be specified", nil)
 			}
 
 			result, err := assignIssue(cmd.Context(), *d.Store, AssignParams{
 				ID:       id,
-				Assignee: actor,
+				Assignee: assignee,
 				Unassign: unassign,
 				Actor:    *d.Actor,
 				Model:    *d.AgentModel,

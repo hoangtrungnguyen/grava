@@ -62,6 +62,33 @@ func TestUpdateIssue_HappyPath(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestUpdateIssue_MultiField(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE issues").WillReturnResult(sqlmock.NewResult(1, 1))
+	// Two audit events: one for title, one for priority
+	mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	store := mockStoreForUpdate(db, true, "Old title", "Old desc", "task", 3, "open")
+	result, err := updateIssue(context.Background(), store, UpdateParams{
+		ID:            "grava-abc",
+		Title:         "New title",
+		Priority:      "high",
+		Actor:         "test-actor",
+		Model:         "test-model",
+		ChangedFields: []string{"title", "priority"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "grava-abc", result.ID)
+	assert.Equal(t, "updated", result.Status)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestUpdateIssue_IssueNotFound(t *testing.T) {
 	store := mockStoreForUpdate(nil, false, "", "", "", 0, "")
 	_, err := updateIssue(context.Background(), store, UpdateParams{
