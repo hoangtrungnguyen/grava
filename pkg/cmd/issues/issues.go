@@ -122,6 +122,8 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	root.AddCommand(newSubtaskCmd(d))
 	root.AddCommand(newQuickCmd(d))
 	root.AddCommand(newClaimCmd(d))
+	root.AddCommand(newStartCmd(d))
+	root.AddCommand(newStopCmd(d))
 }
 
 func newShowCmd(d *cmddeps.Deps) *cobra.Command {

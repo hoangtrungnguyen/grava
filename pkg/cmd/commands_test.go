@@ -1158,3 +1158,187 @@ func TestWriteJSONError_OutputIsValidJSON(t *testing.T) {
 	_, hasError := raw["error"]
 	assert.True(t, hasError, "JSON must contain top-level 'error' key")
 }
+
+func TestStartCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// SELECT FOR UPDATE is now inside the transaction (atomic read+write)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status, COALESCE(assignee, '') FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("open", ""))
+
+	// Start work: update status to in_progress, set assignee, clear stopped_at
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = ?, started_at = ?, stopped_at = NULL, assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("in_progress", sqlmock.AnyArg(), "unknown", sqlmock.AnyArg(), "unknown", "", "grava-123").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Insert audit event
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "start", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectCommit()
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "start", "grava-123")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Started work on")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestStartCmd_AlreadyInProgress(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// SELECT FOR UPDATE inside transaction returns already in_progress
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status, COALESCE(assignee, '') FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("in_progress", "agent-01"))
+
+	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
+
+	_, err = executeCommand(rootCmd, "start", "grava-123")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "already being worked on by agent-01")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestStartCmd_IssueNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// SELECT FOR UPDATE inside transaction returns empty result (ErrNoRows)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status, COALESCE(assignee, '') FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-missing").
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}))
+
+	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
+
+	_, err = executeCommand(rootCmd, "start", "grava-missing")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestStopCmd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// SELECT FOR UPDATE is now inside the transaction (atomic read+write)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("in_progress"))
+
+	// Stop work: update status to open
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = ?, stopped_at = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("open", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "", "grava-123").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Insert audit event
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "stop", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectCommit()
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "stop", "grava-123")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Stopped work on")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestStopCmd_NotInProgress(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// SELECT FOR UPDATE inside transaction returns open (not in_progress)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
+
+	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
+
+	_, err = executeCommand(rootCmd, "stop", "grava-123")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not in progress")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestStopCmd_IssueNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	// SELECT FOR UPDATE inside transaction returns empty result (ErrNoRows)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-missing").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}))
+
+	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
+
+	_, err = executeCommand(rootCmd, "stop", "grava-missing")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestStart_Stop_Cycle(t *testing.T) {
+	// Phase 1: start — SELECT FOR UPDATE inside tx, transitions to in_progress
+	db1, mock1, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db1)
+
+	mock1.ExpectBegin()
+	mock1.ExpectQuery(regexp.QuoteMeta(`SELECT status, COALESCE(assignee, '') FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-cycle").
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("open", ""))
+	mock1.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = ?, started_at = ?, stopped_at = NULL, assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("in_progress", sqlmock.AnyArg(), "unknown", sqlmock.AnyArg(), "unknown", "", "grava-cycle").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock1.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "start", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock1.ExpectCommit()
+	mock1.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "start", "grava-cycle")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Started work on")
+	assert.NoError(t, mock1.ExpectationsWereMet())
+
+	// Phase 2: stop — SELECT FOR UPDATE inside tx, transitions to open
+	db2, mock2, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db2)
+
+	mock2.ExpectBegin()
+	mock2.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-cycle").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("in_progress"))
+	mock2.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = ?, stopped_at = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("open", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "", "grava-cycle").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock2.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "stop", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock2.ExpectCommit()
+	mock2.ExpectClose()
+
+	output, err = executeCommand(rootCmd, "stop", "grava-cycle")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "Stopped work on")
+	assert.NoError(t, mock2.ExpectationsWereMet())
+}

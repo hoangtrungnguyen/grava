@@ -37,24 +37,72 @@ grava init
 
 ---
  
-### `start`
- 
+### `db-start`
+
 Starts the Dolt SQL server using the configured port in `.grava.yaml`.
- 
+
 **Usage:**
 ```bash
-grava start
+grava db-start
 ```
- 
+
 ---
- 
-### `stop`
- 
+
+### `db-stop`
+
 Stops the Dolt SQL server running on the configured port. This uses a non-interactive mode (`-y`) to force-stop the process.
- 
+
 **Usage:**
 ```bash
-grava stop
+grava db-stop
+```
+
+---
+
+### `start`
+
+Mark work as started on an issue, transitioning its status from `open` to `in_progress`. Records the `started_at` timestamp for cycle time measurement and emits an audit event.
+
+**Usage:**
+```bash
+grava start <id>
+```
+
+**Errors:**
+- `ISSUE_NOT_FOUND` — Issue does not exist.
+- `ALREADY_IN_PROGRESS` — Issue is already being worked on (includes current actor name).
+
+**JSON output:**
+```json
+{
+  "id": "abc123def456",
+  "status": "in_progress",
+  "started_at": "2026-04-01T10:30:45Z"
+}
+```
+
+---
+
+### `stop`
+
+Mark work as stopped on an issue, transitioning its status from `in_progress` back to `open` (ready queue). Records the `stopped_at` timestamp and emits an audit event.
+
+**Usage:**
+```bash
+grava stop <id>
+```
+
+**Errors:**
+- `ISSUE_NOT_FOUND` — Issue does not exist.
+- `NOT_IN_PROGRESS` — Issue is not currently in progress.
+
+**JSON output:**
+```json
+{
+  "id": "abc123def456",
+  "status": "open",
+  "stopped_at": "2026-04-01T10:45:30Z"
+}
 ```
  
 ---

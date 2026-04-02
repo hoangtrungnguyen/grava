@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-var startCmd = &cobra.Command{
-	Use:   "start",
+var dbStartCmd = &cobra.Command{
+	Use:   "db-start",
 	Short: "Start the Dolt SQL server",
 	Long:  `Start the Dolt SQL server using the configured port in .grava.yaml.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -85,5 +85,5 @@ var startCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(dbStartCmd)
 }

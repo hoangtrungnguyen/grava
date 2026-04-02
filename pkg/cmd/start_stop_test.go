@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestStartCmd(t *testing.T) {
+func TestDbStartCmd(t *testing.T) {
 	// 1. Setup temporary directory as the fake project root
 	tmpDir, err := os.MkdirTemp("", "grava-test-*")
 	assert.NoError(t, err)
@@ -41,7 +41,7 @@ func TestStartCmd(t *testing.T) {
 	viper.Set("db_url", "root@tcp(127.0.0.1:39901)/dolt")
 
 	t.Run("grava start outputs startup message with correct port", func(t *testing.T) {
-		output, err := executeCommand(rootCmd, "start")
+		output, err := executeCommand(rootCmd, "db-start")
 		assert.NoError(t, err)
 		assert.Contains(t, output, "Starting Dolt server on port 39901")
 		assert.Contains(t, output, "started in background")
@@ -53,12 +53,12 @@ func TestStartCmd(t *testing.T) {
 		assert.NoError(t, os.Rename(doltDir, bakDir))
 		defer os.Rename(bakDir, doltDir) //nolint:errcheck
 
-		_, err := executeCommand(rootCmd, "start")
+		_, err := executeCommand(rootCmd, "db-start")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})
 
-	t.Run("grava start fails when no dolt binary available", func(t *testing.T) {
+	t.Run("grava db-start fails when no dolt binary available", func(t *testing.T) {
 		// Temporarily rename the local binary
 		bakBin := fakeDolt + ".bak"
 		assert.NoError(t, os.Rename(fakeDolt, bakBin))
@@ -70,7 +70,7 @@ func TestStartCmd(t *testing.T) {
 			t.Skip("system dolt is installed — cannot test 'no dolt found' scenario")
 		}
 
-		_, err := executeCommand(rootCmd, "start")
+		_, err := executeCommand(rootCmd, "db-start")
 		assert.Error(t, err)
 	})
 }

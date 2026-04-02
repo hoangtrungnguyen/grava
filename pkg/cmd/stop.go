@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-var stopCmd = &cobra.Command{
-	Use:   "stop",
+var dbStopCmd = &cobra.Command{
+	Use:   "db-stop",
 	Short: "Stop the Dolt SQL server",
 	Long:  `Stop the Dolt SQL server running on the configured port.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,11 +40,11 @@ var stopCmd = &cobra.Command{
 		// 3. Run stop script
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "🛑 Stopping Dolt server on port %s...\n", port)
 
-		stopCmd := exec.Command(scriptPath, port, "-y")
-		stopCmd.Stdout = cmd.OutOrStdout()
-		stopCmd.Stderr = cmd.ErrOrStderr()
+		shutdownCmd := exec.Command(scriptPath, port, "-y")
+		shutdownCmd.Stdout = cmd.OutOrStdout()
+		shutdownCmd.Stderr = cmd.ErrOrStderr()
 
-		if err := stopCmd.Run(); err != nil {
+		if err := shutdownCmd.Run(); err != nil {
 			return fmt.Errorf("failed to stop dolt server: %w", err)
 		}
 
@@ -53,5 +53,5 @@ var stopCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(dbStopCmd)
 }
