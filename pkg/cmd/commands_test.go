@@ -40,6 +40,8 @@ func resetFlags(cmd *cobra.Command) {
 	createAffectedFiles = nil
 	updateAffectedFiles = nil
 	subtaskAffectedFiles = nil
+	issues.LabelAddFlags = nil
+	issues.LabelRemoveFlags = nil
 
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
 		f.Changed = false
@@ -108,6 +110,16 @@ func TestShowCmd(t *testing.T) {
 	mock.ExpectQuery("SELECT d.from_id FROM dependencies").
 		WithArgs("grava-123").
 		WillReturnRows(sqlmock.NewRows([]string{"from_id"}))
+
+	// Labels query — returns empty
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT label FROM issue_labels WHERE issue_id = ?")).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"label"}))
+
+	// Comments query — returns empty
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, message, COALESCE(actor, ''), COALESCE(agent_model, ''), created_at FROM issue_comments WHERE issue_id = ?")).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "message", "actor", "agent_model", "created_at"}))
 
 	mock.ExpectClose()
 
@@ -472,6 +484,16 @@ func TestShowCmd_WithSubtasks(t *testing.T) {
 		WithArgs("grava-abc").
 		WillReturnRows(subtaskRows)
 
+	// Labels query — returns empty
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT label FROM issue_labels WHERE issue_id = ?")).
+		WithArgs("grava-abc").
+		WillReturnRows(sqlmock.NewRows([]string{"label"}))
+
+	// Comments query — returns empty
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, message, COALESCE(actor, ''), COALESCE(agent_model, ''), created_at FROM issue_comments WHERE issue_id = ?")).
+		WithArgs("grava-abc").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "message", "actor", "agent_model", "created_at"}))
+
 	mock.ExpectClose()
 
 	output, err := executeCommand(rootCmd, "show", "grava-abc")
@@ -481,43 +503,99 @@ func TestShowCmd_WithSubtasks(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCommentCmd(t *testing.T) {
+func TestCommentCmd_Message(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	// 1. SELECT metadata
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`)).
+	mock.ExpectBegin()
+	// Pre-read: issue exists
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
 		WithArgs("grava-123").
-		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{}`))
-
-	// 2. UPDATE with new metadata containing the comment
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
-		WithArgs(sqlmock.AnyArg(), "unknown", "", "grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-123"))
+	// INSERT comment into issue_comments
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issue_comments`)).
+		WithArgs("grava-123", "This is a test comment", "unknown", "", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
-
+	// Audit event
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "comment", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 	mock.ExpectClose()
 
-	output, err := executeCommand(rootCmd, "comment", "grava-123", "This is a test comment")
+	output, err := executeCommand(rootCmd, "comment", "grava-123", "--message", "This is a test comment")
 	assert.NoError(t, err)
 	assert.Contains(t, output, "💬 Comment added to grava-123")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCommentCmdIssueNotFound(t *testing.T) {
+func TestCommentCmd_Positional(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`)).
-		WithArgs("grava-999").
-		WillReturnRows(sqlmock.NewRows([]string{"metadata"})) // empty — no row
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-123"))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issue_comments`)).
+		WithArgs("grava-123", "Positional text", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "comment", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectClose()
 
-	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
-	_, err = executeCommand(rootCmd, "comment", "grava-999", "text")
+	output, err := executeCommand(rootCmd, "comment", "grava-123", "Positional text")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "💬 Comment added to grava-123")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCommentCmd_IssueNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
+		WithArgs("grava-999").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err = executeCommand(rootCmd, "comment", "grava-999", "--message", "text")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "grava-999 not found")
+	assert.Contains(t, err.Error(), "not found")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCommentCmd_JSON(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-123"))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO issue_comments`)).
+		WithArgs("grava-123", "JSON test", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(42, 1))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "comment", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "comment", "grava-123", "--message", "JSON test", "--json")
+	assert.NoError(t, err)
+	assert.Contains(t, output, `"id": "grava-123"`)
+	assert.Contains(t, output, `"message": "JSON test"`)
+	assert.Contains(t, output, `"comment_id"`)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -594,45 +672,114 @@ func TestDepCmdSameID(t *testing.T) {
 	assert.Contains(t, err.Error(), "from_id and to_id must be different")
 }
 
-func TestLabelCmd(t *testing.T) {
+func TestLabelCmd_Add(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	// 1. SELECT metadata (no existing labels)
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`)).
+	mock.ExpectBegin()
+	// Pre-read: issue exists
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
 		WithArgs("grava-123").
-		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{}`))
-
-	// 2. UPDATE with new metadata containing the label
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
-		WithArgs(sqlmock.AnyArg(), "unknown", "", "grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-123"))
+	// INSERT IGNORE for "bug"
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT IGNORE INTO issue_labels`)).
+		WithArgs("grava-123", "bug", "unknown").
 		WillReturnResult(sqlmock.NewResult(1, 1))
-
+	// INSERT IGNORE for "critical"
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT IGNORE INTO issue_labels`)).
+		WithArgs("grava-123", "critical", "unknown").
+		WillReturnResult(sqlmock.NewResult(2, 1))
+	// Query final labels
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT label FROM issue_labels WHERE issue_id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"label"}).AddRow("bug").AddRow("critical"))
+	// Audit event
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "label", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 	mock.ExpectClose()
 
-	output, err := executeCommand(rootCmd, "label", "grava-123", "needs-review")
+	output, err := executeCommand(rootCmd, "label", "grava-123", "--add", "bug", "--add", "critical")
 	assert.NoError(t, err)
-	assert.Contains(t, output, `Label "needs-review" added to grava-123`)
+	assert.Contains(t, output, "Labels added")
+	assert.Contains(t, output, "Current labels")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestLabelCmdIdempotent(t *testing.T) {
+func TestLabelCmd_Remove(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	// metadata already has the label
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`)).
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
 		WithArgs("grava-123").
-		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow(`{"labels":["needs-review"]}`))
-
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-123"))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issue_labels WHERE issue_id = ? AND label = ?`)).
+		WithArgs("grava-123", "bug").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT label FROM issue_labels WHERE issue_id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"label"}).AddRow("critical"))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "label", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 	mock.ExpectClose()
 
-	output, err := executeCommand(rootCmd, "label", "grava-123", "needs-review")
+	output, err := executeCommand(rootCmd, "label", "grava-123", "--remove", "bug")
 	assert.NoError(t, err)
-	assert.Contains(t, output, "already present")
+	assert.Contains(t, output, "Labels removed")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestLabelCmd_IssueNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
+		WithArgs("grava-missing").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err = executeCommand(rootCmd, "label", "grava-missing", "--add", "bug")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestLabelCmd_JSON(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-123"))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT IGNORE INTO issue_labels`)).
+		WithArgs("grava-123", "bug", "unknown").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT label FROM issue_labels WHERE issue_id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"label"}).AddRow("bug"))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "label", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "label", "grava-123", "--add", "bug", "--json")
+	assert.NoError(t, err)
+	assert.Contains(t, output, `"id": "grava-123"`)
+	assert.Contains(t, output, `"labels_added"`)
+	assert.Contains(t, output, `"current_labels"`)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

@@ -446,20 +446,32 @@ grava clear --from 2026-01-01 --to 2026-01-31
 
 ### `comment`
 
-Appends a comment to an existing issue. Comments are stored as a JSON array in the issue's `metadata` column. Each entry records the text, timestamp, and actor.
+Appends a timestamped comment to an existing issue. Comments are stored in the `issue_comments` table with actor and timestamp metadata.
 
 **Usage:**
 ```bash
-grava comment <id> <text>
+grava comment <id> --message <text>
+grava comment <id> -m <text>
+grava comment <id> <text>       # backward-compatible positional
 ```
 
 **Arguments:**
 - `<id>`: The issue ID to comment on.
-- `<text>`: The comment text (quote if it contains spaces).
 
-**Example:**
+**Flags:**
+- `--message, -m <text>`: The comment text (preferred).
+- `--last-commit <hash>`: Store the last session's commit hash in metadata.
+
+**Examples:**
 ```bash
-grava comment grava-abc "Investigated root cause, see PR #42"
+grava comment grava-abc --message "Investigated root cause, see PR #42"
+# Output: 💬 Comment added to grava-abc
+
+grava comment grava-abc -m "Fix confirmed on macOS ARM"
+# Output: 💬 Comment added to grava-abc
+
+# Backward-compatible positional text
+grava comment grava-abc "Quick note"
 # Output: 💬 Comment added to grava-abc
 ```
 
@@ -520,25 +532,34 @@ grava dep clear grava-abc
 
 ### `label`
 
-Adds a label to an existing issue. Labels are stored as a JSON array in the issue's `metadata` column. Adding a label that already exists is a **no-op** (idempotent).
+Adds or removes labels on an existing issue. Labels are stored in the `issue_labels` table. Adding an existing label is a **no-op** (idempotent). Removing a non-existent label is a graceful no-op.
 
 **Usage:**
 ```bash
-grava label <id> <label>
+grava label <id> --add <label> [--add <label>...] [--remove <label>...]
 ```
 
 **Arguments:**
 - `<id>`: The issue ID to label.
-- `<label>`: The label string to add (e.g., `needs-review`, `priority:high`).
+
+**Flags:**
+- `--add <label>`: Label(s) to add (repeatable).
+- `--remove <label>`: Label(s) to remove (repeatable).
 
 **Examples:**
 ```bash
-grava label grava-abc "needs-review"
-# Output: 🏷️  Label "needs-review" added to grava-abc
+grava label grava-abc --add bug --add critical
+# Output: 🏷️  Labels added to grava-abc: [bug critical]
+#         🏷️  Current labels: [bug critical]
 
-# Adding an existing label is safe
-grava label grava-abc "needs-review"
-# Output: 🏷️  Label "needs-review" already present on grava-abc
+grava label grava-abc --remove bug
+# Output: 🏷️  Labels removed from grava-abc: [bug]
+#         🏷️  Current labels: [critical]
+
+grava label grava-abc --add urgent --remove critical
+# Output: 🏷️  Labels added to grava-abc: [urgent]
+#         🏷️  Labels removed from grava-abc: [critical]
+#         🏷️  Current labels: [urgent]
 ```
 
 ---

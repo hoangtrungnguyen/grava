@@ -60,8 +60,19 @@ type IssueDetail struct {
 	CreatedBy     string    `json:"created_by"`
 	UpdatedBy     string    `json:"updated_by"`
 	AgentModel    string    `json:"agent_model,omitempty"`
-	AffectedFiles []string  `json:"affected_files,omitempty"`
-	Subtasks      []string  `json:"subtasks,omitempty"`
+	AffectedFiles []string       `json:"affected_files,omitempty"`
+	Subtasks      []string       `json:"subtasks,omitempty"`
+	Labels        []string       `json:"labels,omitempty"`
+	Comments      []CommentEntry `json:"comments,omitempty"`
+}
+
+// CommentEntry is the JSON output model for a single comment in show output.
+type CommentEntry struct {
+	ID         int64     `json:"id"`
+	Message    string    `json:"message"`
+	Actor      string    `json:"actor"`
+	AgentModel string    `json:"agent_model,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // SortColumnMap maps CLI field names to SQL column names.
@@ -191,6 +202,44 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 				return fmt.Errorf("error reading subtask rows for %s: %w", id, err)
 			}
 
+			// Query labels from issue_labels table
+			labelRows, err := (*d.Store).Query(
+				`SELECT label FROM issue_labels WHERE issue_id = ? ORDER BY label`, id,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to query labels for %s: %w", id, err)
+			}
+			defer labelRows.Close() //nolint:errcheck
+			var labels []string
+			for labelRows.Next() {
+				var label string
+				if scanErr := labelRows.Scan(&label); scanErr == nil {
+					labels = append(labels, label)
+				}
+			}
+			if err := labelRows.Err(); err != nil {
+				return fmt.Errorf("error reading label rows for %s: %w", id, err)
+			}
+
+			// Query comments from issue_comments table
+			commentRows, err := (*d.Store).Query(
+				`SELECT id, message, COALESCE(actor, ''), COALESCE(agent_model, ''), created_at FROM issue_comments WHERE issue_id = ? ORDER BY created_at`, id,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to query comments for %s: %w", id, err)
+			}
+			defer commentRows.Close() //nolint:errcheck
+			var comments []CommentEntry
+			for commentRows.Next() {
+				var c CommentEntry
+				if scanErr := commentRows.Scan(&c.ID, &c.Message, &c.Actor, &c.AgentModel, &c.CreatedAt); scanErr == nil {
+					comments = append(comments, c)
+				}
+			}
+			if err := commentRows.Err(); err != nil {
+				return fmt.Errorf("error reading comment rows for %s: %w", id, err)
+			}
+
 			if *d.OutputJSON {
 				detail := IssueDetail{
 					ID:            id,
@@ -206,6 +255,8 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 					UpdatedBy:     updatedBy,
 					AffectedFiles: files,
 					Subtasks:      subtasks,
+					Labels:        labels,
+					Comments:      comments,
 				}
 				if agentModelStr != nil {
 					detail.AgentModel = *agentModelStr
@@ -236,6 +287,15 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 			}
 			if len(subtasks) > 0 {
 				cmd.Printf("Subtasks:    %v\n", subtasks)
+			}
+			if len(labels) > 0 {
+				cmd.Printf("Labels:      %v\n", labels)
+			}
+			if len(comments) > 0 {
+				cmd.Printf("\nComments:\n")
+				for _, c := range comments {
+					cmd.Printf("  [%s] %s: %s\n", c.CreatedAt.Format(time.RFC3339), c.Actor, c.Message)
+				}
 			}
 			cmd.Printf("\nDescription:\n%s\n", desc)
 
@@ -516,132 +576,6 @@ Example:
 	return cmd
 }
 
-func newLabelCmd(d *cmddeps.Deps) *cobra.Command {
-	return &cobra.Command{
-		Use:   "label <id> <label>",
-		Short: "Add a label to an issue",
-		Long: `Add a label to an existing issue.
-
-Labels are stored as a JSON array in the issue's metadata column.
-Adding a label that already exists is a no-op (idempotent).
-
-Example:
-  grava label grava-abc "needs-review"
-  grava label grava-abc "priority:high"`,
-		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
-			label := args[1]
-
-			row := (*d.Store).QueryRow(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`, id)
-			var rawMeta string
-			if err := row.Scan(&rawMeta); err != nil {
-				return fmt.Errorf("issue %s not found: %w", id, err)
-			}
-
-			var meta map[string]any
-			if err := json.Unmarshal([]byte(rawMeta), &meta); err != nil {
-				return fmt.Errorf("failed to parse metadata for %s: %w", id, err)
-			}
-
-			var labels []string
-			if existing, ok := meta["labels"]; ok {
-				if arr, ok := existing.([]any); ok {
-					for _, v := range arr {
-						if s, ok := v.(string); ok {
-							labels = append(labels, s)
-						}
-					}
-				}
-			}
-
-			for _, l := range labels {
-				if l == label {
-					if *d.OutputJSON {
-						resp := map[string]string{
-							"id":     id,
-							"status": "unchanged",
-							"field":  "labels",
-							"note":   fmt.Sprintf("Label %q already present", label),
-						}
-						b, _ := json.MarshalIndent(resp, "", "  ")
-						_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
-						return nil
-					}
-					cmd.Printf("🏷️  Label %q already present on %s\n", label, id)
-					return nil
-				}
-			}
-			labels = append(labels, label)
-			meta["labels"] = labels
-
-			if err := updateIssueMetadata(d, id, meta); err != nil {
-				return fmt.Errorf("failed to save label on %s: %w", id, err)
-			}
-
-			if *d.OutputJSON {
-				resp := map[string]string{
-					"id":     id,
-					"status": "updated",
-					"field":  "labels",
-				}
-				b, _ := json.MarshalIndent(resp, "", "  ")
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
-				return nil
-			}
-
-			cmd.Printf("🏷️  Label %q added to %s\n", label, id)
-			return nil
-		},
-	}
-}
-
-func newCommentCmd(d *cmddeps.Deps) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "comment <id> <text>",
-		Short: "Append a comment to an issue",
-		Long: `Append a comment to an existing issue.
-
-Comments are stored as a JSON array in the issue's metadata column.
-Each comment entry records the text, the timestamp, and the actor.
-
-Example:
-  grava comment grava-abc "Investigated root cause, see PR #42"`,
-		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
-			text := args[1]
-
-			if err := addCommentToIssue(d, id, text); err != nil {
-				return err
-			}
-
-			if cmd.Flags().Changed("last-commit") {
-				if err := setLastCommit(d, id, commentLastCommit); err != nil {
-					return err
-				}
-			}
-
-			if *d.OutputJSON {
-				resp := map[string]string{
-					"id":     id,
-					"status": "updated",
-					"field":  "comments",
-				}
-				b, _ := json.MarshalIndent(resp, "", "  ")
-				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
-				return nil
-			}
-
-			cmd.Printf("💬 Comment added to %s\n", id)
-			return nil
-		},
-	}
-
-	cmd.Flags().StringVar(&commentLastCommit, "last-commit", "", "Store the last session's commit hash")
-	return cmd
-}
-
 func newQuickCmd(d *cmddeps.Deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "quick <title>",
@@ -679,38 +613,6 @@ Examples:
 			return nil
 		},
 	}
-}
-
-// addCommentToIssue appends a comment to the issue's metadata.
-func addCommentToIssue(d *cmddeps.Deps, id string, text string) error {
-	comment := map[string]any{
-		"text":        text,
-		"timestamp":   time.Now().UTC().Format(time.RFC3339),
-		"actor":       *d.Actor,
-		"agent_model": *d.AgentModel,
-	}
-
-	row := (*d.Store).QueryRow(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`, id)
-	var rawMeta string
-	if err := row.Scan(&rawMeta); err != nil {
-		return fmt.Errorf("issue %s not found: %w", id, err)
-	}
-
-	var meta map[string]any
-	if err := json.Unmarshal([]byte(rawMeta), &meta); err != nil {
-		return fmt.Errorf("failed to parse metadata for %s: %w", id, err)
-	}
-
-	var comments []any
-	if existing, ok := meta["comments"]; ok {
-		if arr, ok := existing.([]any); ok {
-			comments = arr
-		}
-	}
-	comments = append(comments, comment)
-	meta["comments"] = comments
-
-	return updateIssueMetadata(d, id, meta)
 }
 
 // updateIssueMetadata updates the metadata column for an issue.
