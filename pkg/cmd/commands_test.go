@@ -503,6 +503,50 @@ func TestShowCmd_WithSubtasks(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestShowCmd_LabelsAndComments(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	issueRow := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files"}).
+		AddRow("Labeled Issue", "Has labels and comments", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", nil, "[]")
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
+		WithArgs("grava-lbl").
+		WillReturnRows(issueRow)
+
+	// Subtasks — empty
+	mock.ExpectQuery("SELECT d.from_id FROM dependencies").
+		WithArgs("grava-lbl").
+		WillReturnRows(sqlmock.NewRows([]string{"from_id"}))
+
+	// Labels — return two labels
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT label FROM issue_labels WHERE issue_id = ?")).
+		WithArgs("grava-lbl").
+		WillReturnRows(sqlmock.NewRows([]string{"label"}).AddRow("bug").AddRow("critical"))
+
+	// Comments — return one comment
+	commentTime := time.Date(2026, 4, 3, 10, 30, 0, 0, time.UTC)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, message, COALESCE(actor, ''), COALESCE(agent_model, ''), created_at FROM issue_comments WHERE issue_id = ?")).
+		WithArgs("grava-lbl").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "message", "actor", "agent_model", "created_at"}).
+			AddRow(1, "Reproduced on macOS ARM", "agent-01", "claude-opus", commentTime))
+
+	mock.ExpectClose()
+
+	// Test JSON output
+	output, err := executeCommand(rootCmd, "show", "grava-lbl", "--json")
+	assert.NoError(t, err)
+	assert.Contains(t, output, `"labels"`)
+	assert.Contains(t, output, `"bug"`)
+	assert.Contains(t, output, `"critical"`)
+	assert.Contains(t, output, `"comments"`)
+	assert.Contains(t, output, `"Reproduced on macOS ARM"`)
+	assert.Contains(t, output, `"agent-01"`)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestCommentCmd_Message(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)

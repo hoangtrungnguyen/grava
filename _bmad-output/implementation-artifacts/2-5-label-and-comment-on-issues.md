@@ -1,6 +1,6 @@
 # Story 2.5: Label and Comment on Issues
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -115,6 +115,15 @@ so that contextual metadata and discussion are captured alongside the work item.
   - [x] 9.3 `go build ./...` — clean compile
   - [x] 9.4 Update CLI docs in `docs/guides/CLI_REFERENCE.md` for refactored `grava label` and `grava comment` commands
   - [x] 9.5 Verify `grava show --json` output includes `labels` and `comments` arrays
+
+### Review Follow-ups (AI)
+
+- [ ] [AI-Review][MEDIUM] `LabelAddFlags`/`LabelRemoveFlags` exported package-level mutable state — read via `cmd.Flags().GetStringSlice()` inside RunE instead [pkg/cmd/issues/label.go:136-140]
+- [ ] [AI-Review][MEDIUM] `commentLastCommit` var declared in issues.go but only used in comment.go — move declaration to comment.go [pkg/cmd/issues/issues.go:36, pkg/cmd/issues/comment.go:131]
+- [ ] [AI-Review][MEDIUM] `drop` command table list missing `issue_labels` and `issue_comments` — add before `issues` for safety [pkg/cmd/issues/issues.go:534-540]
+- [ ] [AI-Review][MEDIUM] Audit event records intended add/remove labels, not actual — INSERT IGNORE no-ops and DELETE 0-row no-ops are logged as if they happened [pkg/cmd/issues/label.go:44-52]
+- [ ] [AI-Review][LOW] `LastInsertId()` error silently discarded [pkg/cmd/issues/comment.go:74]
+- [ ] [AI-Review][LOW] No label input sanitization — case-sensitive duplicates and whitespace possible [pkg/cmd/issues/label.go:66-73]
 
 ## Dev Notes
 
@@ -373,6 +382,15 @@ Claude Opus 4.6 (claude-opus-4-6)
 - Updated `grava show --json` to include `labels` and `comments` arrays
 - Removed dead `addCommentToIssue` from issues package; old helpers in `pkg/cmd/util.go` retained (still used by `undo.go`, `update.go`)
 - 5 unit tests (label) + 3 unit tests (comment) + 8 integration tests = 16 new tests total
+
+### Code Review Record
+
+- Review Date: 2026-04-04
+- Reviewer: claude-opus-4-6 (adversarial code review)
+- Findings: 1 HIGH, 4 MEDIUM, 2 LOW
+- HIGH issues fixed: H1 (added TestShowCmd_LabelsAndComments for AC #4)
+- MEDIUM/LOW: 6 action items created in Review Follow-ups section
+- Tests: all pass after fixes (`go test ./...` ✅)
 
 ### File List
 

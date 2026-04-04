@@ -53,7 +53,7 @@ development_status:
   2-2-break-issues-into-subtasks: done
   2-3-update-issue-fields-and-assign-actors: done
   2-4-track-work-start-and-stop: done
-  2-5-label-and-comment-on-issues: review
+  2-5-label-and-comment-on-issues: done
   2-6-archive-and-purge-issues: backlog
   epic-2-retrospective: optional
 
