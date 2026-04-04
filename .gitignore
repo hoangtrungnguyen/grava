@@ -32,7 +32,6 @@ go.work.sum
 # .vscode/
 
 # Grava local database and config
-.grava/
 .grava.yaml
 
 # Binaries
