@@ -1,6 +1,6 @@
 # Story 2.1: Create Issues and Macro-Epics
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -67,6 +67,14 @@ So that work items are tracked in the Grava database from the moment they are id
   - [x] 6.1 `go test ./...` — all non-integration tests pass
   - [x] 6.2 `go vet ./...` — zero warnings
   - [x] 6.3 `go build -ldflags="-s -w" ./...` — compiles, no new runtime deps
+
+### Review Follow-ups (AI)
+
+- [ ] [AI-Review][MEDIUM] Parent existence check happens after INSERT — move before INSERT or wrap GenerateChildID inside tx to prevent leaked sequence counters [pkg/cmd/issues/create.go:124-154]
+- [ ] [AI-Review][MEDIUM] `CreateAffectedFiles` package-level var is shared mutable state — read via `cmd.Flags().GetStringSlice("files")` inside RunE instead [pkg/cmd/issues/issues.go:22, pkg/cmd/issues/create.go:192]
+- [ ] [AI-Review][MEDIUM] `AllowedIssueTypes` in validation.go missing `message` type that DB constraint allows [pkg/validation/validation.go:11]
+- [ ] [AI-Review][LOW] `json.Marshal` error silently discarded on affected files encoding [pkg/cmd/issues/create.go:91]
+- [ ] [AI-Review][LOW] `--type` flag help text missing `feature` and `chore` from allowed values [pkg/cmd/issues/create.go:219]
 
 ## Dev Notes
 
@@ -300,9 +308,19 @@ claude-opus-4-6
 - 9 unit tests + 1 benchmark added in `create_test.go`; 3 legacy quick tests in `commands_test.go` updated
 - `go test ./...` ✅ `go vet ./...` ✅ `go build -ldflags="-s -w" ./...` ✅
 
+### Code Review Record
+
+- Review Date: 2026-04-04
+- Reviewer: claude-opus-4-6 (adversarial code review)
+- Findings: 2 HIGH, 3 MEDIUM, 2 LOW
+- HIGH issues fixed: H1 (issue type normalization), H2 (MarkFlagRequired removed for JSON error path)
+- MEDIUM/LOW: 5 action items created in Review Follow-ups section
+- Grava issues: grava-66fb (H1), grava-245f (H2)
+- Tests: all pass after fixes (`go test ./...` ✅, `go vet ./...` ✅)
+
 ### File List
 
-- pkg/cmd/issues/create.go (new)
-- pkg/cmd/issues/create_test.go (new)
+- pkg/cmd/issues/create.go (new; review-modified — added strings import, normalize IssueType, removed MarkFlagRequired)
+- pkg/cmd/issues/create_test.go (new; review-modified — added TestCreateIssue_IssueTypeNormalized)
 - pkg/cmd/issues/issues.go (modified — removed newCreateCmd, refactored newQuickCmd, removed quickPriority/quickLimit vars)
 - pkg/cmd/commands_test.go (modified — updated TestQuickCmd, TestQuickCmdAllCaughtUp, TestQuickCmdCustomPriority)

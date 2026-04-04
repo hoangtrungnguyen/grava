@@ -49,11 +49,11 @@ development_status:
 
   # ─── Epic 2: Issue Lifecycle — Create, Track & Manage ────────────────────────
   epic-2: in-progress
-  2-1-create-issues-and-macro-epics: review
+  2-1-create-issues-and-macro-epics: done
   2-2-break-issues-into-subtasks: done
   2-3-update-issue-fields-and-assign-actors: done
   2-4-track-work-start-and-stop: done
-  2-5-label-and-comment-on-issues: backlog
+  2-5-label-and-comment-on-issues: review
   2-6-archive-and-purge-issues: backlog
   epic-2-retrospective: optional
 

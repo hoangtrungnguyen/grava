@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
@@ -56,7 +57,8 @@ func createIssue(ctx context.Context, store dolt.Store, params CreateParams) (Cr
 		return CreateResult{}, gravaerrors.New("MISSING_REQUIRED_FIELD", "title is required", nil)
 	}
 
-	// Validate issue type
+	// Normalize and validate issue type
+	params.IssueType = strings.ToLower(strings.TrimSpace(params.IssueType))
 	if err := validation.ValidateIssueType(params.IssueType); err != nil {
 		return CreateResult{}, gravaerrors.New("INVALID_ISSUE_TYPE",
 			fmt.Sprintf("invalid issue type: '%s'", params.IssueType), err)
@@ -221,7 +223,6 @@ You can specify title, description, type, and priority.`,
 	cmd.Flags().String("parent", "", "Parent Issue ID for sub-tasks")
 	cmd.Flags().Bool("ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
 	cmd.Flags().StringSliceVar(&CreateAffectedFiles, "files", []string{}, "Affected files (comma separated)")
-	cmd.MarkFlagRequired("title") //nolint:errcheck
 
 	return cmd
 }

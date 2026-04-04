@@ -269,6 +269,33 @@ func BenchmarkCreateIssue(b *testing.B) {
 	}
 }
 
+func TestCreateIssue_IssueTypeNormalized(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO issues").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO events").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	store := dolt.NewClientFromDB(db)
+	// Pass mixed-case issue type — should be normalized to lowercase before INSERT
+	result, err := createIssue(context.Background(), store, CreateParams{
+		Title:     "Normalized type test",
+		IssueType: "Task",
+		Priority:  "medium",
+		Actor:     "test-actor",
+		Model:     "test-model",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "open", result.Status)
+	assert.Equal(t, "Normalized type test", result.Title)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestCreateIssue_EphemeralFlag(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
