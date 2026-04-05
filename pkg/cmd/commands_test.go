@@ -37,7 +37,6 @@ func executeCommand(root *cobra.Command, args ...string) (string, error) {
 
 func resetFlags(cmd *cobra.Command) {
 	// Reset specific global slice variables that use StringSliceVar
-	createAffectedFiles = nil
 	updateAffectedFiles = nil
 	subtaskAffectedFiles = nil
 	issues.LabelAddFlags = nil
