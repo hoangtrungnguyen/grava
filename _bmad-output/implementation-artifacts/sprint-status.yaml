@@ -58,10 +58,11 @@ development_status:
   epic-2-retrospective: optional
 
   # ─── Epic 3: Atomic Work Claiming & Ephemeral State ──────────────────────────
-  epic-3: backlog
-  3-1-atomic-issue-claim: backlog
-  3-2-write-and-read-wisp-ephemeral-state: backlog
-  3-3-retrieve-issue-progression-history: backlog
+  epic-3: in-progress
+  3-1-atomic-issue-claim: done
+  3-2-write-and-read-wisp-ephemeral-state: ready-for-dev
+  3-3-retrieve-issue-progression-history: ready-for-dev
+  3-4-epic-3-sandbox-integration-tests: ready-for-dev
   epic-3-retrospective: optional
 
   # ─── Epic 4: Dependency Graph — Context-Aware Work Discovery ─────────────────

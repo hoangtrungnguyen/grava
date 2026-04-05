@@ -1,0 +1,215 @@
+# Story 3.4: Epic 3 Sandbox Integration Tests
+
+Status: ready-for-dev
+
+## Story
+
+As a developer,
+I want integration tests in the `sandbox/` directory that validate Epic 3 features (claim, wisp, history) against a real Dolt database,
+So that atomicity, concurrency, crash-recovery, and cross-feature integration are proven before advancing to Epic 4.
+
+## Acceptance Criteria
+
+1. **AC#1 — Scenario Script: Rapid Sequential Claims**
+   Given the sandbox infrastructure exists in `sandbox/scripts/`,
+   When I run `./sandbox/scripts/run-scenarios.sh --filter rapid-claims`,
+   Then Scenario 08 (`sandbox/scenarios/08-rapid-sequential-claims.md`) executes end-to-end:
+   - Two goroutines claim the same issue concurrently via real `grava claim` commands
+   - Exactly one claim succeeds (exit code 0, status=in_progress)
+   - The other claim fails with `ALREADY_CLAIMED` error
+   - DB state is consistent: exactly one assignee, status=in_progress
+   - No deadlock (completes within 5 seconds)
+
+2. **AC#2 — Scenario Script: Agent Crash + Resume via Wisp**
+   Given the sandbox infrastructure exists,
+   When I run `./sandbox/scripts/run-scenarios.sh --filter crash-resume`,
+   Then a test validates:
+   - Agent claims an issue and writes Wisp checkpoint entries
+   - Agent "crashes" (simulated by exiting the process)
+   - Second agent claims same issue (after TTL or force-release)
+   - Second agent reads Wisp entries via `grava wisp read` to understand prior progress
+   - Second agent writes additional Wisp entries
+   - Full history via `grava history` shows both agents' actions
+
+3. **AC#3 — Scenario Script: Full Epic 3 Lifecycle**
+   Given the sandbox infrastructure exists,
+   When I run `./sandbox/scripts/run-scenarios.sh --filter epic3-lifecycle`,
+   Then a test validates the complete Epic 3 flow:
+   - Create issue → claim → write Wisp entries → read Wisp entries → check history → verify all events appear in correct order
+   - A second agent reads history before claiming → sees first agent's full context
+   - History output includes: create, claim, wisp_write events with correct actors and timestamps
+
+4. **AC#4 — Scenario Pass/Fail Reporting**
+   Each scenario produces a pass/fail result written to `sandbox/results/report-{{date}}.md`:
+   ```markdown
+   ## Scenario Results — {{date}}
+   | Scenario | Status | Duration | Notes |
+   |----------|--------|----------|-------|
+   | 08: Rapid Sequential Claims | PASS | 2.1s | ... |
+   | 03: Agent Crash + Resume | PASS | 4.8s | ... |
+   | Epic 3 Lifecycle | PASS | 3.2s | ... |
+   ```
+
+5. **AC#5 — All Existing Tests Still Pass**
+   After adding new scenarios, `go test ./...` passes with zero regressions.
+   Running `./sandbox/scripts/run-scenarios.sh` (all scenarios) still passes all previously passing scenarios.
+
+## Tasks / Subtasks
+
+- [ ] Task 1: Create Go integration test for concurrent claims (AC: #1)
+  - [ ] 1.1 Create `pkg/cmd/issues/claim_concurrent_test.go` (if not created in Story 3.1)
+  - [ ] 1.2 Implement `TestConcurrentClaim_ExactlyOneSucceeds`:
+    - Setup: connect to real Dolt, create test issue with status=open
+    - Launch 2 goroutines simultaneously calling `claimIssue()` with different actors
+    - Use `sync.WaitGroup` + channel to synchronize start
+    - Assert: exactly 1 nil error, 1 ALREADY_CLAIMED error
+    - Assert: DB has assignee=winner, status=in_progress
+    - Teardown: delete test issue
+  - [ ] 1.3 Add build tag `//go:build integration` to skip in unit test runs
+
+- [ ] Task 2: Create sandbox scenario script for crash-resume (AC: #2)
+  - [ ] 2.1 Create `sandbox/scripts/run-epic3-scenarios.sh` (or extend `run-scenarios.sh`)
+  - [ ] 2.2 Implement crash-resume test:
+    - `grava create --title "test-crash-resume"` → capture issue ID
+    - `grava claim <id> --actor agent-1`
+    - `grava wisp write <id> checkpoint "step-1-complete" --actor agent-1`
+    - `grava wisp write <id> progress "50%" --actor agent-1`
+    - Simulate crash: no explicit release, just proceed
+    - `grava update <id> --status open --actor agent-1` (force release for test)
+    - `grava claim <id> --actor agent-2`
+    - `grava wisp read <id> --json` → verify agent-1's entries present
+    - `grava history <id> --json` → verify claim events for both agents
+    - Assert: Wisp entries from agent-1 visible to agent-2
+  - [ ] 2.3 Exit with 0 on success, 1 on failure
+
+- [ ] Task 3: Create sandbox scenario script for full lifecycle (AC: #3)
+  - [ ] 3.1 Implement epic3-lifecycle test:
+    - `grava create --title "lifecycle-test"` → capture ID
+    - `grava claim <id> --actor agent-1`
+    - `grava wisp write <id> phase "implementation" --actor agent-1`
+    - `grava wisp write <id> progress "80%" --actor agent-1`
+    - `grava wisp read <id> --json` → verify 2 entries
+    - `grava wisp read <id> phase --json` → verify single entry
+    - `grava history <id> --json` → verify events: create, claim, wisp_write, wisp_write
+    - `grava history <id> --since "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --json` → verify filter works
+    - Assert: event count and ordering correct
+  - [ ] 3.2 Exit with 0 on success, 1 on failure
+
+- [ ] Task 4: Add reporting to scenario runner (AC: #4)
+  - [ ] 4.1 Each scenario function writes results to `sandbox/results/report-{{date}}.md`
+  - [ ] 4.2 Format: markdown table with Scenario, Status, Duration, Notes columns
+  - [ ] 4.3 Create `sandbox/results/` directory if not exists
+
+- [ ] Task 5: Verify no regressions (AC: #5)
+  - [ ] 5.1 `go test ./...` — all unit tests pass
+  - [ ] 5.2 `go test -tags=integration ./...` — integration tests pass (requires Dolt)
+  - [ ] 5.3 `./sandbox/scripts/run-scenarios.sh` — all scenarios pass
+  - [ ] 5.4 `go vet ./...` — no issues
+
+## Dev Notes
+
+### Integration Test Strategy
+
+This story adds **real-DB integration tests** that complement the sqlmock-based unit tests from Stories 3.1-3.3. The integration tests verify:
+1. Real `SELECT FOR UPDATE` locking behavior (NFR3)
+2. Actual transaction atomicity against Dolt
+3. Cross-feature integration (claim + wisp + history working together)
+4. Sandbox scenario compatibility
+
+### Build Tags
+
+Use `//go:build integration` on Go integration test files so they're excluded from normal `go test ./...` runs. Run with:
+```bash
+go test -tags=integration ./pkg/cmd/issues/... -run TestConcurrentClaim -v
+```
+
+### Dolt Connection for Integration Tests
+
+From CLAUDE.md:
+```bash
+dolt --data-dir .grava/dolt sql
+# Connection string: root@tcp(127.0.0.1:3306)/grava?parseTime=true
+```
+
+Integration tests should use `dolt.NewClientFromDB(db)` with a real `database/sql` connection to Dolt.
+
+### Sandbox Script Conventions
+
+From existing `sandbox/scripts/run-scenarios.sh`:
+- Scripts should be idempotent (safe to run multiple times)
+- Cleanup state after each scenario (or at start of next)
+- Use `set -euo pipefail` for strict error handling
+- Output results in structured format for reporting
+
+### Concurrency Test Pattern
+
+```go
+func TestConcurrentClaim_ExactlyOneSucceeds(t *testing.T) {
+    // Setup: create issue in DB
+    var wg sync.WaitGroup
+    results := make(chan error, 2)
+    start := make(chan struct{})
+
+    for _, actor := range []string{"agent-1", "agent-2"} {
+        wg.Add(1)
+        go func(actor string) {
+            defer wg.Done()
+            <-start // synchronize start
+            _, err := claimIssue(ctx, store, issueID, actor, "test-model")
+            results <- err
+        }(actor)
+    }
+
+    close(start) // fire both goroutines simultaneously
+    wg.Wait()
+    close(results)
+
+    var successes, failures int
+    for err := range results {
+        if err == nil { successes++ } else { failures++ }
+    }
+    assert.Equal(t, 1, successes, "exactly one claim should succeed")
+    assert.Equal(t, 1, failures, "exactly one claim should fail")
+}
+```
+
+### Previous Story Learnings
+
+- Story 2.6 established sandbox patterns — follow existing conventions
+- Story 2.5 review: avoid exported mutable state in test helpers
+- Integration tests need Dolt running — add skip logic if unavailable:
+  ```go
+  if os.Getenv("GRAVA_TEST_DSN") == "" {
+      t.Skip("set GRAVA_TEST_DSN to run integration tests")
+  }
+  ```
+
+### Project Structure Notes
+
+- Integration tests: `pkg/cmd/issues/claim_concurrent_test.go` (build tag: integration)
+- Sandbox scripts: `sandbox/scripts/run-epic3-scenarios.sh`
+- Results: `sandbox/results/report-{{date}}.md`
+- Existing scenarios reference: `sandbox/scenarios/08-rapid-sequential-claims.md`, `sandbox/scenarios/03-agent-crash-and-resume.md`
+
+### References
+
+- [Source: sandbox/scenarios/08-rapid-sequential-claims.md — scenario 08 definition]
+- [Source: sandbox/scenarios/03-agent-crash-and-resume.md — scenario 03 definition]
+- [Source: sandbox/scripts/run-scenarios.sh — existing runner script]
+- [Source: sandbox/README.md — sandbox structure]
+- [Source: _bmad-output/implementation-artifacts/3-1-atomic-issue-claim.md — Story 3.1 claim implementation]
+- [Source: _bmad-output/implementation-artifacts/3-2-write-and-read-wisp-ephemeral-state.md — Story 3.2 wisp implementation]
+- [Source: _bmad-output/implementation-artifacts/3-3-retrieve-issue-progression-history.md — Story 3.3 history implementation]
+- [Source: _bmad-output/planning-artifacts/epics/epic-03-atomic-claim.md — Epic 3 full definition]
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+- Story 3.4 context created — sandbox integration tests for all Epic 3 features (2026-04-05)
+
+### File List
