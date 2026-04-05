@@ -23,6 +23,7 @@ var (
 		"closed":      true,
 		"blocked":     true,
 		"tombstone":   true,
+		"archived":    true,
 	}
 
 	PriorityMap = map[string]int{
@@ -47,7 +48,7 @@ func ValidateIssueType(t string) error {
 func ValidateStatus(s string) error {
 	normalized := strings.ToLower(strings.TrimSpace(s))
 	if !AllowedStatuses[normalized] {
-		return fmt.Errorf("invalid status: '%s'. Allowed: open, in_progress, closed, blocked", s)
+		return fmt.Errorf("invalid status: '%s'. Allowed: open, in_progress, closed, blocked, archived", s)
 	}
 	return nil
 }

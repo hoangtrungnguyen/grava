@@ -400,14 +400,22 @@ func newUndoCmd(d *cmddeps.Deps) *cobra.Command {
 func newClearCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clear",
-		Short: "Soft-delete issues within a date range",
-		Long: `Soft-delete issues (and related data) created within a specified date range.
-	Issues are marked with 'tombstone' status and recorded in the deletions table.
+		Short: "Purge archived issues, or soft-delete issues within a date range",
+		Long: `Clear purges all archived issues permanently, or soft-deletes issues
+within a specified date range.
 
-Example:
+Purge archived issues (no flags):
+  grava clear            # permanently delete all archived issues
+
+Date-range soft-delete:
   grava clear --from 2026-01-01 --to 2026-01-31
   grava clear --from 2026-02-18 --to 2026-02-18 --force --include-wisps`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// If no date flags provided, purge archived issues (Story 2.6)
+			if clearFrom == "" && clearTo == "" {
+				return clearArchivedIssues(cmd, d)
+			}
+
 			fromDate, toDate, err := validation.ValidateDateRange(clearFrom, clearTo)
 			if err != nil {
 				return err

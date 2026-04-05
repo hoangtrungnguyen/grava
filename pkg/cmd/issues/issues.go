@@ -2,8 +2,6 @@
 package issues
 
 import (
-	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,7 +29,6 @@ var SubtaskAffectedFiles []string
 var StdinReader io.Reader = os.Stdin
 
 var (
-	dropForce        bool
 	showTree         bool
 	commentLastCommit string
 )
@@ -395,6 +392,7 @@ You can filter by status or type, and sort by various criteria.`,
 			listType, _ := cmd.Flags().GetString("type")
 			listWisp, _ := cmd.Flags().GetBool("wisp")
 			listSort, _ := cmd.Flags().GetString("sort")
+			includeArchived, _ := cmd.Flags().GetBool("include-archived")
 
 			query := "SELECT id, title, issue_type, priority, status, created_at FROM issues"
 			var params []any
@@ -409,6 +407,10 @@ You can filter by status or type, and sort by various criteria.`,
 			}
 
 			whereParts = append(whereParts, "status != 'tombstone'")
+
+			if !includeArchived {
+				whereParts = append(whereParts, "status != 'archived'")
+			}
 
 			if listStatus != "" {
 				whereParts = append(whereParts, "status = ?")
@@ -495,86 +497,12 @@ You can filter by status or type, and sort by various criteria.`,
 	cmd.Flags().StringP("type", "t", "", "Filter by type")
 	cmd.Flags().Bool("wisp", false, "Show only ephemeral Wisp issues")
 	cmd.Flags().String("sort", "", "Sort by fields (e.g. priority:asc,created:desc)")
+	cmd.Flags().Bool("include-archived", false, "Include archived issues in results")
 	return cmd
 }
 
 
-func newDropCmd(d *cmddeps.Deps) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "drop",
-		Short: "Delete ALL data from the Grava database (nuclear reset)",
-		Long: `Drop deletes ALL data from every table in the Grava database.
-This is a destructive, non-reversible operation intended for development
-resets or clean-slate scenarios.
-
-Tables are truncated in foreign-key-safe order:
-  1. dependencies
-  2. events
-  3. deletions
-  4. child_counters
-  5. issues
-
-Example:
-  grava drop           # prompts for confirmation
-  grava drop --force   # skip confirmation (for CI/scripts)`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if !dropForce && !*d.OutputJSON {
-				cmd.Print("⚠️  This will DELETE ALL DATA from the Grava database.\nType \"yes\" to confirm: ")
-
-				scanner := bufio.NewScanner(StdinReader)
-				scanner.Scan()
-				answer := strings.TrimSpace(scanner.Text())
-
-				if answer != "yes" {
-					cmd.Println("Aborted. No data was deleted.")
-					return fmt.Errorf("user cancelled drop operation")
-				}
-			}
-
-			tables := []string{
-				"dependencies",
-				"events",
-				"deletions",
-				"child_counters",
-				"issues",
-			}
-
-			ctx := context.Background()
-			tx, err := (*d.Store).BeginTx(ctx, nil)
-			if err != nil {
-				return fmt.Errorf("failed to start transaction: %w", err)
-			}
-			defer tx.Rollback() //nolint:errcheck
-
-			for _, table := range tables {
-				_, err := tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", table))
-				if err != nil {
-					return fmt.Errorf("failed to delete from %s: %w", table, err)
-				}
-			}
-
-			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("failed to commit transaction: %w", err)
-			}
-
-			if *d.OutputJSON {
-				resp := map[string]string{
-					"status": "dropped",
-					"note":   "All data deleted from every table",
-				}
-				b, _ := json.MarshalIndent(resp, "", "  ")
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
-				return nil
-			}
-
-			cmd.Println("💣 All Grava data has been dropped.")
-			return nil
-		},
-	}
-
-	cmd.Flags().BoolVar(&dropForce, "force", false, "Skip interactive confirmation prompt")
-	return cmd
-}
+// newDropCmd is defined in drop.go
 
 func newQuickCmd(d *cmddeps.Deps) *cobra.Command {
 	return &cobra.Command{

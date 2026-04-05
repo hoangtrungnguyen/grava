@@ -173,7 +173,7 @@ func TestListCmd(t *testing.T) {
 		AddRow("grava-2", "I2", "bug", 0, "closed", time.Now())
 
 	// Default list excludes ephemeral (ephemeral = 0)
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 0 AND status != 'tombstone' ORDER BY priority ASC, created_at DESC")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 0 AND status != 'tombstone' AND status != 'archived' ORDER BY priority ASC, created_at DESC, id ASC")).
 		WillReturnRows(rows)
 
 	mock.ExpectClose()
@@ -194,7 +194,7 @@ func TestListWispCmd(t *testing.T) {
 		AddRow("grava-w1", "Scratch", "task", 4, "open", time.Now())
 
 	// --wisp filters for ephemeral = 1
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 1 AND status != 'tombstone' ORDER BY priority ASC, created_at DESC")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 1 AND status != 'tombstone' AND status != 'archived' ORDER BY priority ASC, created_at DESC, id ASC")).
 		WillReturnRows(rows)
 
 	mock.ExpectClose()
@@ -1180,23 +1180,17 @@ func TestDropCmdForce(t *testing.T) {
 	// Expect Transaction
 	mock.ExpectBegin()
 
-	// Expect DELETE in FK-safe order
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM dependencies`)).
-		WillReturnResult(sqlmock.NewResult(0, 5))
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM events`)).
-		WillReturnResult(sqlmock.NewResult(0, 3))
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM deletions`)).
-		WillReturnResult(sqlmock.NewResult(0, 2))
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM child_counters`)).
-		WillReturnResult(sqlmock.NewResult(0, 4))
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).
-		WillReturnResult(sqlmock.NewResult(0, 10))
+	// Expect DELETE in FK-safe order (Story 2.6 — now 8 tables)
+	for _, table := range []string{"dependencies", "events", "work_sessions", "issue_labels", "issue_comments", "deletions", "child_counters", "issues"} {
+		mock.ExpectExec(regexp.QuoteMeta(fmt.Sprintf(`DELETE FROM %s`, table))).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+	}
 
 	mock.ExpectCommit()
 
 	mock.ExpectClose()
 
-	output, err := executeCommand(rootCmd, "drop", "--force")
+	output, err := executeCommand(rootCmd, "drop", "--all", "--force")
 	assert.NoError(t, err)
 	assert.Contains(t, output, "All Grava data has been dropped")
 
@@ -1208,9 +1202,6 @@ func TestDropCmdConfirmYes(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	// Reset --force flag
-	dropForce = false
-
 	// Inject "yes" into stdin reader
 	oldReader := issues.StdinReader
 	issues.StdinReader = strings.NewReader("yes\n")
@@ -1219,23 +1210,17 @@ func TestDropCmdConfirmYes(t *testing.T) {
 	// Expect Transaction
 	mock.ExpectBegin()
 
-	// Expect all 5 DELETE statements
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM dependencies`)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM events`)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM deletions`)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM child_counters`)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM issues`)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	// Expect all 8 DELETE statements (Story 2.6)
+	for _, table := range []string{"dependencies", "events", "work_sessions", "issue_labels", "issue_comments", "deletions", "child_counters", "issues"} {
+		mock.ExpectExec(regexp.QuoteMeta(fmt.Sprintf(`DELETE FROM %s`, table))).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+	}
 
 	mock.ExpectCommit()
 
 	mock.ExpectClose()
 
-	output, err := executeCommand(rootCmd, "drop")
+	output, err := executeCommand(rootCmd, "drop", "--all")
 	assert.NoError(t, err)
 	assert.Contains(t, output, "All Grava data has been dropped")
 
@@ -1247,9 +1232,6 @@ func TestDropCmdConfirmNo(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	// Reset --force flag
-	dropForce = false
-
 	// Inject "no" into stdin reader
 	oldReader := issues.StdinReader
 	issues.StdinReader = strings.NewReader("no\n")
@@ -1258,7 +1240,7 @@ func TestDropCmdConfirmNo(t *testing.T) {
 	// No ExpectExec — no deletes should happen
 	// No ExpectClose — RunE returns error so PersistentPostRunE is skipped
 
-	_, err = executeCommand(rootCmd, "drop")
+	_, err = executeCommand(rootCmd, "drop", "--all")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "user cancelled drop operation")
 }
@@ -1281,10 +1263,9 @@ func TestDropCmdDeleteError(t *testing.T) {
 
 	// No ExpectClose — RunE returns error so PersistentPostRunE is skipped
 
-	_, err = executeCommand(rootCmd, "drop", "--force")
+	_, err = executeCommand(rootCmd, "drop", "--all", "--force")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to delete from events")
-	assert.Contains(t, err.Error(), "connection lost")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

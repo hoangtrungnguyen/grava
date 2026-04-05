@@ -12,16 +12,23 @@ import (
 )
 
 func TestClearCmd(t *testing.T) {
-	t.Run("missing flags", func(t *testing.T) {
-		db, _, err := sqlmock.New()
+	t.Run("missing flags purges archived", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
 		assert.NoError(t, err)
 		Store = dolt.NewClientFromDB(db)
 
 		clearFrom = ""
 		clearTo = ""
-		_, err = executeCommand(rootCmd, "clear")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid 'from' date format")
+
+		// With no date flags, grava clear now purges archived issues (Story 2.6)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE status = 'archived'`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id"})) // empty — no archived issues
+
+		mock.ExpectClose()
+
+		output, err := executeCommand(rootCmd, "clear")
+		assert.NoError(t, err)
+		assert.Contains(t, output, "No archived issues to clear")
 	})
 
 	t.Run("invalid date format", func(t *testing.T) {

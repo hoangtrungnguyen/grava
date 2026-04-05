@@ -34,8 +34,10 @@ func TestValidateStatus(t *testing.T) {
 		{"open", true},
 		{"in_progress", true},
 		{"closed", true},
-		{"BLOCKED", true}, // Case insensitive
-		{"done", false},   // "done" is not a valid status in our schema (it's "closed")
+		{"BLOCKED", true},    // Case insensitive
+		{"archived", true},   // Soft-delete status (Story 2.6)
+		{"ARCHIVED", true},   // Case insensitive
+		{"done", false},      // "done" is not a valid status in our schema (it's "closed")
 		{"", false},
 	}
 

@@ -48,13 +48,13 @@ development_status:
   epic-1-retrospective: optional
 
   # ─── Epic 2: Issue Lifecycle — Create, Track & Manage ────────────────────────
-  epic-2: in-progress
+  epic-2: done
   2-1-create-issues-and-macro-epics: done
   2-2-break-issues-into-subtasks: done
   2-3-update-issue-fields-and-assign-actors: done
   2-4-track-work-start-and-stop: done
   2-5-label-and-comment-on-issues: done
-  2-6-archive-and-purge-issues: backlog
+  2-6-archive-and-purge-issues: done
   epic-2-retrospective: optional
 
   # ─── Epic 3: Atomic Work Claiming & Ephemeral State ──────────────────────────

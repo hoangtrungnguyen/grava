@@ -80,7 +80,7 @@ func TestListCmdSoftDelete(t *testing.T) {
 		Store = dolt.NewClientFromDB(db)
 		defer db.Close() //nolint:errcheck
 
-		expectedQuery := regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 0 AND status != 'tombstone' ORDER BY priority ASC, created_at DESC, id ASC`)
+		expectedQuery := regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 0 AND status != 'tombstone' AND status != 'archived' ORDER BY priority ASC, created_at DESC, id ASC`)
 
 		mock.ExpectQuery(expectedQuery).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
@@ -100,7 +100,7 @@ func TestListCmdSoftDelete(t *testing.T) {
 		Store = dolt.NewClientFromDB(db)
 		defer db.Close() //nolint:errcheck
 
-		expectedQuery := regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 1 AND status != 'tombstone' ORDER BY priority ASC, created_at DESC, id ASC`)
+		expectedQuery := regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 1 AND status != 'tombstone' AND status != 'archived' ORDER BY priority ASC, created_at DESC, id ASC`)
 
 		mock.ExpectQuery(expectedQuery).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}))

@@ -256,10 +256,11 @@ grava list [flags]
 ```
 
 **Flags:**
-- `-s, --status string`: Filter by status (e.g., `open`, `closed`).
+- `-s, --status string`: Filter by status (e.g., `open`, `closed`, `archived`).
 - `-t, --type string`: Filter by issue type.
 - `--wisp`: Show only ephemeral Wisp issues (inverts the default ephemeral filter).
-- `--sort string`: Sort criteria (e.g., `priority:asc,created:desc`). Supported fields: `id`, `title`, `type`, `status`, `priority`, `created`, `updated`, `assignee`. Default: `priority:asc,created:desc`.
+- `--include-archived`: Include issues with `archived` status in the results (excluded by default).
+- `--sort string`: Sort criteria (e.g., `priority:asc,created:desc`). Supported fields: `id`, `title`, `type`, `status`, `priority`, `created`, `updated`, `assignee`. Default: `priority:asc,created:desc,id:asc`.
 
 **Examples:**
 ```bash
@@ -379,67 +380,89 @@ grava compact --days 0
 
 ### `drop`
 
-**Nuclear reset.** Deletes **ALL data** from every table in the Grava database. This is a destructive, non-reversible operation intended for development resets or clean-slate scenarios.
+**Archive an issue (soft-delete) or perform a nuclear reset.**
 
 **Usage:**
 ```bash
-grava drop [flags]
+grava drop <id> [flags]      # Archive a specific issue
+grava drop --all [flags]     # Nuclear reset (delete ALL data)
 ```
 
 **Flags:**
-- `--force`: Skip the interactive confirmation prompt. **Required** for non-interactive / CI use.
+- `--force`: Force archive even if `in_progress`, or skip confirmation for `--all`.
+- `--all`: Nuclear reset: delete ALL data from every table in the database.
 
-**Behaviour:**
-1. Without `--force`, the command prompts for confirmation:
+**Modes:**
+
+1. **Per-issue Archive (Soft-delete):**
+   ```bash
+   grava drop grava-123
    ```
-   ⚠️  This will DELETE ALL DATA from the Grava database.
-   Type "yes" to confirm:
+   Transitions the issue status to `archived`. The issue is hidden from default `list` output but remains in the database for audit or recovery.
+
+2. **Nuclear Reset:**
+   ```bash
+   grava drop --all --force
    ```
-   Any answer other than `"yes"` aborts the operation.
-2. Tables are truncated in FK-safe order:
-   1. `dependencies`
-   2. `events`
-   3. `deletions`
-   4. `child_counters`
-   5. `issues`
+   Deletes **ALL data** from every table. This is a destructive, non-reversible operation. Without `--force`, it prompts for `"yes"` confirmation.
 
 **Examples:**
 ```bash
-# Interactive confirmation
-grava drop
+# Archive a completed issue
+grava drop grava-123
+# Output: 📦 Archived issue grava-123
+
+# Nuclear reset with confirmation
+grava drop --all
 # Output: ⚠️  This will DELETE ALL DATA from the Grava database.
 #         Type "yes" to confirm: yes
 #         💣 All Grava data has been dropped.
-
-# Skip confirmation (for CI/scripts)
-grava drop --force
-# Output: 💣 All Grava data has been dropped.
 ```
 
 **Exit Codes:**
-- `0` — success, all data deleted
-- `1` — user cancelled or DB error
+- `0` — success
+- `1` — error or user cancelled nuclear reset
 
 ---
 
 ### `clear`
 
-**Soft-delete** issues (and related data) created within a specified date range. Issues are marked with `tombstone` status and recorded in the `deletions` table.
+**Purge archived issues permanently** or **soft-delete** issues within a date range.
 
 **Usage:**
 ```bash
-grava clear --from <date> --to <date> [flags]
+grava clear                  # Purge all archived issues
+grava clear --from <date> --to <date> [flags] # Soft-delete range
 ```
 
 **Flags:**
-- `--from string`: Start date (inclusive), format `YYYY-MM-DD` (**required**).
-- `--to string`: End date (inclusive), format `YYYY-MM-DD` (**required**).
-- `--force`: Skip interactive confirmation.
-- `--include-wisps`: Also delete ephemeral Wisp issues in the range.
+- `--from string`: Start date (inclusive), format `YYYY-MM-DD`.
+- `--to string`: End date (inclusive), format `YYYY-MM-DD`.
+- `--force`: Skip interactive confirmation (for date-range).
+- `--include-wisps`: Also delete ephemeral Wisp issues (for date-range).
 
-**Example:**
+**Modes:**
+
+1. **Purge Archived (Default):**
+   Running `grava clear` without date flags permanently deletes all issues with `archived` status. Tombstone records are recorded in the `deletions` table before hard delete.
+   ```bash
+   grava clear
+   # Output: 🗑️  Purged 5 archived issue(s).
+   ```
+
+2. **Date-range Soft-delete:**
+   Marks issues in the range as `tombstone`.
+   ```bash
+   grava clear --from 2026-01-01 --to 2026-01-31
+   ```
+
+**Examples:**
 ```bash
-grava clear --from 2026-01-01 --to 2026-01-31
+# Clean up the archive
+grava clear
+
+# Clear issues from last month
+grava clear --from 2026-03-01 --to 2026-03-31 --force
 ```
 
 ---
