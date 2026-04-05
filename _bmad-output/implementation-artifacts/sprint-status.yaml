@@ -60,7 +60,7 @@ development_status:
   # ─── Epic 3: Atomic Work Claiming & Ephemeral State ──────────────────────────
   epic-3: in-progress
   3-1-atomic-issue-claim: done
-  3-2-write-and-read-wisp-ephemeral-state: ready-for-dev
+  3-2-write-and-read-wisp-ephemeral-state: done
   3-3-retrieve-issue-progression-history: ready-for-dev
   3-4-epic-3-sandbox-integration-tests: ready-for-dev
   epic-3-retrospective: optional

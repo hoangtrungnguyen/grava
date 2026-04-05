@@ -972,6 +972,57 @@ grava resolve issues.jsonl
 
 ---
 
+### `wisp`
+
+Read and write ephemeral key-value state on an issue. Wisp entries persist in the database (not in memory) so agents can resume after a crash. Writing also updates the issue's `wisp_heartbeat_at` timestamp for stale-agent detection.
+
+#### `wisp write`
+
+**Usage:**
+```bash
+grava wisp write <issue-id> <key> <value> [--actor <name>] [--json]
+```
+
+**Flags:**
+- `--actor`: Override the actor identity for this write (defaults to global `--actor`).
+- `--json`: Output result as JSON.
+
+**Example:**
+```bash
+grava wisp write grava-abc123 checkpoint "step-3-complete" --actor agent-01 --json
+# {"issue_id":"grava-abc123","key":"checkpoint","value":"step-3-complete","written_by":"agent-01"}
+```
+
+**Error Codes:**
+- `ISSUE_NOT_FOUND` — the target issue does not exist.
+
+#### `wisp read`
+
+**Usage:**
+```bash
+grava wisp read <issue-id> [key] [--json]
+```
+
+- If `key` is provided, returns a single entry.
+- If `key` is omitted, returns all entries for the issue (empty array `[]` if none).
+
+**Examples:**
+```bash
+# Read a single key
+grava wisp read grava-abc123 checkpoint --json
+# {"key":"checkpoint","value":"step-3-complete","written_by":"agent-01","written_at":"..."}
+
+# Read all keys
+grava wisp read grava-abc123 --json
+# [{"key":"checkpoint","value":"step-3-complete",...}, ...]
+```
+
+**Error Codes:**
+- `ISSUE_NOT_FOUND` — the target issue does not exist.
+- `WISP_NOT_FOUND` — the specified key does not exist on the issue (single-key read only).
+
+---
+
 ## Wisps (Ephemeral Issues)
 
 **Wisps** are temporary, ephemeral issues intended for AI agents or developers who need a short-lived scratchpad that doesn't pollute the permanent project history.

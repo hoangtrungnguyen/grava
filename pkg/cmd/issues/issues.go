@@ -132,6 +132,7 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	root.AddCommand(newClaimCmd(d))
 	root.AddCommand(newStartCmd(d))
 	root.AddCommand(newStopCmd(d))
+	root.AddCommand(newWispCmd(d))
 }
 
 func newShowCmd(d *cmddeps.Deps) *cobra.Command {
