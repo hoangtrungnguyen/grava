@@ -137,4 +137,3 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 }
 
 var subtaskAffectedFiles []string
-

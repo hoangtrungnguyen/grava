@@ -230,4 +230,3 @@ Includes counts by status, priority, author, assignee, and daily activity.`,
 		return nil
 	},
 }
-

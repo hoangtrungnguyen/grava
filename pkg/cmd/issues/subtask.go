@@ -186,7 +186,7 @@ The subtask ID will be hierarchical (e.g., parent_id.1).`,
 
 			if *d.OutputJSON {
 				b, _ := json.MarshalIndent(result, "", "  ") //nolint:errcheck // SubtaskResult is always serializable
-				fmt.Fprintln(cmd.OutOrStdout(), string(b))  //nolint:errcheck
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))   //nolint:errcheck
 				return nil
 			}
 

@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	"github.com/hoangtrungnguyen/grava/internal/testutil"
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
+	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
@@ -1618,6 +1618,36 @@ func TestHistoryCmd_JSON_EmptyHistory(t *testing.T) {
 	var entries []map[string]any
 	require.NoError(t, json.Unmarshal([]byte(output), &entries))
 	assert.Empty(t, entries)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestHistoryCmd_JSON_WithSinceFilter(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	sinceTime := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+	ts := time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id")).
+		WithArgs("grava-since1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-since1"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT event_type, actor, old_value, new_value, timestamp")).
+		WithArgs("grava-since1", sinceTime).
+		WillReturnRows(sqlmock.NewRows([]string{"event_type", "actor", "old_value", "new_value", "timestamp"}).
+			AddRow("update", "agent-01", `{"status":"open"}`, `{"status":"closed"}`, ts))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "history", "grava-since1", "--json", "--since", "2026-03-21")
+	assert.NoError(t, err)
+
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(output), &entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "update", entries[0]["event_type"])
+	assert.Equal(t, "closed", entries[0]["details"].(map[string]any)["status"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

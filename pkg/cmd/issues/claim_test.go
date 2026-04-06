@@ -18,9 +18,9 @@ func TestClaimIssue_HappyPath(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status FROM issues WHERE id").
+	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
 		WithArgs("grava-abc123def456").
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("open", nil))
 	mock.ExpectExec("UPDATE issues SET").
 		WithArgs("actor1", "model1", "actor1", "grava-abc123def456").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -43,9 +43,9 @@ func TestClaimIssue_NotFound(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status FROM issues WHERE id").
+	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
 		WithArgs("grava-notfound").
-		WillReturnRows(sqlmock.NewRows([]string{"status"})) // empty → ErrNoRows
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"})) // empty → ErrNoRows
 	mock.ExpectRollback()
 
 	store := dolt.NewClientFromDB(db)
@@ -62,9 +62,9 @@ func TestClaimIssue_AlreadyClaimed(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status FROM issues WHERE id").
+	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
 		WithArgs("grava-abc123def456").
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("in_progress"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("in_progress", "actor1"))
 	mock.ExpectRollback()
 
 	store := dolt.NewClientFromDB(db)
@@ -81,9 +81,9 @@ func TestClaimIssue_InvalidTransition(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status FROM issues WHERE id").
+	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
 		WithArgs("grava-abc123def456").
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("closed"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("closed", nil))
 	mock.ExpectRollback()
 
 	store := dolt.NewClientFromDB(db)
@@ -92,4 +92,25 @@ func TestClaimIssue_InvalidTransition(t *testing.T) {
 	var gravaErr *gravaerrors.GravaError
 	require.True(t, errors.As(err, &gravaErr))
 	assert.Equal(t, "INVALID_STATUS_TRANSITION", gravaErr.Code)
+}
+
+// TestClaimIssue_AlreadyClaimed_OpenWithAssignee covers the data-inconsistency edge case:
+// status is "open" but assignee is already set — should still reject as ALREADY_CLAIMED.
+func TestClaimIssue_AlreadyClaimed_OpenWithAssignee(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
+		WithArgs("grava-abc123def456").
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("open", "sneaky-actor"))
+	mock.ExpectRollback()
+
+	store := dolt.NewClientFromDB(db)
+	_, err = claimIssue(context.Background(), store, "grava-abc123def456", "actor1", "model1")
+	require.Error(t, err)
+	var gravaErr *gravaerrors.GravaError
+	require.True(t, errors.As(err, &gravaErr))
+	assert.Equal(t, "ALREADY_CLAIMED", gravaErr.Code)
 }

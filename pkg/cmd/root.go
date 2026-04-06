@@ -7,11 +7,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	cmdgraph "github.com/hoangtrungnguyen/grava/pkg/cmd/graph"
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/maintenance"
 	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
+	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	"github.com/hoangtrungnguyen/grava/pkg/grava"

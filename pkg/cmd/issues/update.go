@@ -267,7 +267,7 @@ Only the flags provided will be updated.`,
 
 			if *d.OutputJSON {
 				b, _ := json.MarshalIndent(result, "", "  ") //nolint:errcheck // UpdateResult is always serializable
-				fmt.Fprintln(cmd.OutOrStdout(), string(b))  //nolint:errcheck
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))   //nolint:errcheck
 				return nil
 			}
 

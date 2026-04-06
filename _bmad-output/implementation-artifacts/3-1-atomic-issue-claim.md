@@ -128,7 +128,17 @@ event_type = 'claim' -- dolt.EventClaim constant
 - Task 1: No change needed — `json:"actor"` is established codebase convention. Epic AC was the mismatch, not the code.
 - Task 2: Created concurrent integration test with `//go:build integration` tag. Validates NFR3 (exactly-one claim guarantee).
 - Task 3: All 4 existing unit tests pass. No regressions.
+- Code review (2026-04-06): Fixed 5 issues — H1: added assignee NULL check, M1: DSN port aligned to 3311, M2: added NFR2 benchmark, M3: updated File List, L1: error message casing. All tests pass.
 
 ### File List
 
 - `pkg/cmd/issues/claim_concurrent_test.go` (NEW) — integration test for concurrent claim behavior
+- `pkg/cmd/issues/claim.go` (MODIFIED) — added assignee NULL verification to SELECT FOR UPDATE
+- `pkg/cmd/issues/claim_test.go` (MODIFIED) — updated mocks for new SELECT columns, added edge case test
+- `_bmad-output/implementation-artifacts/3-1-atomic-issue-claim.md` (CREATED) — this story file
+- `_bmad-output/implementation-artifacts/3-2-write-and-read-wisp-ephemeral-state.md` (CREATED) — story 3.2 spec
+- `_bmad-output/implementation-artifacts/3-3-retrieve-issue-progression-history.md` (CREATED) — story 3.3 spec
+- `_bmad-output/implementation-artifacts/3-4-epic-3-sandbox-integration-tests.md` (CREATED) — story 3.4 spec
+- `_bmad-output/implementation-artifacts/epic-3-stories.md` (CREATED) — epic 3 story list
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (MODIFIED) — epic 3 sprint tracking
+- `_bmad-output/implementation-artifacts/implementation-readiness-report-2026-04-05.md` (CREATED) — readiness report

@@ -126,7 +126,6 @@ var showCmd = &cobra.Command{
 	},
 }
 
-
 func showTreeVisualization(cmd *cobra.Command, rootID string) error {
 	dag, err := graph.LoadGraphFromDB(Store)
 	if err != nil {

@@ -17,15 +17,15 @@ import (
 
 // auditedStore wraps sqlmock DB to implement dolt.Store for WithAuditedTx tests.
 type auditedStore struct {
-	db           *sql.DB
-	logEventTxFn func(ctx context.Context, tx *sql.Tx, issueID, eventType, actor, model string, oldVal, newVal any) error
+	db            *sql.DB
+	logEventTxFn  func(ctx context.Context, tx *sql.Tx, issueID, eventType, actor, model string, oldVal, newVal any) error
 	logEventCalls []dolt.AuditEvent
 }
 
 func (s *auditedStore) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	return s.db.BeginTx(ctx, opts)
 }
-func (s *auditedStore) Exec(q string, a ...any) (sql.Result, error)                   { return nil, nil }
+func (s *auditedStore) Exec(q string, a ...any) (sql.Result, error) { return nil, nil }
 func (s *auditedStore) ExecContext(ctx context.Context, q string, a ...any) (sql.Result, error) {
 	return nil, nil
 }
@@ -33,14 +33,14 @@ func (s *auditedStore) QueryRow(q string, a ...any) *sql.Row { return nil }
 func (s *auditedStore) QueryRowContext(ctx context.Context, q string, a ...any) *sql.Row {
 	return nil
 }
-func (s *auditedStore) Query(q string, a ...any) (*sql.Rows, error)                    { return nil, nil }
+func (s *auditedStore) Query(q string, a ...any) (*sql.Rows, error) { return nil, nil }
 func (s *auditedStore) QueryContext(ctx context.Context, q string, a ...any) (*sql.Rows, error) {
 	return nil, nil
 }
-func (s *auditedStore) SetMaxOpenConns(n int)                  {}
-func (s *auditedStore) SetMaxIdleConns(n int)                  {}
-func (s *auditedStore) DB() *sql.DB                            { return s.db }
-func (s *auditedStore) Close() error                           { return s.db.Close() }
+func (s *auditedStore) SetMaxOpenConns(n int)                       {}
+func (s *auditedStore) SetMaxIdleConns(n int)                       {}
+func (s *auditedStore) DB() *sql.DB                                 { return s.db }
+func (s *auditedStore) Close() error                                { return s.db.Close() }
 func (s *auditedStore) GetNextChildSequence(id string) (int, error) { return 0, nil }
 func (s *auditedStore) LogEvent(issueID, eventType, actor, model string, oldVal, newVal any) error {
 	return nil

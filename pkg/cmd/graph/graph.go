@@ -22,11 +22,11 @@ import (
 )
 
 var (
-	depType      string
-	batchFile    string
-	blockedDepth int
-	searchWisp   bool
-	statsDays    int
+	depType       string
+	batchFile     string
+	blockedDepth  int
+	searchWisp    bool
+	statsDays     int
 	readyLimit    int
 	readyPriority int
 	showInherited bool
@@ -209,9 +209,9 @@ func newDepBatchCmd(d *cmddeps.Deps) *cobra.Command {
 
 func newDepClearCmd(d *cmddeps.Deps) *cobra.Command {
 	return &cobra.Command{
-		Use:  "clear <id>",
+		Use:   "clear <id>",
 		Short: "Remove all dependencies for an issue",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			_, err := (*d.Store).Exec(`DELETE FROM dependencies WHERE from_id = ? OR to_id = ?`, id, id)
@@ -370,6 +370,10 @@ func newGraphVisualizeCmd(d *cmddeps.Deps) *cobra.Command {
 		Use:   "visualize",
 		Short: "Export graph to DOT or Mermaid format",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if graphFormat != "dot" && graphFormat != "mermaid" {
+				return fmt.Errorf("unsupported format %q: must be \"dot\" or \"mermaid\"", graphFormat)
+			}
+
 			dag, err := graph.LoadGraphFromDB(*d.Store)
 			if err != nil {
 				return err
@@ -826,7 +830,10 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 			_, _ = fmt.Fprintln(w, "")
 
 			_, _ = fmt.Fprintln(w, "Top Authors:")
-			type kv struct{ Key string; Value int }
+			type kv struct {
+				Key   string
+				Value int
+			}
 			var authors []kv
 			for k, v := range stats.ByAuthor {
 				authors = append(authors, kv{k, v})

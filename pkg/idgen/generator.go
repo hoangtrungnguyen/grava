@@ -50,15 +50,8 @@ func (g *StandardGenerator) GenerateBaseID() string {
 	input := fmt.Sprintf("%d-%d", timestamp, n.Int64())
 	hash := sha256.Sum256([]byte(input))
 
-	// Use the first 4 bytes (8 hex chars) for a short but unique enough ID in a small scope
-	// Or first 2 bytes (4 hex chars) if we want very short IDs like grava-a1b2.
-	// The requirement says "grava-XXXX" (hash-based), which implies 4 chars usually,
-	// but 4 hex chars (16^4 = 65536) might be too small for a long running project.
-	// Let's use 6 chars to be safer while still short: 16^6 = 16 million combinations if uniform.
-	// Actually, task description examples use "a1b2", which is 4 chars.
-	// Let's stick to 4 chars as requested but note the collision risk in comments.
-	// If strict 4 chars is required, we use 4. If variable, we might use more.
-	// Task-1-3 description says "grava-a1b2".
+	// 4 hex chars → 65,536 combinations (grava-a1b2 format per spec).
+	// Collision risk is acceptable for a project-scale issue tracker.
 
 	shortHash := fmt.Sprintf("%x", hash)[:4]
 	return fmt.Sprintf("%s-%s", g.Prefix, shortHash)

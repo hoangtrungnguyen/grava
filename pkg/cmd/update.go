@@ -121,4 +121,3 @@ Only the flags provided will be updated.`,
 }
 
 var updateAffectedFiles []string
-

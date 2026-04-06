@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
@@ -24,7 +25,15 @@ type ClaimResult struct {
 // Uses WithAuditedTx for atomic write + audit log.
 // DO NOT wrap in WithDeadlockRetry — would duplicate audit logs on retry.
 func claimIssue(ctx context.Context, store dolt.Store, issueID, actor, model string) (ClaimResult, error) {
+	// Enforce a 5s timeout if the caller didn't set one (NFR2 defensive guard).
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
 	var currentStatus string
+	var currentAssignee sql.NullString
 
 	err := dolt.WithAuditedTx(ctx, store, []dolt.AuditEvent{
 		{
@@ -37,8 +46,8 @@ func claimIssue(ctx context.Context, store dolt.Store, issueID, actor, model str
 		},
 	}, func(tx *sql.Tx) error {
 		row := tx.QueryRowContext(ctx,
-			"SELECT status FROM issues WHERE id = ? FOR UPDATE", issueID)
-		if err := row.Scan(&currentStatus); err != nil {
+			"SELECT status, assignee FROM issues WHERE id = ? FOR UPDATE", issueID)
+		if err := row.Scan(&currentStatus, &currentAssignee); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return gravaerrors.New("ISSUE_NOT_FOUND",
 					fmt.Sprintf("issue %s not found", issueID), err)
@@ -46,9 +55,9 @@ func claimIssue(ctx context.Context, store dolt.Store, issueID, actor, model str
 			return gravaerrors.New("DB_UNREACHABLE",
 				fmt.Sprintf("failed to read issue %s", issueID), err)
 		}
-		if currentStatus == "in_progress" {
+		if currentStatus == "in_progress" || (currentAssignee.Valid && currentAssignee.String != "") {
 			return gravaerrors.New("ALREADY_CLAIMED",
-				fmt.Sprintf("issue %s is already claimed", issueID), nil)
+				fmt.Sprintf("Issue %s is already claimed", issueID), nil)
 		}
 		if currentStatus != "open" {
 			return gravaerrors.New("INVALID_STATUS_TRANSITION",

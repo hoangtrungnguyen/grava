@@ -72,4 +72,3 @@ var historyCmd = &cobra.Command{
 		return nil
 	},
 }
-
