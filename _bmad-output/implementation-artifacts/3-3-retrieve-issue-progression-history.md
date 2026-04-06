@@ -1,6 +1,6 @@
 # Story 3.3: Retrieve Issue Progression History
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -38,9 +38,9 @@ So that I can understand what previous agents did before picking up the work.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement `issueHistory` named function (AC: #1, #3, #5, #6)
-  - [ ] 1.1 Define `HistoryEntry` struct: `EventType` (json:"event_type"), `Actor` (json:"actor"), `Timestamp` (json:"timestamp"), `Details` (json:"details")
-  - [ ] 1.2 Implement `issueHistory(ctx, store, issueID, since)`:
+- [x] Task 1: Implement `issueHistory` named function (AC: #1, #3, #5, #6)
+  - [x] 1.1 Define `HistoryEntry` struct: `EventType` (json:"event_type"), `Actor` (json:"actor"), `Timestamp` (json:"timestamp"), `Details` (json:"details")
+  - [x] 1.2 Implement `issueHistory(ctx, store, issueID, since)`:
     - Verify issue exists: `SELECT id FROM issues WHERE id = ?` → `ISSUE_NOT_FOUND` if not
     - Query events: `SELECT event_type, actor, old_value, new_value, timestamp FROM events WHERE issue_id = ? [AND timestamp >= ?] ORDER BY timestamp ASC, id ASC`
     - Map each row to `HistoryEntry`:
@@ -49,33 +49,33 @@ So that I can understand what previous agents did before picking up the work.
       - `Timestamp` = `timestamp`
       - `Details` = merge of `old_value` and `new_value` (or `new_value` if old is null)
     - Return `[]HistoryEntry`
-  - [ ] 1.3 No transaction needed (read-only)
+  - [x] 1.3 No transaction needed (read-only)
 
-- [ ] Task 2: Build Cobra command (AC: #1-#6)
-  - [ ] 2.1 Create `pkg/cmd/issues/history.go` with `newHistoryCmd(d)`
-  - [ ] 2.2 Args: `history <issue-id>` — exactly 1 arg
-  - [ ] 2.3 Flag: `--since` (string, RFC3339 date) — optional date filter
-  - [ ] 2.4 JSON output: `json.NewEncoder(cmd.OutOrStdout()).Encode(entries)` for `--json`
-  - [ ] 2.5 Human-readable output: formatted table or list (non-JSON mode)
-  - [ ] 2.6 Register in `AddCommands()` in `issues.go`
+- [x] Task 2: Build Cobra command (AC: #1-#6)
+  - [x] 2.1 Create `pkg/cmd/issues/history.go` with `newHistoryCmd(d)`
+  - [x] 2.2 Args: `history <issue-id>` — exactly 1 arg
+  - [x] 2.3 Flag: `--since` (string, RFC3339 date) — optional date filter
+  - [x] 2.4 JSON output: `json.NewEncoder(cmd.OutOrStdout()).Encode(entries)` for `--json`
+  - [x] 2.5 Human-readable output: formatted table or list (non-JSON mode)
+  - [x] 2.6 Register in `AddCommands()` in `issues.go`
 
-- [ ] Task 3: Unit tests for `issueHistory` (AC: #1, #3, #5, #6)
-  - [ ] 3.1 Test happy path: issue with multiple events returns ordered array
-  - [ ] 3.2 Test `--since` filter: only events after the date are returned
-  - [ ] 3.3 Test empty history: returns `[]`
-  - [ ] 3.4 Test non-existent issue: returns `ISSUE_NOT_FOUND`
-  - [ ] 3.5 Test JSON output structure matches `HistoryEntry` schema
-  - [ ] 3.6 Test event types coverage: verify create, claim, update, wisp_write, comment, label events all appear
+- [x] Task 3: Unit tests for `issueHistory` (AC: #1, #3, #5, #6)
+  - [x] 3.1 Test happy path: issue with multiple events returns ordered array
+  - [x] 3.2 Test `--since` filter: only events after the date are returned
+  - [x] 3.3 Test empty history: returns `[]`
+  - [x] 3.4 Test non-existent issue: returns `ISSUE_NOT_FOUND`
+  - [x] 3.5 Test JSON output structure matches `HistoryEntry` schema
+  - [x] 3.6 Test event types coverage: verify create, claim, update, wisp_write, comment, label events all appear
 
-- [ ] Task 4: Integration with Wisp events (AC: #1, #4)
-  - [ ] 4.1 Verify that `EventWispWrite` events (from Story 3.2) appear in history when `grava wisp write` is used
-  - [ ] 4.2 Verify `EventClaim` events (from Story 3.1) appear in history when `grava claim` is used
+- [x] Task 4: Integration with Wisp events (AC: #1, #4)
+  - [x] 4.1 Verify that `EventWispWrite` events (from Story 3.2) appear in history when `grava wisp write` is used
+  - [x] 4.2 Verify `EventClaim` events (from Story 3.1) appear in history when `grava claim` is used
 
-- [ ] Task 5: Run full test suite
-  - [ ] 5.1 `go test ./pkg/cmd/issues/... -run TestHistory` — all pass
-  - [ ] 5.2 `go test ./...` — no regressions
-  - [ ] 5.3 `go vet ./...` — no issues
-  - [ ] 5.4 `go build ./...` — clean build
+- [x] Task 5: Run full test suite
+  - [x] 5.1 `go test ./pkg/cmd/issues/... -run TestHistory` — all pass (8 tests)
+  - [x] 5.2 `go test ./...` — no regressions
+  - [x] 5.3 `go vet ./...` — no issues
+  - [x] 5.4 `go build ./...` — clean build
 
 ## Dev Notes
 
@@ -177,10 +177,27 @@ The `--since` flag accepts RFC3339 or date-only format (`"2026-03-01"`). Parse w
 
 ### Agent Model Used
 
+claude-opus-4-6
+
 ### Debug Log References
+
+None — clean implementation, no blockers.
 
 ### Completion Notes List
 
 - Story 3.3 context created — uses existing events table, no migration needed (2026-04-05)
+- Implemented `issueHistory`: queries events table with optional `--since` date filter, merges old_value/new_value into details map, uses context-aware queries (2026-04-05)
+- Cobra command `grava history <issue-id> [--since] [--json]` registered in AddCommands(). Replaces old Dolt-commit-based history (moved out of maintenance package) (2026-04-05)
+- 8 unit tests for issueHistory: happy path, --since filter, empty history, ISSUE_NOT_FOUND, JSON structure, event types coverage (6 types), wisp_write integration, claim integration (2026-04-05)
+- 6 helper tests: parseSinceDate (RFC3339, date-only, invalid), mergeEventDetails (both values, new-only, empty) (2026-04-05)
+- Full regression suite: all packages pass, `go vet` clean, `go build` clean (2026-04-05)
+- Code review (2026-04-06): Fixed 5 issues — H1: removed dead newHistoryCmd from maintenance.go, M1: fixed stale package comment, M2: parseJSONToMap now flags corrupted JSON, L1: added context deadline, L2: deterministic formatDetails key ordering, L3: added --since --json Cobra test
 
 ### File List
+
+- pkg/cmd/issues/history.go (new — issueHistory, newHistoryCmd, parseSinceDate, mergeEventDetails, formatDetails)
+- pkg/cmd/issues/history_test.go (new — 14 tests)
+- pkg/cmd/issues/issues.go (AddCommands: registered newHistoryCmd)
+- pkg/cmd/maintenance/maintenance.go (removed old newHistoryCmd — dead code cleanup, package comment updated)
+- pkg/cmd/commands_test.go (added Cobra-boundary test for --since --json combination)
+- docs/guides/CLI_REFERENCE.md (updated history command docs with events-based API)

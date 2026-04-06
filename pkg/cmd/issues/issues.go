@@ -29,7 +29,7 @@ var SubtaskAffectedFiles []string
 var StdinReader io.Reader = os.Stdin
 
 var (
-	showTree         bool
+	showTree          bool
 	commentLastCommit string
 )
 
@@ -45,18 +45,18 @@ type IssueListItem struct {
 
 // IssueDetail is the JSON output model for the show command.
 type IssueDetail struct {
-	ID            string    `json:"id"`
-	Title         string    `json:"title"`
-	Description   string    `json:"description"`
-	Type          string    `json:"type"`
-	Priority      int       `json:"priority"`
-	PriorityLevel string    `json:"priority_level"`
-	Status        string    `json:"status"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	CreatedBy     string    `json:"created_by"`
-	UpdatedBy     string    `json:"updated_by"`
-	AgentModel    string    `json:"agent_model,omitempty"`
+	ID            string         `json:"id"`
+	Title         string         `json:"title"`
+	Description   string         `json:"description"`
+	Type          string         `json:"type"`
+	Priority      int            `json:"priority"`
+	PriorityLevel string         `json:"priority_level"`
+	Status        string         `json:"status"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	CreatedBy     string         `json:"created_by"`
+	UpdatedBy     string         `json:"updated_by"`
+	AgentModel    string         `json:"agent_model,omitempty"`
 	AffectedFiles []string       `json:"affected_files,omitempty"`
 	Subtasks      []string       `json:"subtasks,omitempty"`
 	Labels        []string       `json:"labels,omitempty"`
@@ -133,6 +133,7 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	root.AddCommand(newStartCmd(d))
 	root.AddCommand(newStopCmd(d))
 	root.AddCommand(newWispCmd(d))
+	root.AddCommand(newHistoryCmd(d))
 }
 
 func newShowCmd(d *cmddeps.Deps) *cobra.Command {
@@ -501,7 +502,6 @@ You can filter by status or type, and sort by various criteria.`,
 	cmd.Flags().Bool("include-archived", false, "Include archived issues in results")
 	return cmd
 }
-
 
 // newDropCmd is defined in drop.go
 

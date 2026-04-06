@@ -855,27 +855,41 @@ grava import --file legacy.jsonl --skip-existing
 
 ### `history`
 
-Displays the modification history of a specific issue using Dolt's version control capabilities. It shows commit hashes, authors, dates, and status changes.
+Displays the event progression log of a specific issue from the audit trail. Shows status changes, claims, wisp writes, comments, label changes, and all other tracked mutations in chronological order.
 
 **Usage:**
 ```bash
-grava history <id>
+grava history <issue-id> [--since DATE] [--json]
 ```
 
-**Example:**
+**Flags:**
+- `--since`: Filter events after this date (YYYY-MM-DD or RFC3339).
+- `--json`: Output result as a JSON array.
+
+**Examples:**
 ```bash
-grava history grava-123
+# Full history
+grava history grava-abc123
+
+# JSON output
+grava history grava-abc123 --json
+
+# Events since a date
+grava history grava-abc123 --since "2026-03-01"
 ```
 
-**Output:**
+**Output (human-readable):**
 ```
-History for Issue grava-123:
+History for grava-abc123 (3 events):
 
-COMMIT     AUTHOR               DATE                      STATUS          TITLE
-------------------------------------------------------------------------------------------------
-a1b2c3d4   alice                2026-02-19T14:47:24+07:00 open            Fix bug
-e5f6g7h8   bob                  2026-02-18T10:00:00+07:00 backlog         Init task
+  2026-03-20 10:00:00  create          agent-01              {"status":"open"}
+  2026-03-20 11:00:00  claim           agent-02              {"status":"in_progress","old_status":"open"}
+  2026-03-20 12:00:00  wisp_write      agent-02              {"key":"checkpoint","value":"step-1"}
 ```
+
+**Error Codes:**
+- `ISSUE_NOT_FOUND` — the target issue does not exist.
+- `INVALID_DATE` — the `--since` value could not be parsed.
 
 ---
 
