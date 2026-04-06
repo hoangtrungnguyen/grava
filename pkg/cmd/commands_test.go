@@ -1513,3 +1513,111 @@ func TestStart_Stop_Cycle(t *testing.T) {
 	assert.Contains(t, output, "Stopped work on")
 	assert.NoError(t, mock2.ExpectationsWereMet())
 }
+
+// --- History command Cobra-boundary tests ---
+
+func TestHistoryCmd_HumanReadable(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	ts := time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id")).
+		WithArgs("grava-hist1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-hist1"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT event_type, actor, old_value, new_value, timestamp")).
+		WithArgs("grava-hist1").
+		WillReturnRows(sqlmock.NewRows([]string{"event_type", "actor", "old_value", "new_value", "timestamp"}).
+			AddRow("create", "agent-01", "{}", `{"status":"open"}`, ts))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "history", "grava-hist1")
+	assert.NoError(t, err)
+	assert.Contains(t, output, "History for grava-hist1")
+	assert.Contains(t, output, "create")
+	assert.Contains(t, output, "agent-01")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestHistoryCmd_JSON(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	ts := time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id")).
+		WithArgs("grava-hist2").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-hist2"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT event_type, actor, old_value, new_value, timestamp")).
+		WithArgs("grava-hist2").
+		WillReturnRows(sqlmock.NewRows([]string{"event_type", "actor", "old_value", "new_value", "timestamp"}).
+			AddRow("create", "agent-01", "{}", `{"status":"open"}`, ts))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "history", "grava-hist2", "--json")
+	assert.NoError(t, err)
+
+	// Verify output is valid JSON array
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(output), &entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "create", entries[0]["event_type"])
+	assert.Equal(t, "agent-01", entries[0]["actor"])
+	assert.Equal(t, "open", entries[0]["details"].(map[string]any)["status"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestHistoryCmd_JSON_IssueNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id")).
+		WithArgs("grava-missing").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	// writeJSONError returns nil, so PersistentPostRunE still runs → Close is called
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "history", "grava-missing", "--json")
+	assert.NoError(t, err) // writeJSONError returns nil
+
+	// Verify JSON error envelope is present in output (stderr merged into same buffer)
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal([]byte(output), &envelope))
+	errObj, ok := envelope["error"].(map[string]any)
+	require.True(t, ok, "expected 'error' key in JSON")
+	assert.Equal(t, "ISSUE_NOT_FOUND", errObj["code"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestHistoryCmd_JSON_EmptyHistory(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id")).
+		WithArgs("grava-empty").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-empty"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT event_type, actor, old_value, new_value, timestamp")).
+		WithArgs("grava-empty").
+		WillReturnRows(sqlmock.NewRows([]string{"event_type", "actor", "old_value", "new_value", "timestamp"}))
+
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "history", "grava-empty", "--json")
+	assert.NoError(t, err)
+
+	// Empty history should produce an empty JSON array
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(output), &entries))
+	assert.Empty(t, entries)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
