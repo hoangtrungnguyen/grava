@@ -41,7 +41,7 @@ func claimIssue(ctx context.Context, store dolt.Store, issueID, actor, model str
 			EventType: dolt.EventClaim,
 			Actor:     actor,
 			Model:     model,
-			OldValue:  map[string]any{"status": "open"},
+			OldValue:  map[string]any{"status": "open"}, // Assumption: claim is only valid for open issues; see status check inside tx callback below
 			NewValue:  map[string]any{"status": "in_progress", "actor": actor},
 		},
 	}, func(tx *sql.Tx) error {

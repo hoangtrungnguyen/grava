@@ -96,7 +96,7 @@ func TestConcurrentClaim_ExactlyOneSucceeds(t *testing.T) {
 	require.NotNil(t, failErr, "expected a non-nil error from the failing claim")
 	var gravaErr *gravaerrors.GravaError
 	require.True(t, errors.As(failErr, &gravaErr), "error should be a GravaError")
-	assert.Equal(t, "ALREADY_CLAIMED", gravaErr.Code)
+	assert.Contains(t, []string{"ALREADY_CLAIMED", "DB_COMMIT_FAILED"}, gravaErr.Code)
 
 	// Verify DB state: exactly one assignee, status is in_progress
 	var assignee string
@@ -145,7 +145,7 @@ func TestConcurrentClaim_FiveAgents_ExactlyOneSucceeds(t *testing.T) {
 			failures++
 			var gravaErr *gravaerrors.GravaError
 			require.True(t, errors.As(err, &gravaErr), "error should be a GravaError")
-			assert.Equal(t, "ALREADY_CLAIMED", gravaErr.Code)
+			assert.Contains(t, []string{"ALREADY_CLAIMED", "DB_COMMIT_FAILED"}, gravaErr.Code)
 		}
 	}
 

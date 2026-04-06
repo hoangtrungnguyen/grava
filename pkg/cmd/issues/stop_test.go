@@ -3,6 +3,7 @@ package issues
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -90,4 +91,23 @@ func TestStopIssue_IssueNotFound(t *testing.T) {
 		Model: "test-model",
 	})
 	testutil.AssertGravaError(t, err, "ISSUE_NOT_FOUND")
+}
+
+func TestStopIssue_DBUnreachable(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT status FROM issues WHERE id = ? FOR UPDATE")).
+		WithArgs("grava-abc").
+		WillReturnError(fmt.Errorf("connection refused"))
+
+	store := mockStoreForStop(db)
+	_, err = stopIssue(context.Background(), store, StopParams{
+		ID:    "grava-abc",
+		Actor: "test-actor",
+		Model: "test-model",
+	})
+	testutil.AssertGravaError(t, err, "DB_UNREACHABLE")
 }

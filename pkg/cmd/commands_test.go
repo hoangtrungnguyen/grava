@@ -1466,6 +1466,68 @@ func TestStopCmd_IssueNotFound(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestStartCmd_JSON(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status, COALESCE(assignee, '') FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("open", ""))
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = ?, started_at = ?, stopped_at = NULL, assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("in_progress", sqlmock.AnyArg(), "unknown", sqlmock.AnyArg(), "unknown", "", "grava-123").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "start", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "start", "grava-123", "--json")
+	require.NoError(t, err)
+
+	// Verify NFR5 JSON shape: {id, status, started_at}
+	var result map[string]any
+	require.NoError(t, json.Unmarshal([]byte(output), &result))
+	assert.Equal(t, "grava-123", result["id"])
+	assert.Equal(t, "in_progress", result["status"])
+	assert.NotEmpty(t, result["started_at"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestStopCmd_JSON(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	Store = dolt.NewClientFromDB(db)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ? FOR UPDATE`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("in_progress"))
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET status = ?, stopped_at = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?`)).
+		WithArgs("open", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "", "grava-123").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
+		WithArgs(sqlmock.AnyArg(), "stop", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectClose()
+
+	output, err := executeCommand(rootCmd, "stop", "grava-123", "--json")
+	require.NoError(t, err)
+
+	// Verify NFR5 JSON shape: {id, status, stopped_at}
+	var result map[string]any
+	require.NoError(t, json.Unmarshal([]byte(output), &result))
+	assert.Equal(t, "grava-123", result["id"])
+	assert.Equal(t, "open", result["status"])
+	assert.NotEmpty(t, result["stopped_at"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestStart_Stop_Cycle(t *testing.T) {
 	// Phase 1: start — SELECT FOR UPDATE inside tx, transitions to in_progress
 	db1, mock1, err := sqlmock.New()

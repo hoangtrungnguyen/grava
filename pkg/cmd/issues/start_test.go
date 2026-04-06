@@ -3,6 +3,7 @@ package issues
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -91,4 +92,46 @@ func TestStartIssue_IssueNotFound(t *testing.T) {
 		Model: "test-model",
 	})
 	testutil.AssertGravaError(t, err, "ISSUE_NOT_FOUND")
+}
+
+func TestStartIssue_DBUnreachable(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT status, COALESCE(assignee, '') FROM issues WHERE id = ? FOR UPDATE")).
+		WithArgs("grava-abc").
+		WillReturnError(fmt.Errorf("connection refused"))
+
+	store := mockStoreForStart(db)
+	_, err = startIssue(context.Background(), store, StartParams{
+		ID:    "grava-abc",
+		Actor: "test-actor",
+		Model: "test-model",
+	})
+	testutil.AssertGravaError(t, err, "DB_UNREACHABLE")
+}
+
+func TestStartIssue_TerminalStatus(t *testing.T) {
+	for _, status := range []string{"closed", "done", "archived", "tombstone"} {
+		t.Run(status, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer db.Close() //nolint:errcheck
+
+			mock.ExpectBegin()
+			mock.ExpectQuery(regexp.QuoteMeta("SELECT status, COALESCE(assignee, '') FROM issues WHERE id = ? FOR UPDATE")).
+				WithArgs("grava-abc").
+				WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow(status, ""))
+
+			store := mockStoreForStart(db)
+			_, err = startIssue(context.Background(), store, StartParams{
+				ID:    "grava-abc",
+				Actor: "test-actor",
+				Model: "test-model",
+			})
+			testutil.AssertGravaError(t, err, "INVALID_STATUS_TRANSITION")
+		})
+	}
 }
