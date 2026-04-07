@@ -274,6 +274,7 @@ Claude Opus 4.6 (claude-opus-4-6)
 - `pkg/utils/schema.go` (modified: SchemaVersion 4 → 5)
 - `pkg/migrate/migrations/005_add_work_session_columns.sql` (created: adds started_at/stopped_at)
 - `docs/guides/CLI_REFERENCE.md` (modified: documented start/stop commands, renamed db-start/db-stop)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified: status in-progress → review)
 
 ### Change Log
 
