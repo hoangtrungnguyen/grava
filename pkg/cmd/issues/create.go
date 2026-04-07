@@ -131,7 +131,7 @@ func createIssue(ctx context.Context, store dolt.Store, params CreateParams) (Cr
 			ephemeralVal, now, now, params.Actor, params.Actor, params.Model, affectedFilesJSON,
 		)
 		if err != nil {
-			return gravaerrors.New("DB_UNREACHABLE", "failed to insert issue", err)
+			return gravaerrors.New("DB_UNREACHABLE", fmt.Sprintf("failed to insert issue: %v", err), err)
 		}
 
 		if params.ParentID != "" {
