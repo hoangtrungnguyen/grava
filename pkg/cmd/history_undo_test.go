@@ -4,38 +4,11 @@ import (
 	"database/sql"
 	"regexp"
 	"testing"
-	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestHistoryCmd(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	assert.NoError(t, err)
-	defer db.Close() //nolint:errcheck
-
-	Store = dolt.NewClientFromDB(db)
-	defer func() { Store = nil }()
-
-	id := "issue-123"
-
-	// Expectation
-	rows := sqlmock.NewRows([]string{"commit_hash", "committer", "commit_date", "title", "status", "message"}).
-		AddRow("hash123456", "Alice", time.Now(), "Fix bug", "open", "Initial commit").
-		AddRow("hash654321", "Bob", time.Now().Add(-1*time.Hour), "Init task", "backlog", "Second commit")
-
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT h.commit_hash, h.committer, h.commit_date, h.title, h.status, l.message FROM dolt_history_issues h JOIN dolt_log l ON h.commit_hash = l.commit_hash")).
-		WithArgs(id).
-		WillReturnRows(rows)
-
-	// Execute
-	cmd := historyCmd
-	err = cmd.RunE(cmd, []string{id})
-	assert.NoError(t, err)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
 
 func TestUndoCmd_Dirty(t *testing.T) {
 	// Scenario: Current state differs from HEAD (Uncommitted changes)

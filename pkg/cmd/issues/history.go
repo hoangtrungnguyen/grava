@@ -61,7 +61,7 @@ func issueHistory(ctx context.Context, store dolt.Store, issueID, since string) 
 		args = append(args, sinceTime)
 	}
 
-	query += " ORDER BY timestamp ASC, id ASC"
+	query += " ORDER BY timestamp ASC, id ASC LIMIT 500"
 
 	rows, err := store.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -100,7 +100,7 @@ func parseSinceDate(s string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
-	if t, err := time.Parse("2006-01-02", s); err == nil {
+	if t, err := time.Parse(time.DateOnly, s); err == nil {
 		return t, nil
 	}
 	return time.Time{}, fmt.Errorf("cannot parse %q as date", s)
