@@ -130,7 +130,7 @@ func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
 		if outputJSON {
-			writeJSONError(rootCmd, err) //nolint:errcheck
+			cmddeps.WriteJSONError(rootCmd.OutOrStderr(), err) //nolint:errcheck
 		} else {
 			_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 		}

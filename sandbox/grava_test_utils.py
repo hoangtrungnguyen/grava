@@ -7,19 +7,43 @@ import time
 GRAVA_BIN = os.path.join(os.path.dirname(__file__), "grava_test_bin")
 
 def ensure_built():
-    """Ensure grava test binary is built."""
-    if not os.path.exists(GRAVA_BIN):
+    """Ensure grava test binary is built and up-to-date."""
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    
+    needs_build = not os.path.exists(GRAVA_BIN)
+    if not needs_build:
+        # Check all .go files in cmd and pkg for cache invalidation
+        max_mtime = 0
+        for dirpath, _, filenames in os.walk(os.path.join(root_dir, "pkg")):
+            for f in filenames:
+                if f.endswith(".go"):
+                    max_mtime = max(max_mtime, os.path.getmtime(os.path.join(dirpath, f)))
+        for dirpath, _, filenames in os.walk(os.path.join(root_dir, "cmd")):
+            for f in filenames:
+                if f.endswith(".go"):
+                    max_mtime = max(max_mtime, os.path.getmtime(os.path.join(dirpath, f)))
+        
+        if max_mtime > os.path.getmtime(GRAVA_BIN):
+            needs_build = True
+        
+    if needs_build:
         print("Building grava binary for testing...")
-        root_dir = os.path.dirname(os.path.dirname(__file__))
         subprocess.run(["go", "build", "-o", GRAVA_BIN, "./cmd/grava"], cwd=root_dir, check=True)
 
 def run_grava(args, check=False):
     """Run a grava command and return the parsed JSON output or raw string if not JSON."""
     ensure_built()
     cmd = [GRAVA_BIN] + args
-    if "GRAVA_DB_URL" in os.environ and "--db-url" not in args:
-        cmd += ["--db-url", os.environ["GRAVA_DB_URL"]]
-    print(f"Running: {' '.join(cmd)}")
+    
+    db_url = os.environ.get("GRAVA_DB_URL")
+    if not db_url:
+        # Default to 3311 for this environment since server is on 3311
+        db_url = "root@tcp(127.0.0.1:3311)/test_grava?parseTime=true"
+        
+    if "--db-url" not in args:
+        cmd += ["--db-url", db_url]
+        
+    # print(f"Running: {' '.join(cmd)}") # Removed loud debug print (L1)
     result = subprocess.run(cmd, capture_output=True, text=True)
     
     if check and result.returncode != 0:
@@ -36,6 +60,9 @@ def run_grava(args, check=False):
                 return result.returncode, result.stderr.strip()
                 
     out = result.stdout.strip()
+    if not out:
+        out = result.stderr.strip()
+        
     try:
         return result.returncode, json.loads(out)
     except json.JSONDecodeError:
@@ -51,4 +78,9 @@ def create_test_issue(title=None):
     return res
 
 def cleanup_test_issue(issue_id):
-    pass # we might need to delete it from db or dolt 
+    """Permanently delete the test issue using the Archive & Purge lifecycle."""
+    # 1. Mark as archived (Story 2.6)
+    run_grava(["update", issue_id, "--status", "archived", "--json"])
+    # 2. Trigger hard delete via maintenance clear
+    run_grava(["clear", "--json"])
+

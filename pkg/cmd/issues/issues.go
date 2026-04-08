@@ -56,6 +56,7 @@ type IssueDetail struct {
 	UpdatedAt     time.Time      `json:"updated_at"`
 	CreatedBy     string         `json:"created_by"`
 	UpdatedBy     string         `json:"updated_by"`
+	Assignee      string         `json:"assignee,omitempty"`
 	AgentModel    string         `json:"agent_model,omitempty"`
 	AffectedFiles []string       `json:"affected_files,omitempty"`
 	Subtasks      []string       `json:"subtasks,omitempty"`
@@ -134,6 +135,7 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	root.AddCommand(newStopCmd(d))
 	root.AddCommand(newWispCmd(d))
 	root.AddCommand(newHistoryCmd(d))
+	root.AddCommand(newUndoCmd(d))
 }
 
 func newShowCmd(d *cmddeps.Deps) *cobra.Command {
@@ -149,17 +151,17 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 				return showTreeVisualization(d, id)
 			}
 
-			query := `SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files
+			query := `SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, '')
                   FROM issues WHERE id = ?`
 
 			var title, desc, iType, status string
 			var priority int
 			var createdAt, updatedAt time.Time
-			var createdBy, updatedBy string
+			var createdBy, updatedBy, assignee string
 			var agentModelStr *string
 			var affectedFilesJSON *string
 
-			err := (*d.Store).QueryRow(query, id).Scan(&title, &desc, &iType, &priority, &status, &createdAt, &updatedAt, &createdBy, &updatedBy, &agentModelStr, &affectedFilesJSON)
+			err := (*d.Store).QueryRow(query, id).Scan(&title, &desc, &iType, &priority, &status, &createdAt, &updatedAt, &createdBy, &updatedBy, &agentModelStr, &affectedFilesJSON, &assignee)
 			if err != nil {
 				return fmt.Errorf("failed to fetch issue %s: %w", id, err)
 			}
@@ -252,6 +254,7 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 					UpdatedAt:     updatedAt,
 					CreatedBy:     createdBy,
 					UpdatedBy:     updatedBy,
+					Assignee:      assignee,
 					AffectedFiles: files,
 					Subtasks:      subtasks,
 					Labels:        labels,
@@ -278,6 +281,9 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 			cmd.Printf("Status:      %s\n", status)
 			cmd.Printf("Created:     %s by %s\n", createdAt.Format(time.RFC3339), createdBy)
 			cmd.Printf("Updated:     %s by %s\n", updatedAt.Format(time.RFC3339), updatedBy)
+			if assignee != "" {
+				cmd.Printf("Assignee:    %s\n", assignee)
+			}
 			if agentModelStr != nil && *agentModelStr != "" {
 				cmd.Printf("Model:       %s\n", *agentModelStr)
 			}
@@ -527,7 +533,7 @@ Examples:
 			})
 			if err != nil {
 				if *d.OutputJSON {
-					return writeJSONError(cmd, err)
+					return cmddeps.WriteJSONError(cmd.OutOrStderr(), err)
 				}
 				return err
 			}

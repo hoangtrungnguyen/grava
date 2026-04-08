@@ -18,9 +18,9 @@ func TestClaimIssue_HappyPath(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
+	mock.ExpectQuery("SELECT status, assignee, wisp_heartbeat_at FROM issues WHERE id").
 		WithArgs("grava-abc123def456").
-		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("open", nil))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee", "wisp_heartbeat_at"}).AddRow("open", nil, nil))
 	mock.ExpectExec("UPDATE issues SET").
 		WithArgs("actor1", "model1", "actor1", "grava-abc123def456").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -43,9 +43,9 @@ func TestClaimIssue_NotFound(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
+	mock.ExpectQuery("SELECT status, assignee, wisp_heartbeat_at FROM issues WHERE id").
 		WithArgs("grava-notfound").
-		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"})) // empty → ErrNoRows
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee", "wisp_heartbeat_at"})) // empty → ErrNoRows
 	mock.ExpectRollback()
 
 	store := dolt.NewClientFromDB(db)
@@ -62,9 +62,9 @@ func TestClaimIssue_AlreadyClaimed(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
+	mock.ExpectQuery("SELECT status, assignee, wisp_heartbeat_at FROM issues WHERE id").
 		WithArgs("grava-abc123def456").
-		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("in_progress", "actor1"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee", "wisp_heartbeat_at"}).AddRow("in_progress", "actor1", nil))
 	mock.ExpectRollback()
 
 	store := dolt.NewClientFromDB(db)
@@ -81,9 +81,9 @@ func TestClaimIssue_InvalidTransition(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
+	mock.ExpectQuery("SELECT status, assignee, wisp_heartbeat_at FROM issues WHERE id").
 		WithArgs("grava-abc123def456").
-		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("closed", nil))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee", "wisp_heartbeat_at"}).AddRow("closed", nil, nil))
 	mock.ExpectRollback()
 
 	store := dolt.NewClientFromDB(db)
@@ -102,9 +102,9 @@ func TestClaimIssue_AlreadyClaimed_OpenWithAssignee(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT status, assignee FROM issues WHERE id").
+	mock.ExpectQuery("SELECT status, assignee, wisp_heartbeat_at FROM issues WHERE id").
 		WithArgs("grava-abc123def456").
-		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee"}).AddRow("open", "sneaky-actor"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee", "wisp_heartbeat_at"}).AddRow("open", "sneaky-actor", nil))
 	mock.ExpectRollback()
 
 	store := dolt.NewClientFromDB(db)

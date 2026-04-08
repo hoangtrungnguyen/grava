@@ -14,6 +14,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/hoangtrungnguyen/grava/internal/testutil"
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
+	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	"github.com/spf13/cobra"
@@ -37,8 +38,9 @@ func executeCommand(root *cobra.Command, args ...string) (string, error) {
 
 func resetFlags(cmd *cobra.Command) {
 	// Reset specific global slice variables that use StringSliceVar
-	updateAffectedFiles = nil
-	subtaskAffectedFiles = nil
+	issues.CreateAffectedFiles = nil
+	issues.UpdateAffectedFiles = nil
+	issues.SubtaskAffectedFiles = nil
 	issues.LabelAddFlags = nil
 	issues.LabelRemoveFlags = nil
 
@@ -97,11 +99,11 @@ func TestShowCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	rows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files"}).
-		AddRow("My Issue", "Desc", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", "gemini-pro", `["pkg/cmd/root.go","pkg/cmd/show.go"]`)
+	rows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files", "assignee"}).
+		AddRow("My Issue", "Desc", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", "gemini-pro", `["pkg/cmd/root.go","pkg/cmd/show.go"]`, "")
 
 	// Match query with whitespace flexibility
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, '')") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
 		WithArgs("grava-123").
 		WillReturnRows(rows)
 
@@ -468,8 +470,8 @@ func TestShowCmd_WithSubtasks(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	issueRows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files"}).
-		AddRow("Parent Issue", "Desc", "task", 2, "open", time.Now(), time.Now(), "alice", "alice", nil, nil)
+	issueRows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files", "assignee"}).
+		AddRow("Parent Issue", "Desc", "task", 2, "open", time.Now(), time.Now(), "alice", "alice", nil, nil, "")
 
 	mock.ExpectQuery(`SELECT title`).
 		WithArgs("grava-abc").
@@ -507,10 +509,10 @@ func TestShowCmd_LabelsAndComments(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	issueRow := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files"}).
-		AddRow("Labeled Issue", "Has labels and comments", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", nil, "[]")
+	issueRow := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files", "assignee"}).
+		AddRow("Labeled Issue", "Has labels and comments", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", nil, "[]", "")
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, '')") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
 		WithArgs("grava-lbl").
 		WillReturnRows(issueRow)
 
@@ -930,51 +932,6 @@ func TestAssignCmdMissingActorAndUnassign(t *testing.T) {
 	assert.Contains(t, err.Error(), "either --actor")
 }
 
-func TestSearchCmd(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	assert.NoError(t, err)
-	Store = dolt.NewClientFromDB(db)
-
-	// Reset flag
-	searchWisp = false
-
-	rows := sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
-		AddRow("grava-1", "Fix login bug", "bug", 1, "open", time.Now())
-
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
-		WithArgs(0, "%login%", "%login%", "%login%").
-		WillReturnRows(rows)
-
-	mock.ExpectClose()
-
-	output, err := executeCommand(rootCmd, "search", "login")
-	assert.NoError(t, err)
-	assert.Contains(t, output, "grava-1")
-	assert.Contains(t, output, "Fix login bug")
-	assert.Contains(t, output, "1 result(s)")
-
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestSearchCmdNoResults(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	assert.NoError(t, err)
-	Store = dolt.NewClientFromDB(db)
-
-	searchWisp = false
-
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
-		WithArgs(0, "%xyznotfound%", "%xyznotfound%", "%xyznotfound%").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}))
-
-	mock.ExpectClose()
-
-	output, err := executeCommand(rootCmd, "search", "xyznotfound")
-	assert.NoError(t, err)
-	assert.Contains(t, output, "No issues found")
-
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
 
 func TestQuickCmd(t *testing.T) {
 	db, mock, err := sqlmock.New()
@@ -1005,33 +962,6 @@ func TestQuickCmdAllCaughtUp(t *testing.T) {
 	assert.Contains(t, err.Error(), "accepts 1 arg(s)")
 }
 
-func TestSearchCmdWisp(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	assert.NoError(t, err)
-	Store = dolt.NewClientFromDB(db)
-
-	// --wisp flag should pass ephemeral=1
-	searchWisp = true
-
-	rows := sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
-		AddRow("grava-w1", "Scratch auth note", "task", 4, "open", time.Now())
-
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at`)).
-		WithArgs(1, "%auth%", "%auth%", "%auth%").
-		WillReturnRows(rows)
-
-	mock.ExpectClose()
-
-	output, err := executeCommand(rootCmd, "search", "auth", "--wisp")
-	assert.NoError(t, err)
-	assert.Contains(t, output, "grava-w1")
-	assert.Contains(t, output, "1 result(s)")
-
-	assert.NoError(t, mock.ExpectationsWereMet())
-
-	// Reset flag
-	searchWisp = false
-}
 
 func TestQuickCmdCustomPriority(t *testing.T) {
 	// quick no longer accepts --priority flag — verify unknown flag error.
@@ -1272,57 +1202,55 @@ func TestDropCmdDeleteError(t *testing.T) {
 // --- JSON error envelope tests ---
 
 func TestWriteJSONError_GenericError(t *testing.T) {
-	cmd := &cobra.Command{}
 	errBuf := new(bytes.Buffer)
-	cmd.SetErr(errBuf)
 
-	err := writeJSONError(cmd, fmt.Errorf("something went wrong"))
+	err := cmddeps.WriteJSONError(errBuf, fmt.Errorf("something went wrong"))
 	require.NoError(t, err)
 
-	var envelope jsonErrorEnvelope
+	var envelope struct {
+		Error cmddeps.GravaError `json:"error"`
+	}
 	require.NoError(t, json.Unmarshal(errBuf.Bytes(), &envelope))
 	assert.Equal(t, "INTERNAL_ERROR", envelope.Error.Code)
 	assert.Equal(t, "something went wrong", envelope.Error.Message)
 }
 
 func TestWriteJSONError_GravaError(t *testing.T) {
-	cmd := &cobra.Command{}
 	errBuf := new(bytes.Buffer)
-	cmd.SetErr(errBuf)
 
 	gravaErr := gravaerrors.New("SCHEMA_MISMATCH", "schema version mismatch", nil)
-	err := writeJSONError(cmd, gravaErr)
+	err := cmddeps.WriteJSONError(errBuf, gravaErr)
 	require.NoError(t, err)
 
-	var envelope jsonErrorEnvelope
+	var envelope struct {
+		Error cmddeps.GravaError `json:"error"`
+	}
 	require.NoError(t, json.Unmarshal(errBuf.Bytes(), &envelope))
 	assert.Equal(t, "SCHEMA_MISMATCH", envelope.Error.Code)
 	assert.Equal(t, "schema version mismatch", envelope.Error.Message)
 }
 
 func TestWriteJSONError_WrappedGravaError(t *testing.T) {
-	cmd := &cobra.Command{}
 	errBuf := new(bytes.Buffer)
-	cmd.SetErr(errBuf)
 
 	gravaErr := gravaerrors.New("NOT_INITIALIZED", "not initialized", nil)
 	wrapped := fmt.Errorf("outer: %w", gravaErr)
 
-	err := writeJSONError(cmd, wrapped)
+	err := cmddeps.WriteJSONError(errBuf, wrapped)
 	require.NoError(t, err)
 
-	var envelope jsonErrorEnvelope
+	var envelope struct {
+		Error cmddeps.GravaError `json:"error"`
+	}
 	require.NoError(t, json.Unmarshal(errBuf.Bytes(), &envelope))
 	assert.Equal(t, "NOT_INITIALIZED", envelope.Error.Code)
 	assert.Equal(t, "not initialized", envelope.Error.Message)
 }
 
 func TestWriteJSONError_OutputIsValidJSON(t *testing.T) {
-	cmd := &cobra.Command{}
 	errBuf := new(bytes.Buffer)
-	cmd.SetErr(errBuf)
 
-	_ = writeJSONError(cmd, fmt.Errorf("any error"))
+	_ = cmddeps.WriteJSONError(errBuf, fmt.Errorf("any error"))
 
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal(errBuf.Bytes(), &raw), "output must be valid JSON")

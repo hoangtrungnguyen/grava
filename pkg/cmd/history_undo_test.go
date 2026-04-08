@@ -24,15 +24,12 @@ func TestUndoCmd_Dirty(t *testing.T) {
 	id := "issue-dirty"
 
 	// 1. Get Current State
-	// Current: Title="Changed Title", UpdatedAt=Now
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM issues")).
 		WithArgs(id).
 		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
 			AddRow("Changed Title", "Desc", "task", 1, "open", nil))
 
 	// 2. Get History
-	// Head (Hist[0]): Title="Original Title", UpdatedAt=Now-1h
-	// Prev (Hist[1]): Title="Old Title", UpdatedAt=Now-2h
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM dolt_history_issues")).
 		WithArgs(id).
 		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
@@ -40,29 +37,31 @@ func TestUndoCmd_Dirty(t *testing.T) {
 			AddRow("Old Title", "Desc", "task", 1, "open", nil))
 
 	// 3. Update (Revert to HEAD)
-	// Expect update with "Original Title"
 	mock.ExpectExec("UPDATE issues SET title = \\?, .* WHERE id = \\?").
 		WithArgs(
 			"Original Title", "Desc", "task", 1, "open", nil,
-			sqlmock.AnyArg(), // updated_by (actor)
-			sqlmock.AnyArg(), // agent_model
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
 			id,
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// 4. Add Comment (Select metadata)
-	mock.ExpectQuery("SELECT COALESCE\\(metadata, '\\{}'\\) FROM issues WHERE id = \\?").
+	// 4. Add Comment (Audited Tx)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ?")).
 		WithArgs(id).
-		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow("{}"))
-
-	// 5. Update Metadata (Add comment)
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), id).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(id))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO issue_comments (issue_id, message, actor, agent_model, created_at) VALUES (?, ?, ?, ?, ?)")).
+		WithArgs(id, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events (issue_id, event_type, actor, old_value, new_value, created_by, updated_by, agent_model, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")).
+		WithArgs(id, "comment", sqlmock.AnyArg(), "{}", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectClose()
 
 	// Execute
-	cmd := undoCmd
-	err = cmd.RunE(cmd, []string{id})
+	_, err = executeCommand(rootCmd, "undo", id)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -81,15 +80,12 @@ func TestUndoCmd_Clean(t *testing.T) {
 	id := "issue-clean"
 
 	// 1. Get Current State
-	// Current: Title="Original Title", UpdatedAt=Now-1h (Same as HEAD)
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM issues")).
 		WithArgs(id).
 		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
 			AddRow("Original Title", "Desc", "task", 1, "open", nil))
 
 	// 2. Get History
-	// Head (Hist[0]): Title="Original Title", UpdatedAt=Now-1h
-	// Prev (Hist[1]): Title="Old Title", UpdatedAt=Now-2h
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM dolt_history_issues")).
 		WithArgs(id).
 		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
@@ -97,7 +93,6 @@ func TestUndoCmd_Clean(t *testing.T) {
 			AddRow("Old Title", "Desc", "task", 1, "open", nil))
 
 	// 3. Update (Revert to HEAD~1)
-	// Expect update with "Old Title"
 	mock.ExpectExec("UPDATE issues SET title = \\?, .* WHERE id = \\?").
 		WithArgs(
 			"Old Title", "Desc", "task", 1, "open", nil,
@@ -107,19 +102,22 @@ func TestUndoCmd_Clean(t *testing.T) {
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// 4. Add Comment (Select metadata)
-	mock.ExpectQuery("SELECT COALESCE\\(metadata, '\\{}'\\) FROM issues WHERE id = \\?").
+	// 4. Add Comment (Audited Tx)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ?")).
 		WithArgs(id).
-		WillReturnRows(sqlmock.NewRows([]string{"metadata"}).AddRow("{}"))
-
-	// 5. Update Metadata (Add comment)
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`)).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), id).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(id))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO issue_comments (issue_id, message, actor, agent_model, created_at) VALUES (?, ?, ?, ?, ?)")).
+		WithArgs(id, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events (issue_id, event_type, actor, old_value, new_value, created_by, updated_by, agent_model, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")).
+		WithArgs(id, "comment", sqlmock.AnyArg(), "{}", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectClose()
 
 	// Execute
-	cmd := undoCmd
-	err = cmd.RunE(cmd, []string{id})
+	_, err = executeCommand(rootCmd, "undo", id)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -144,11 +142,12 @@ func TestUndoCmd_NoHistory(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, affected_files FROM dolt_history_issues")).
 		WithArgs(id).
 		WillReturnRows(sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "affected_files"}).
-			AddRow("Title", "Desc", "task", 1, "open", nil)) // Only HEAD
+			AddRow("Title", "Desc", "task", 1, "open", nil))
+
+	mock.ExpectClose()
 
 	// Execute
-	cmd := undoCmd
-	err = cmd.RunE(cmd, []string{id})
+	_, err = executeCommand(rootCmd, "undo", id)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "initial state")
 }
@@ -167,9 +166,10 @@ func TestUndoCmd_NotFound(t *testing.T) {
 		WithArgs(id).
 		WillReturnError(sql.ErrNoRows)
 
+	mock.ExpectClose()
+
 	// Execute
-	cmd := undoCmd
-	err = cmd.RunE(cmd, []string{id})
+	_, err = executeCommand(rootCmd, "undo", id)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }

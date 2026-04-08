@@ -1,10 +1,9 @@
-// Package maintenance contains the maintenance commands (compact, doctor, undo, clear).
+// Package maintenance contains the maintenance commands (compact, doctor, clear).
 package maintenance
 
 import (
 	"bufio"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,7 +31,6 @@ var ClearStdinReader io.Reader = os.Stdin
 func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	root.AddCommand(newCompactCmd(d))
 	root.AddCommand(newDoctorCmd(d))
-	root.AddCommand(newUndoCmd(d))
 	root.AddCommand(newClearCmd(d))
 	// history command moved to pkg/cmd/issues (Story 3.3: events-based audit trail)
 }
@@ -258,144 +256,6 @@ and reports the health of each component.`,
 	}
 }
 
-func newUndoCmd(d *cmddeps.Deps) *cobra.Command {
-	return &cobra.Command{
-		Use:   "undo <id>",
-		Short: "Revert the last change to an issue",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
-
-			type IssueState struct {
-				Title         string
-				Description   string
-				Type          string
-				Priority      int
-				Status        string
-				AffectedFiles sql.NullString
-			}
-
-			var current IssueState
-			currQuery := `SELECT title, description, issue_type, priority, status, affected_files
-		              FROM issues WHERE id = ?`
-			err := (*d.Store).QueryRow(currQuery, id).Scan(
-				&current.Title, &current.Description, &current.Type,
-				&current.Priority, &current.Status, &current.AffectedFiles,
-			)
-			if err != nil {
-				if err == sql.ErrNoRows {
-					return fmt.Errorf("issue %s not found", id)
-				}
-				return fmt.Errorf("failed to fetch current state: %w", err)
-			}
-
-			histQuery := `
-			SELECT title, description, issue_type, priority, status, affected_files
-			FROM dolt_history_issues
-			WHERE id = ?
-			ORDER BY commit_date DESC
-			LIMIT 2
-		`
-			rows, err := (*d.Store).Query(histQuery, id)
-			if err != nil {
-				return fmt.Errorf("failed to fetch history: %w", err)
-			}
-			defer func() { _ = rows.Close() }()
-
-			var history []IssueState
-			for rows.Next() {
-				var h IssueState
-				if err := rows.Scan(
-					&h.Title, &h.Description, &h.Type,
-					&h.Priority, &h.Status, &h.AffectedFiles,
-				); err != nil {
-					return fmt.Errorf("failed to scan history: %w", err)
-				}
-				history = append(history, h)
-			}
-
-			if len(history) == 0 {
-				return fmt.Errorf("no history found for issue %s (is it committed?)", id)
-			}
-
-			var targetState IssueState
-			var actionMsg string
-			isDirty := current != history[0]
-
-			if isDirty {
-				actionMsg = "Discarding uncommitted changes (reverting to HEAD)..."
-				targetState = history[0]
-			} else {
-				if len(history) < 2 {
-					return fmt.Errorf("cannot undo: issue is in its initial state (no previous commit)")
-				}
-				actionMsg = "Issue is clean. Reverting to PREVIOUS commit..."
-				targetState = history[1]
-			}
-
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), actionMsg)
-
-			if !isDirty {
-				var rawMeta sql.NullString
-				if err := (*d.Store).QueryRow("SELECT metadata FROM issues WHERE id = ?", id).Scan(&rawMeta); err == nil && rawMeta.Valid {
-					var meta map[string]any
-					if err := json.Unmarshal([]byte(rawMeta.String), &meta); err == nil {
-						if lastCommit, ok := meta["last_commit"].(string); ok {
-							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Found last session commit: %s\n", lastCommit)
-							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Reverting session commit... ")
-							_, err := (*d.Store).Exec("CALL DOLT_REVERT(?)", lastCommit)
-							if err != nil {
-								_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Revert failed: %v. Falling back to row-level undo.\n", err)
-							} else {
-								_, _ = fmt.Fprintln(cmd.OutOrStdout(), "DONE.")
-								_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Session undo successful for %v.\n", id)
-								return nil
-							}
-						}
-					}
-				}
-			}
-
-			updateQ := `
-			UPDATE issues
-			SET title = ?, description = ?, issue_type = ?, priority = ?, status = ?,
-			    affected_files = ?,
-			    updated_at = NOW(), updated_by = ?, agent_model = ?
-			WHERE id = ?
-		`
-			res, err := (*d.Store).Exec(updateQ,
-				targetState.Title, targetState.Description, targetState.Type,
-				targetState.Priority, targetState.Status, targetState.AffectedFiles,
-				*d.Actor, *d.AgentModel, id,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to execute undo: %w", err)
-			}
-
-			rowsAff, _ := res.RowsAffected()
-			if rowsAff == 0 {
-				return fmt.Errorf("no rows updated (concurrency issue?)")
-			}
-
-			var commentMsg string
-			if isDirty {
-				commentMsg = "Undo: discarded uncommitted changes (reverted to HEAD)"
-			} else {
-				commentMsg = "Undo: reverted to PREVIOUS commit"
-			}
-
-			if err := addCommentToIssue(d, id, commentMsg); err != nil {
-				return fmt.Errorf("failed to add undo comment: %w", err)
-			}
-
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Reverted issue %s.\n", id)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   Title: %s\n", targetState.Title)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   Status: %s\n", targetState.Status)
-
-			return nil
-		},
-	}
-}
 
 func newClearCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
@@ -520,52 +380,4 @@ Date-range soft-delete:
 	cmd.Flags().BoolVar(&clearForce, "force", false, "Skip interactive confirmation prompt")
 	cmd.Flags().BoolVar(&clearIncludeWisp, "include-wisps", false, "Also delete ephemeral Wisp issues")
 	return cmd
-}
-
-// addCommentToIssue appends a comment to the issue's metadata.
-func addCommentToIssue(d *cmddeps.Deps, id string, text string) error {
-	comment := map[string]any{
-		"text":        text,
-		"timestamp":   time.Now().UTC().Format(time.RFC3339),
-		"actor":       *d.Actor,
-		"agent_model": *d.AgentModel,
-	}
-
-	row := (*d.Store).QueryRow(`SELECT COALESCE(metadata, '{}') FROM issues WHERE id = ?`, id)
-	var rawMeta string
-	if err := row.Scan(&rawMeta); err != nil {
-		return fmt.Errorf("issue %s not found: %w", id, err)
-	}
-
-	var meta map[string]any
-	if err := json.Unmarshal([]byte(rawMeta), &meta); err != nil {
-		return fmt.Errorf("failed to parse metadata for %s: %w", id, err)
-	}
-
-	var comments []any
-	if existing, ok := meta["comments"]; ok {
-		if arr, ok := existing.([]any); ok {
-			comments = arr
-		}
-	}
-	comments = append(comments, comment)
-	meta["comments"] = comments
-
-	return updateIssueMetadata(d, id, meta)
-}
-
-func updateIssueMetadata(d *cmddeps.Deps, id string, meta map[string]any) error {
-	updated, err := json.Marshal(meta)
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
-	_, err = (*d.Store).Exec(
-		`UPDATE issues SET metadata = ?, updated_at = NOW(), updated_by = ?, agent_model = ? WHERE id = ?`,
-		string(updated), *d.Actor, *d.AgentModel, id,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to save metadata for %s: %w", id, err)
-	}
-	return nil
 }

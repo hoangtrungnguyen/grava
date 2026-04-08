@@ -1,6 +1,6 @@
 # Story 3.4: Epic 3 Sandbox Integration Tests
 
-Status: review
+Status: complete
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -101,3 +101,17 @@ Gemini 3.1 Pro (Low)
 ### File List
 
 - `_bmad-output/implementation-artifacts/3-4-epic-3-sandbox-integration-tests.md`
+- `pkg/cmd/issues/claim.go`
+- `pkg/cmd/issues/issues.go`
+- `sandbox/grava_test_utils.py`
+- `sandbox/run_scenarios.py`
+- `sandbox/test_audit_trail.py`
+- `sandbox/test_crash_resume.py`
+- `sandbox/test_delete_vs_modify.py`
+- `sandbox/test_epic3_lifecycle.py`
+- `sandbox/test_happy_path.py`
+- `sandbox/test_invalid_ops.py`
+- `sandbox/test_rapid_claims.py`
+- `sandbox/test_subtasks.py`
+- `sandbox/requirements.txt`
+- `sandbox/SANDBOX_VALIDATION_GUIDE.md`
