@@ -54,3 +54,7 @@ scripts/benchmark_results.json
 dist/.DS_Store
 notebooklm-py/
 notebooklm-skill/
+
+skills-lock.json
+
+.grava/

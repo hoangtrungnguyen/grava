@@ -1,5 +1,3 @@
-
-
 services:
   # The Dolt SQL Server running locally for development and testing
   dolt:
@@ -8,7 +6,7 @@ services:
       - "3306:3306"
     volumes:
       # Persist the dolt data so we don't lose the DB on container restart
-      - ./.grava-docker-dolt:/var/lib/dolt 
+      - ./.grava-docker-dolt:/var/lib/dolt
     environment:
       # Specify any environment variables Dolt might need. 
       # By default, root has no password in Dolt SQL Server.
@@ -16,7 +14,7 @@ services:
     command: sql-server --host 0.0.0.0 --port 3306
     healthcheck:
       # Ensure the DB is listening before test containers start
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "--silent"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "--silent" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -51,7 +49,7 @@ services:
       - grava_sandbox_data:/workspace
     # Keeps the container running and allows attaching to it
     stdin_open: true # Equivalent to docker run -i
-    tty: true        # Equivalent to docker run -t
+    tty: true # Equivalent to docker run -t
     command: bash
 
 volumes:
