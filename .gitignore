@@ -54,6 +54,7 @@ scripts/benchmark_results.json
 dist/.DS_Store
 notebooklm-py/
 notebooklm-skill/
+run-claude-zai.sh
 
 skills-lock.json
 

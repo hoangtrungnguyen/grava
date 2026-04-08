@@ -68,6 +68,13 @@ func startIssue(ctx context.Context, store dolt.Store, params StartParams) (Star
 			return gravaerrors.New("ALREADY_IN_PROGRESS", msg, nil)
 		}
 
+		// Only open issues can be started. Terminal statuses (done, closed, archived, tombstone)
+		// must not transition back to in_progress.
+		if currentStatus != "open" {
+			return gravaerrors.New("INVALID_STATUS_TRANSITION",
+				fmt.Sprintf("Cannot start work on an issue with status '%s'; only 'open' issues can be started", currentStatus), nil)
+		}
+
 		if _, err := tx.ExecContext(ctx,
 			"UPDATE issues SET status = ?, started_at = ?, stopped_at = NULL, assignee = ?, updated_at = ?, updated_by = ?, agent_model = ? WHERE id = ?",
 			"in_progress", startTime, params.Actor, startTime, params.Actor, params.Model, params.ID,
@@ -118,7 +125,7 @@ Example:
 
 			if *d.OutputJSON {
 				b, _ := json.MarshalIndent(result, "", "  ") //nolint:errcheck // StartResult is always serializable
-				fmt.Fprintln(cmd.OutOrStdout(), string(b))  //nolint:errcheck
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))   //nolint:errcheck
 				return nil
 			}
 

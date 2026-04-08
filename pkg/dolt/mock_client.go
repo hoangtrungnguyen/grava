@@ -6,6 +6,9 @@ import (
 )
 
 // MockStore is a mock implementation of Store for testing.
+//
+// Deprecated: Use internal/testutil.MockStore instead. This mock will be removed
+// once all consumers migrate to the testutil version.
 type MockStore struct {
 	Sequences map[string]int
 }

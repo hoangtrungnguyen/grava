@@ -114,7 +114,7 @@ Example:
 
 			if *d.OutputJSON {
 				b, _ := json.MarshalIndent(result, "", "  ") //nolint:errcheck // StopResult is always serializable
-				fmt.Fprintln(cmd.OutOrStdout(), string(b))  //nolint:errcheck
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))   //nolint:errcheck
 				return nil
 			}
 

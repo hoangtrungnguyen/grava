@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,7 +16,7 @@ const gravaExcludeEntry = ".grava/"
 // Gracefully skips if .git directory is absent.
 func WriteGitExclude(repoRoot string) (migrated bool, err error) {
 	gitDir := filepath.Join(repoRoot, ".git")
-	if _, statErr := os.Stat(gitDir); os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(gitDir); statErr != nil && errors.Is(statErr, os.ErrNotExist) {
 		return false, nil // not a git repo, skip gracefully
 	}
 
@@ -62,7 +63,7 @@ func hasExactLine(content, target string) bool {
 func migrateGitignore(repoRoot string) (bool, error) {
 	gitignorePath := filepath.Join(repoRoot, ".gitignore")
 	data, err := os.ReadFile(gitignorePath)
-	if os.IsNotExist(err) {
+	if err != nil && errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
 	if err != nil {

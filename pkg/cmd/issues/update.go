@@ -48,8 +48,16 @@ func updateIssue(ctx context.Context, store dolt.Store, params UpdateParams) (Up
 	}
 
 	// Validate changed fields up-front (before any DB access)
+	allowedFields := map[string]bool{
+		"title": true, "desc": true, "type": true,
+		"priority": true, "status": true, "files": true,
+	}
 	changedSet := make(map[string]bool, len(params.ChangedFields))
 	for _, f := range params.ChangedFields {
+		if !allowedFields[f] {
+			return UpdateResult{}, gravaerrors.New("INVALID_FIELD",
+				fmt.Sprintf("field '%s' is not a valid update target", f), nil)
+		}
 		changedSet[f] = true
 	}
 
@@ -267,7 +275,7 @@ Only the flags provided will be updated.`,
 
 			if *d.OutputJSON {
 				b, _ := json.MarshalIndent(result, "", "  ") //nolint:errcheck // UpdateResult is always serializable
-				fmt.Fprintln(cmd.OutOrStdout(), string(b))  //nolint:errcheck
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))   //nolint:errcheck
 				return nil
 			}
 
