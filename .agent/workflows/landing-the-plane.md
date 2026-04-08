@@ -30,7 +30,8 @@ description: Clean up the session, commit work, and update the issue status usin
 4.  **Cleanup Artifacts:** Delete any temporary debugging files, print statements, or console logs.
 
 
-4.     If update/create a command, you also document the changes into docs folder
+4.  **Update Implementation Docs:** Update module and file documentation in [`docs/detail-impl/`](file:///Users/trungnguyenhoang/IdeaProjects/grava/docs/detail-impl) folder if internal structures or logic changed.
+5.  **Document Command Changes:** If you updated or created a command, document the changes in the `docs/` folder.
 ---
 
 ### Step 2: Git Hygiene & Persistence
