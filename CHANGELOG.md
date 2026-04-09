@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [v0.0.6] - 2026-04-09
+
+### Added
+* feat(issues): implement Epic 2 and 3 — issue lifecycle, claiming, and session tracking
+* feat(cli): implement `grava start/stop` for work session tracking (grava-1073)
+* feat(cli): implement atomic issue claim and ephemeral state (grava-e4b2)
+* feat(lifecycle): implement archive and purge issues (Story 2.6)
+* feat(cli): implement label and comment on issues (Story 2.5)
+* feat(cli): add db lifecycle commands
+* feat(sandbox): implement multi-agent orchestration validation framework
+* feat: initialize Serena project configuration and documentation
+* feat: implement liveness subsystem with wisp validation and circuit breaking
+
+### Changed
+* refactor(cli): modularize issues package and centralize error handling (grava-a0df.1)
+* chore(ci): upgrade all GitHub Actions to latest versions
+* chore(ci): enable CI build on main branch
+* docs: initialize comprehensive project documentation and automated update scripts
+
+### Fixed
+* fix(sandbox): implement missing scenario functions and reporting logic
+* fix(review): address numerous adversarial code review findings for Epics 1, 2, and 3
+
 ## [v0.0.5] - 2026-03-09
 
 * chore: ignore .grava.yaml (9c8396c)
