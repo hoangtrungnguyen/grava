@@ -2,32 +2,21 @@
 
 **The Distributed, Agent-Centric Issue Tracker**
 
+## 📝 Project Brief
+
 Grava is a next-generation issue tracking system designed specifically for autonomous AI agents. Unlike traditional tools built for human managers, Grava provides a **deterministic, graph-based memory system** that allows fleets of agents to coordinate complex software development tasks without hallucinations or race conditions.
 
 > "Remove the need for managers."
 
-## ⚡ Quick Start
+### 🚀 Key Features
 
-Get from zero to your first issue in under 60 seconds:
+*   **Dolt-Backed Storage**: Utilizes [Dolt](https://github.com/dolthub/dolt), a version-controlled SQL database, to enable `git`-like semantics (branch, merge, diff) for your issue tracker.
+*   **The Ready Engine**: A DAG-based (Directed Acyclic Graph) task selection engine that mathematically guarantees agents only work on unblocked, high-priority tasks.
+*   **Agent-Native Interface**: Exposes a structured MCP (Model Context Protocol) server instead of a web UI, allowing agents to interact via strictly typed tools.
+*   **Distributed Synchronization**: Supports offline-first development with a background daemon that syncs state between local replicas and a central server.
+*   **Flight Recorder**: Comprehensive logging and artifact storage to debug agent decision-making processes ("vibe coding").
 
-```bash
-# 1. Install grava
-go install github.com/hoangtrungnguyen/grava/cmd/grava@latest
-
-# 2. Initialize in your project (auto-installs Dolt, starts server)
-cd your-project
-grava init
-
-# 3. Create your first issue
-grava create --title "My first task" --type task --priority medium
-
-# 4. See what's tracked
-grava list
-```
-
-That's it! Dolt (the version-controlled database) is automatically downloaded and managed for you — no separate install needed.
-
-## 📥 Installation
+## 📥 How to Install
 
 ### Option 1: Go Install (Recommended)
 
@@ -73,36 +62,7 @@ docker compose run --rm sandbox
 grava version
 ```
 
-## 🚀 Key Features
-
-*   **Dolt-Backed Storage**: Utilizes [Dolt](https://github.com/dolthub/dolt), a version-controlled SQL database, to enable `git`-like semantics (branch, merge, diff) for your issue tracker.
-*   **The Ready Engine**: A DAG-based (Directed Acyclic Graph) task selection engine that mathematically guarantees agents only work on unblocked, high-priority tasks.
-*   **Agent-Native Interface**: Exposes a structured MCP (Model Context Protocol) server instead of a web UI, allowing agents to interact via strictly typed tools.
-*   **Distributed Synchronization**: Supports offline-first development with a background daemon that syncs state between local replicas and a central server.
-*   **Flight Recorder**: Comprehensive logging and artifact storage to debug agent decision-making processes ("vibe coding").
-
-## 🖥️ CLI Commands
-
-| Command | Description |
-|---|---|
-| `grava init` | Initialize Grava environment |
-| `grava version` | Print the version number |
-| `grava create` | Create a new issue (`--ephemeral` for Wisps) |
-| `grava subtask <id>` | Create a hierarchical subtask |
-| `grava show <id>` | Show issue details |
-| `grava list` | List issues (`--wisp` for ephemeral) |
-| `grava update <id>` | Update issue fields |
-| `grava comment <id> <text>` | Append a comment |
-| `grava dep <from> <to>` | Create a dependency edge |
-| `grava label <id> <label>` | Add a label |
-| `grava assign <id> <user>` | Assign to a user or agent |
-| `grava history <id>` | View revision history for an issue |
-| `grava undo <id>` | Revert the last change to an issue |
-| `grava compact` | Purge old ephemeral Wisps |
-
-See **[CLI Reference](docs/guides/CLI_REFERENCE.md)** for full documentation.
-
-## ❓ Troubleshooting
+## ❓ Troubleshoot Installing
 
 ### `grava: command not found`
 
@@ -144,14 +104,45 @@ Run the built-in diagnostics:
 grava doctor
 ```
 
-## 📚 Documentation
+## 🖥️ Common Grava Commands
 
-The project governance and architecture are strictly documented:
+Get from zero to your first issue in under 60 seconds:
 
-*   **[Architecture Overview](docs/AI%20Agent%20Issue%20Tracker%20Architecture%20&%20MVP.md)**: Deep dive into the system design, Prolly Trees, and the "Ready Engine".
-*   **[MVP Epics & Roadmap](docs/Agent_Issue_Tracker_MVP_Epics.md)**: The step-by-step implementation plan.
+```bash
+# 1. Initialize in your project (auto-installs Dolt, starts server)
+grava init
 
-### Core Modules (Epics)
+# 2. Create your first issue
+grava create --title "My first task" --type task --priority medium
+
+# 3. See what's tracked
+grava list
+```
+
+### Command Reference
+
+| Command | Description |
+|---|---|
+| `grava init` | Initialize Grava environment |
+| `grava version` | Print the version number |
+| `grava create` | Create a new issue (`--ephemeral` for Wisps) |
+| `grava subtask <id>` | Create a hierarchical subtask |
+| `grava show <id>` | Show issue details |
+| `grava list` | List issues (`--wisp` for ephemeral) |
+| `grava update <id>` | Update issue fields |
+| `grava comment <id> <text>` | Append a comment |
+| `grava dep <from> <to>` | Create a dependency edge |
+| `grava label <id> <label>` | Add a label |
+| `grava assign <id> <user>` | Assign to a user or agent |
+| `grava history <id>` | View revision history for an issue |
+| `grava undo <id>` | Revert the last change to an issue |
+| `grava compact` | Purge old ephemeral Wisps |
+
+See **[CLI Reference](docs/guides/CLI_REFERENCE.md)** for full documentation.
+
+## 🧩 Core Modules
+
+The system is built upon the following core epics/modules:
 
 1.  **[Storage Substrate](docs/epics/Epic_1_Storage_Substrate.md)**: Dolt initialization and schema.
 2.  **[Graph Mechanics](docs/epics/Epic_2_Graph_Mechanics.md)**: Dependency logic and topological sorting.
@@ -160,6 +151,15 @@ The project governance and architecture are strictly documented:
 5.  **[Security](docs/epics/Epic_5_Security.md)**: mTLS and RBAC for agent safety.
 6.  **[MCP Integration](docs/epics/Epic_6_MCP_Integration.md)**: The interface for AI agents.
 7.  **[Advanced Analytics](docs/epics/Epic_7_Advanced_Analytics.md)**: PageRank and critical path analysis (Optional).
+
+## 📚 Link to Docs
+
+The project governance and architecture are strictly documented. Here are the most important resources:
+
+*   **[Documentation Index](docs/index.md)**: The root of all Grava documentation.
+*   **[Project Overview](docs/project-overview.md)**: Detailed feature breakdown and design philosophy.
+*   **[Architecture](docs/architecture.md)**: Deep dive into the system design, Prolly Trees, and the "Ready Engine".
+*   **[Development Guide](docs/development-guide.md)**: Information on setting up the local environment, building, and testing.
 
 ## 🛠️ Contributing
 
