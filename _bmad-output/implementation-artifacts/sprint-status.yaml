@@ -68,27 +68,28 @@ development_status:
   # ─── Epic 4: Dependency Graph — Context-Aware Work Discovery ─────────────────
   epic-4: in-progress
   4-1-establish-and-remove-dependency-relationships: ready-for-dev
-  4-2-query-the-ready-queue: backlog
-  4-3-query-blockers-for-a-specific-issue: backlog
-  4-4-visualize-the-full-dependency-graph: backlog
-  4-5-filter-search-and-view-issues: backlog
-  4-6-view-workspace-metrics-and-stats: backlog
+  4-2-query-the-ready-queue: ready-for-dev
+  4-3-query-blockers-for-a-specific-issue: ready-for-dev
+  4-4-visualize-the-full-dependency-graph: ready-for-dev
+  4-5-filter-search-and-view-issues: ready-for-dev
+  4-6-view-workspace-metrics-and-stats: ready-for-dev
   epic-4-retrospective: optional
 
-  # ─── Epic 5: Workspace Health & Maintenance ──────────────────────────────────
-  epic-5: backlog
-  5-1-command-history-ledger: backlog
-  5-2-undo-recent-state-changes: backlog
-  5-3-compact-stale-and-deleted-data: backlog
-  5-4-doctor-diagnostic-health-report: backlog
-  5-5-doctor-semi-automatic-repair-with-backup-safety: backlog
+  # ─── Epic 5: Worktree Orchestration — Multi-Agent Isolation ──────────────────
+  epic-5: in-progress
+  5-1-initialize-grava-in-worktree-mode: ready-for-dev
+  5-2-claim-an-issue-with-worktree-creation: ready-for-dev
+  5-3-complete-work-atomic-teardown-with-grava-close: ready-for-dev
+  5-4-pause-work-atomic-teardown-with-grava-stop: ready-for-dev
   epic-5-retrospective: optional
 
-  # ─── Epic 6: Developer Onboarding — Zero-Friction Setup ──────────────────────
+  # ─── Epic 6: Advanced Merge Driver — Schema-Aware 3-Way Merge ───────────────
+  # Note: Story 6.1 is a mandatory spike — gates stories 6.2–6.4
   epic-6: backlog
-  6-1-automated-install-script-for-macos-and-linux: backlog
-  6-2-powershell-install-script-for-windows: backlog
-  6-3-install-validation-via-grava-doctor: backlog
+  6-1-spike-validate-grava-merge-git-driver-invocation: backlog
+  6-2-register-grava-merge-driver-and-parse-3-way-input: backlog
+  6-3-lww-resolution-and-conflict-isolation: backlog
+  6-4-view-and-resolve-conflicts: backlog
   epic-6-retrospective: optional
 
   # ─── Epic 7: Git Sync — Export, Import & Hook Pipeline ───────────────────────
@@ -100,35 +101,25 @@ development_status:
   epic-7-retrospective: optional
 
   # ─── Epic 8: File Reservation & Concurrent Edit Safety ───────────────────────
-  # Note: Stories 8.3 (TTL Auto-Expiry) and 8.4 (Git Audit Trail) deferred to Phase 2
   epic-8: backlog
   8-1-declare-and-release-file-leases: backlog
   8-2-pre-commit-hook-enforcement: backlog
   epic-8-retrospective: optional
 
-  # ─── Epic 9: Worktree Orchestration — Multi-Agent Isolation ──────────────────
+  # ─── Epic 9: Workspace Health & Maintenance ──────────────────────────────────
   epic-9: backlog
-  9-1-initialize-grava-in-worktree-mode: backlog
-  9-2-claim-an-issue-with-worktree-creation: backlog
-  9-3-complete-work-atomic-teardown-with-grava-close: backlog
-  9-4-pause-work-atomic-teardown-with-grava-stop: backlog
+  9-1-command-history-ledger: backlog
+  9-2-undo-recent-state-changes: backlog
+  9-3-compact-stale-and-deleted-data: backlog
+  9-4-doctor-diagnostic-health-report: backlog
+  9-5-doctor-semi-automatic-repair-with-backup-safety: backlog
   epic-9-retrospective: optional
 
-  # ─── Epic 10: Advanced Merge Driver — Schema-Aware 3-Way Merge ───────────────
-  # Note: Story 10.1 is a mandatory spike — gates stories 10.2–10.4
+  # ─── Epic 10: Sandbox Validation — Integration Gate ──────────────────────────
   epic-10: backlog
-  10-1-spike-validate-grava-merge-git-driver-invocation: backlog
-  10-2-register-grava-merge-driver-and-parse-3-way-input: backlog
-  10-3-lww-resolution-and-conflict-isolation: backlog
-  10-4-view-and-resolve-conflicts: backlog
+  10-1-grava-sandbox-run-cli-prerequisite: backlog
+  10-2-ts-01-basic-issue-lifecycle: backlog
+  10-3-ts-02-concurrent-atomic-claim: backlog
+  10-4-ts-04-and-ts-07-export-import-round-trip-and-conflict-detection: backlog
+  10-5-ts-03-ts-05-ts-06-ts-08-ts-09-ts-10-remaining-phase-1-scenarios: backlog
   epic-10-retrospective: optional
-
-  # ─── Epic 11: Sandbox Validation — Integration Gate ──────────────────────────
-  # Note: Story 11.1 (sandbox run CLI) gates all scenario stories
-  epic-11: backlog
-  11-1-grava-sandbox-run-cli-prerequisite: backlog
-  11-2-ts-01-basic-issue-lifecycle: backlog
-  11-3-ts-02-concurrent-atomic-claim: backlog
-  11-4-ts-04-and-ts-07-export-import-round-trip-and-conflict-detection: backlog
-  11-5-ts-03-ts-05-ts-06-ts-08-ts-09-ts-10-remaining-phase-1-scenarios: backlog
-  epic-11-retrospective: optional
