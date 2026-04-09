@@ -1,7 +1,7 @@
 # Epic 4: Dependency Graph — Context-Aware Work Discovery
 
 **Status:** Planned
-**Grava ID:** grava-f937
+**Grava ID:** grava-722b
 **Matrix Score:** 4.40
 **FRs covered:** FR8, FR9, FR10, FR11, FR12, FR13
 
@@ -46,7 +46,7 @@ Agents and developers can establish directional blocking relationships between i
 
 ## Stories
 
-### Story 4.1: Establish and Remove Dependency Relationships *(grava-fc44)*
+### Story 4.1: Establish and Remove Dependency Relationships *(grava-722b.1)*
 
 As a developer or agent,
 I want to create directional "blocking" relationships between issues,
@@ -64,7 +64,7 @@ So that the system knows which tasks must complete before others can start.
 
 ---
 
-### Story 4.2: Query the Ready Queue *(grava-5bc8)*
+### Story 4.2: Query the Ready Queue *(grava-722b.2)*
 
 As an agent,
 I want to query the top-priority tasks with no active blockers,
@@ -82,7 +82,7 @@ So that I can immediately identify what work is actionable without manual triage
 
 ---
 
-### Story 4.3: Query Blockers for a Specific Issue *(grava-f9d0)*
+### Story 4.3: Query Blockers for a Specific Issue *(grava-722b.3)*
 
 As a developer or agent,
 I want to see exactly what upstream issues are blocking a specific task,
@@ -99,7 +99,7 @@ So that I can resolve blockers in the right order to unblock work.
 
 ---
 
-### Story 4.4: Visualize the Full Dependency Graph *(grava-9a1b)*
+### Story 4.4: Visualize the Full Dependency Graph *(grava-722b.4)*
 
 As a developer or agent,
 I want to visualize or traverse the overarching dependency structure,
@@ -117,7 +117,7 @@ So that I can understand the full project topology and identify critical paths.
 
 ---
 
-### Story 4.5: Filter, Search and View Issues *(grava-db0b)*
+### Story 4.5: Filter, Search and View Issues *(grava-722b.5)*
 
 As a developer or agent,
 I want to filter the issue list, search by keyword, and view full details of a single issue,
@@ -136,7 +136,7 @@ So that I can quickly locate and inspect any work item in the tracker.
 
 ---
 
-### Story 4.6: View Workspace Metrics and Stats *(grava-0b29)*
+### Story 4.6: View Workspace Metrics and Stats *(grava-722b.6)*
 
 As a developer,
 I want to view aggregated workspace performance and status metrics,

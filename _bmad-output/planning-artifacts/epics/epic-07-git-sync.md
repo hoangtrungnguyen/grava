@@ -4,11 +4,11 @@
 **Grava ID:** grava-089b
 **Matrix Score:** 4.20
 **FRs covered:** FR20, FR21, FR24, FR25
-*(FR22 — 3-way merge driver — moved to Epic 10: Advanced Merge Driver)*
+*(FR22 — 3-way merge driver — delivered in Epic 6: Advanced Merge Driver)*
 
 ## Goal
 
-The system automatically synchronizes issue state with Git operations — exporting to `issues.jsonl`, importing with Dual-Safety Check (all-or-nothing transaction), and triggering sync automatically via Git hook stubs on `git pull`/merge. The merge driver implementation is a dedicated epic (Epic 10) to give it appropriate risk isolation.
+The system automatically synchronizes issue state with Git operations — exporting to `issues.jsonl`, importing with Dual-Safety Check (all-or-nothing transaction), and triggering sync automatically via Git hook stubs on `git pull`/merge. The merge driver implementation is in Epic 6.
 
 ## Commands / Behaviors Delivered
 
@@ -53,9 +53,8 @@ Before any import:
 
 ## Parallel Track
 
-- E6 (Onboarding) can proceed in parallel with E7 — no story-level dependencies shared
 - E8 (File Reservation) depends on E7 for pre-commit hook stub existence
-- E10 (Advanced Merge Driver) depends on E7 for hook infrastructure
+- E9 (Health & Maintenance) depends on E7 for command history baseline
 
 ## Key Architecture References
 

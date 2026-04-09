@@ -29,9 +29,7 @@ FR22: The System must automatically execute a 3-way cell-level merge of issue st
 FR23: Human Developer can initialize a brand-new, isolated tracking environment for a local repository (`init`, `config`).
 FR24: The System must evaluate a Dual-Safety Check (JSONL hash vs. Dolt state) before importing to prevent overwriting uncommitted local data.
 FR25: The System must automatically trigger graph database updates via Git hooks whenever the repository state changes (e.g., `git pull`, checkout), actively detecting any file-to-database mismatches.
-FR26: System provides an automated install script (shell-based, cross-platform for macOS and Linux) that installs the user's chosen AI CLI backend (Claude CLI or Gemini CLI) and Grava in a single execution, requiring no prior CLI experience.
-FR27: The install script detects the host OS and architecture, selects the correct binary or package source, and handles all dependency installation without user intervention beyond selecting the preferred AI backend. Supported platforms: macOS (ARM, x86), Linux (Debian/Ubuntu, RHEL/Fedora), and Windows (x86-64 via PowerShell installer).
-FR28: The install script validates the completed environment by running `grava doctor` and reports a clear success or failure message with remediation steps if setup is incomplete.
+FR25: The System must automatically trigger graph database updates via Git hooks whenever the repository state changes (e.g., `git pull`, checkout), actively detecting any file-to-database mismatches.
 
 ### Derived Requirements (from Edge Case Resolution Strategy)
 
@@ -48,21 +46,18 @@ NFR3 (Atomic Execution): Concurrent `grava claim` by multiple agents results in 
 NFR4 (Zero-Loss Handoff): 100% preservation of dependency links and core fields during export/import across workspace clones.
 NFR5 (Machine Readability): Strict JSON schema adherence for all `--json` outputs; schema changes trigger major version bump.
 NFR6 (Zero-Dependency Footprint): Single statically-linked binary; zero external runtime dependencies beyond system shell and Git.
-NFR7 (Install Speed): Full environment setup in <5 minutes on clean machine with ≥10 Mbps connection.
-NFR8 (Install Reliability): First-attempt install success on macOS (ARM/x86), Linux (Debian/Ubuntu, RHEL/Fedora), Windows (x86-64 PowerShell) without elevated privileges beyond initial package manager bootstrapping.
+NFR6 (Zero-Dependency Footprint): Single statically-linked binary; zero external runtime dependencies beyond system shell and Git.
 
 ### NFR Ownership Map
 
 | NFR | Owned By | Validated By |
 |-----|----------|--------------|
 | NFR1 | Deferred Phase 2 (ADR-002) | — |
-| NFR2 | Epic 1 (WithAuditedTx baseline) | Epic 7 (Git hook writes), Epic 5 (compact) |
-| NFR3 | Epic 3 (claim concurrency) | Epic 9 (worktree multi-agent) |
-| NFR4 | Epic 7 (export/import pipeline) | Epic 11 (TS-04, TS-07) |
+| NFR2 | Epic 1 (WithAuditedTx baseline) | Epic 7 (Git hook writes), Epic 9 (compact) |
+| NFR3 | Epic 3 (claim concurrency) | Epic 5 (worktree multi-agent) |
+| NFR4 | Epic 7 (export/import pipeline) | Epic 10 (TS-04, TS-07) |
 | NFR5 | Epic 1 (JSON Error Envelope, Story 0a) | All epics exposing `--json` |
 | NFR6 | Epic 1 | All epics (no separate runtime) |
-| NFR7 | Epic 6 (install script) | Epic 11 (TS-install scenario) |
-| NFR8 | Epic 6 (install script) | Epic 6 (CI matrix: macOS/Linux/Windows) |
 
 ## Additional Requirements
 
@@ -127,21 +122,18 @@ NFR8 (Install Reliability): First-attempt install success on macOS (ARM/x86), Li
 | FR11 | Epic 4 | Graph visualization |
 | FR12 | Epic 4 | List/search/show |
 | FR13 | Epic 4 | Stats |
-| FR14 | Epic 5 | Command history |
-| FR15 | Epic 5 | Undo |
-| FR16 | Epic 5 | Compact |
-| FR17 | Epic 5 | Doctor (diagnostic + repair) |
+| FR14 | Epic 9 | Command history |
+| FR15 | Epic 9 | Undo |
+| FR16 | Epic 9 | Compact |
+| FR17 | Epic 9 | Doctor (diagnostic + repair) |
 | FR18 | Epic 3 | Wisp write/read |
 | FR19 | Epic 3 | Issue history log |
 | FR20 | Epic 7 | Export |
 | FR21 | Epic 7 | Import (with Dual-Safety Check) |
-| FR22 | Epic 10 | 3-way schema-aware merge driver |
-| FR23 | Epic 1 (basic init) + Epic 9 (worktree init) | Initialize environment |
+| FR22 | Epic 6 | 3-way schema-aware merge driver |
+| FR23 | Epic 1 (basic init) + Epic 5 (worktree init) | Initialize environment |
 | FR24 | Epic 7 | Dual-Safety Check before import |
 | FR25 | Epic 7 | Git hook triggers |
-| FR26 | Epic 6 | Automated install script |
-| FR27 | Epic 6 | OS/arch detection, dependency installation |
-| FR28 | Epic 6 | Install validation via grava doctor |
 | FR-ECS-1a | Epic 8 | File reservation declaration |
 | FR-ECS-1b | Epic 8 | Pre-commit hook enforcement |
 | FR-ECS-1c | Epic 8 | TTL auto-expiry *(Phase 1 deferral condition)* |

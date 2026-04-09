@@ -2,7 +2,7 @@
 
 **Status:** Planned
 **Grava ID:** grava-3abb
-**Matrix Score:** 4.05 *(raised from 3.45 after FR-ECS-1a–d split)*
+**Matrix Score:** 4.05
 **FRs covered:** FR-ECS-1a, FR-ECS-1b, FR-ECS-1c, FR-ECS-1d
 
 ## Goal
@@ -64,7 +64,7 @@ CREATE TABLE file_reservations (
 ## Dependencies
 
 - Epic 7 complete (Git hook registration infrastructure — pre-commit stub must exist before FR-ECS-1b enforcement logic is added)
-- Epic 10 (Advanced Merge Driver) is independent — E8 does not need to wait for E10
+- Epic 6 (Advanced Merge Driver) is independent — E8 does not need to wait for E6
 
 ## Key Architecture References
 

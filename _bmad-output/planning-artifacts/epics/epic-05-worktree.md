@@ -1,4 +1,4 @@
-# Epic 9: Worktree Orchestration — Multi-Agent Isolation
+# Epic 5: Worktree Orchestration — Multi-Agent Isolation
 
 **Status:** Planned
 **Grava ID:** grava-add5
@@ -56,12 +56,11 @@ Developers can initialize Grava in worktree mode (`--enable-worktrees`), giving 
 
 ## Dependencies
 
-- Epic 3 complete (base claim semantics — Epic 9 **extends**, never replaces)
-- Epic 5 complete (doctor must handle orphaned worktree directories and branches)
+- Epic 3 complete (base claim semantics — Epic 5 **extends**, never replaces)
 
 ## Parallel Track
 
-- Can proceed in parallel with Epic 6 (Onboarding) once Epic 5 is complete
+- Can proceed in parallel with Epic 7 (Git Sync) once Epic 3 is complete
 
 ## Key Architecture References
 
@@ -72,7 +71,7 @@ Developers can initialize Grava in worktree mode (`--enable-worktrees`), giving 
 
 ## Stories
 
-### Story 9.1: Initialize Grava in Worktree Mode *(grava-355a)*
+### Story 5.1: Initialize Grava in Worktree Mode *(grava-355a)*
 
 As a developer,
 I want to initialize Grava with worktree mode enabled,
@@ -90,7 +89,7 @@ So that the coordinator starts managing the Dolt server lifecycle and each agent
 
 ---
 
-### Story 9.2: Claim an Issue with Worktree Creation *(grava-02b0)*
+### Story 5.2: Claim an Issue with Worktree Creation *(grava-02b0)*
 
 As an agent,
 I want `grava claim` to automatically create a dedicated Git worktree and branch for the claimed issue,
@@ -109,7 +108,7 @@ So that my work is isolated from other agents and I have a clean directory to wo
 
 ---
 
-### Story 9.3: Complete Work — Atomic Teardown with `grava close` *(grava-e2b4)*
+### Story 5.3: Complete Work — Atomic Teardown with `grava close` *(grava-e2b4)*
 
 As an agent,
 I want to atomically tear down my worktree when I complete an issue,
@@ -126,7 +125,7 @@ So that the branch and directory are cleaned up without leaving orphaned state.
 
 ---
 
-### Story 9.4: Pause Work — Atomic Teardown with `grava stop` *(grava-7825)*
+### Story 5.4: Pause Work — Atomic Teardown with `grava stop` *(grava-7825)*
 
 As an agent,
 I want to pause and abandon my worktree without losing the issue state for the next agent,

@@ -1,4 +1,4 @@
-# Epic 10: Advanced Merge Driver — Schema-Aware 3-Way Merge
+# Epic 6: Advanced Merge Driver — Schema-Aware 3-Way Merge
 
 **Status:** Planned
 **Grava ID:** grava-7dd9
@@ -11,7 +11,7 @@ The system automatically executes a schema-aware 3-way cell-level merge of issue
 
 ## ⚠️ Mandatory Spike Story
 
-**E10-Story-1 is a spike.** The 3-way merge driver involves non-trivial Git merge driver integration, Dolt internals, and LWW resolution policy. Spike must complete and pass a proof-of-concept test before any remaining E10 stories are sprint-planned.
+**E6-Story-1 is a spike.** The 3-way merge driver involves non-trivial Git merge driver integration, Dolt internals, and LWW resolution policy. Spike must complete and pass a proof-of-concept test before any remaining E6 stories are sprint-planned.
 
 **Spike exit criteria:** `grava-merge %O %A %B` executes successfully on a synthetic `issues.jsonl` conflict and produces deterministic output (either merged file or conflict record entry).
 
@@ -60,13 +60,13 @@ CREATE TABLE conflict_records (
 ## Dependencies
 
 - Epic 1 complete (GravaError, Notifier interface, JSON Error Envelope)
-- Epic 7 complete (export/import pipeline — hook infrastructure; `issues.jsonl` format established)
-- Epic 11 (Sandbox Validation) gates on Epic 10 for TS-07 (conflict detection scenario)
+- Epic 5 complete (worktree init — driver registration can be added to init)
+- Epic 7 (Sync) is downstream — E6 provides the driver, E7 provides automatic sync
 
 ## Parallel Track
 
-- Can proceed in parallel with Epic 8 and Epic 9 once Epic 7 is complete
-- E10-Story-1 (spike) must pass before remaining E10 stories are sprint-planned
+- Can proceed in parallel with Epic 4 once Epic 1 is complete
+- E6-Story-1 (spike) must pass before remaining E6 stories are sprint-planned
 
 ## NFR Ownership
 
@@ -83,7 +83,7 @@ CREATE TABLE conflict_records (
 
 ## Stories
 
-### Story 10.1: ⚠️ SPIKE — Validate `grava-merge` Git Driver Invocation *(grava-3440)*
+### Story 6.1: ⚠️ SPIKE — Validate `grava-merge` Git Driver Invocation *(grava-3440)*
 
 As a developer,
 I want to validate that a custom Git merge driver can access Dolt SQL state during invocation,
@@ -99,11 +99,11 @@ So that we have proof-of-concept evidence before committing the remaining merge 
 **And** the spike produces a deterministic output: either a merged `issues.jsonl` written to `%A` (success) or a structured exit code indicating unresolvable conflict
 **And** a spike report is written to `.grava/spike-reports/merge-driver-poc.md` documenting: invocation confirmed (Y/N), DB accessible during merge (Y/N), blockers (if any)
 **And** the spike registers a runnable CI scenario: `grava sandbox run --scenario=spike-merge-driver` exits 0 — this is the **hard gate**, not the markdown report alone
-**And** ⛔ **if spike fails** (either the sandbox scenario exits non-zero OR DB connectivity is unconfirmed): remaining Epic 10 stories are blocked — scope renegotiation required before sprint planning proceeds
+**And** ⛔ **if spike fails** (either the sandbox scenario exits non-zero OR DB connectivity is unconfirmed): remaining Epic 6 stories are blocked — scope renegotiation required before sprint planning proceeds
 
 ---
 
-### Story 10.2: Register `grava-merge` Driver and Parse 3-Way Input *(grava-6ad9)*
+### Story 6.2: Register `grava-merge` Driver and Parse 3-Way Input *(grava-6ad9)*
 
 As a developer,
 I want `grava init` to register the `grava-merge` driver via `.gitattributes`,
@@ -111,7 +111,7 @@ So that Git automatically invokes the driver on `issues.jsonl` conflicts without
 
 **Acceptance Criteria:**
 
-**Given** `grava init` is run in a repository (spike 10.1 passed)
+**Given** `grava init` is run in a repository (spike 6.1 passed)
 **When** initialization completes
 **Then** `.gitattributes` contains `issues.jsonl merge=grava-merge` (added idempotently — no duplicate lines on re-init)
 **And** `.git/config` (or global Git config) contains `[merge "grava-merge"] name=Grava Schema-Aware Merge Driver` and `driver=grava merge-driver %O %A %B`
@@ -121,7 +121,7 @@ So that Git automatically invokes the driver on `issues.jsonl` conflicts without
 
 ---
 
-### Story 10.3: LWW Resolution and Conflict Isolation *(grava-08f9)*
+### Story 6.3: LWW Resolution and Conflict Isolation *(grava-08f9)*
 
 As an agent,
 I want the merge driver to automatically resolve field-level conflicts using last-write-wins,
@@ -139,7 +139,7 @@ So that the majority of concurrent edits are merged without human intervention.
 
 ---
 
-### Story 10.4: View and Resolve Conflicts *(grava-785b)*
+### Story 6.4: View and Resolve Conflicts *(grava-785b)*
 
 As a developer,
 I want to view and dismiss unresolvable merge conflicts,

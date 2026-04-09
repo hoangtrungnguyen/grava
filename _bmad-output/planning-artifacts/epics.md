@@ -25,13 +25,12 @@ redirectTo: _bmad-output/planning-artifacts/epics/
 | E2: Issue Lifecycle | [epics/epic-02-issue-lifecycle.md](epics/epic-02-issue-lifecycle.md) | 6 (2.1–2.6) | ✅ Complete |
 | E3: Atomic Claim & Wisp | [epics/epic-03-atomic-claim.md](epics/epic-03-atomic-claim.md) | 3 (3.1–3.3) | ✅ Complete |
 | E4: Dependency Graph | [epics/epic-04-dependency-graph.md](epics/epic-04-dependency-graph.md) | 6 (4.1–4.6) | ✅ Complete |
-| E5: Health & Maintenance | [epics/epic-05-health-maintenance.md](epics/epic-05-health-maintenance.md) | 5 (5.1–5.5) | ✅ Complete |
-| E6: Developer Onboarding | [epics/epic-06-onboarding.md](epics/epic-06-onboarding.md) | 3 (6.1–6.3) | ✅ Complete |
+| E5: Worktree Orchestration | [epics/epic-05-worktree.md](epics/epic-05-worktree.md) | 4 (5.1–5.4) | ✅ Complete |
+| E6: Advanced Merge Driver | [epics/epic-06-advanced-merge-driver.md](epics/epic-06-advanced-merge-driver.md) | 4 (6.1 spike + 6.2–6.4) | ✅ Complete |
 | E7: Git Sync — Export, Import & Hook Pipeline | [epics/epic-07-git-sync.md](epics/epic-07-git-sync.md) | 4 (7.1–7.4) | ✅ Complete |
-| E8: File Reservation | [epics/epic-08-file-reservation.md](epics/epic-08-file-reservation.md) | 2 Phase 1 (8.1–8.2) | ✅ Complete |
-| E9: Worktree Orchestration | [epics/epic-09-worktree.md](epics/epic-09-worktree.md) | 4 (9.1–9.4) | ✅ Complete |
-| E10: Advanced Merge Driver | [epics/epic-10-advanced-merge-driver.md](epics/epic-10-advanced-merge-driver.md) | 4 (10.1 spike + 10.2–10.4) | ✅ Complete |
-| E11: Sandbox Validation | [epics/epic-11-sandbox-validation.md](epics/epic-11-sandbox-validation.md) | 5 (11.1 CLI + 11.2–11.5) | ✅ Complete |
+| E8: File Reservation | [epics/epic-07-file-reservation.md](epics/epic-07-file-reservation.md) | 2 Phase 1 (8.1–8.2) | ✅ Complete |
+| E9: Health & Maintenance | [epics/epic-08-health-maintenance.md](epics/epic-08-health-maintenance.md) | 5 (9.1–9.5) | ✅ Complete |
+| E10: Sandbox Validation | [epics/epic-10-sandbox-validation.md](epics/epic-10-sandbox-validation.md) | 5 (10.1 CLI + 10.2–10.5) | ✅ Complete |
 
 **Total Phase 1 stories: 45** (32 feature + 2 spikes + 5 Phase 1 E8 + 5 sandbox + 1 E8 CLI prereq)
 

@@ -66,8 +66,8 @@ development_status:
   epic-3-retrospective: optional
 
   # ─── Epic 4: Dependency Graph — Context-Aware Work Discovery ─────────────────
-  epic-4: backlog
-  4-1-establish-and-remove-dependency-relationships: backlog
+  epic-4: in-progress
+  4-1-establish-and-remove-dependency-relationships: ready-for-dev
   4-2-query-the-ready-queue: backlog
   4-3-query-blockers-for-a-specific-issue: backlog
   4-4-visualize-the-full-dependency-graph: backlog
