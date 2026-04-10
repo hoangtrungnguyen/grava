@@ -69,7 +69,7 @@ development_status:
   epic-4: in-progress
   4-1-establish-and-remove-dependency-relationships: review
   4-2-query-the-ready-queue: review
-  4-3-query-blockers-for-a-specific-issue: ready-for-dev
+  4-3-query-blockers-for-a-specific-issue: review
   4-4-visualize-the-full-dependency-graph: ready-for-dev
   4-5-filter-search-and-view-issues: ready-for-dev
   4-6-view-workspace-metrics-and-stats: ready-for-dev

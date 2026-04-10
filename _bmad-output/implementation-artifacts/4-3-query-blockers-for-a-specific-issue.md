@@ -1,6 +1,6 @@
 # Story 4.3: Query Blockers for a Specific Issue
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
