@@ -78,9 +78,10 @@ development_status:
   # ─── Epic 5: Mandatory Worktree Orchestration ──────────────────────────────
   epic-5: ready-for-dev
   5-1-automatic-master-root-resolution: ready-for-dev
-  5-2-claim-git-worktree-orchestration: ready-for-dev
-  5-3-claim-claude-orchestration: ready-for-dev
+  5-2-claim-worktree-provisioning: ready-for-dev
+  5-3-claude-integration-custom-path: ready-for-dev
   5-4-recursive-lifecycle-cleanup: ready-for-dev
+  5-5-configure-claude-git-on-init: ready-for-dev
   epic-5-retrospective: optional
 
   # ─── Epic 6: Advanced Merge Driver — Schema-Aware 3-Way Merge ───────────────
