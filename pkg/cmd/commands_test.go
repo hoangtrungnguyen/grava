@@ -650,6 +650,10 @@ func TestDepCmd(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// validateIssuesExist
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id IN")).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc").AddRow("grava-def"))
+
 	// Graph load for validation
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
@@ -658,14 +662,23 @@ func TestDepCmd(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
 		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}))
 
+	// WithAuditedTx
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ? FOR UPDATE")).
+		WithArgs("grava-abc").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ? FOR UPDATE")).
+		WithArgs("grava-def").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-def"))
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
 		WithArgs("grava-abc", "grava-def", "blocks", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Audit Log
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
-		WithArgs("grava-abc", "dependency_add", "unknown", "{}", sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WithArgs("grava-abc", "dependency_add", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	mock.ExpectClose()
 
@@ -681,6 +694,10 @@ func TestDepCmdCustomType(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// validateIssuesExist
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id IN")).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc").AddRow("grava-def"))
+
 	// Graph load for validation
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
@@ -689,14 +706,23 @@ func TestDepCmdCustomType(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
 		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}))
 
+	// WithAuditedTx
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ? FOR UPDATE")).
+		WithArgs("grava-abc").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ? FOR UPDATE")).
+		WithArgs("grava-def").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-def"))
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
 		WithArgs("grava-abc", "grava-def", "relates-to", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Audit Log
 	_ = mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO events`)).
-		WithArgs("grava-abc", "dependency_add", "unknown", "{}", sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
+		WithArgs("grava-abc", "dependency_add", "unknown", sqlmock.AnyArg(), sqlmock.AnyArg(), "unknown", "unknown", "", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	mock.ExpectClose()
 

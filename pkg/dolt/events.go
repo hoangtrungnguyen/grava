@@ -19,6 +19,7 @@ const (
 	EventAssign        = "assign"
 	EventSubtask       = "subtask"
 	EventReserve       = "reserve"
-	EventDependencyAdd = "dependency_add"
-	EventWispWrite     = "wisp_write"
+	EventDependencyAdd    = "dependency_add"
+	EventDependencyRemove = "dependency_remove"
+	EventWispWrite        = "wisp_write"
 )

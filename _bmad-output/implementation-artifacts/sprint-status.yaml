@@ -67,7 +67,7 @@ development_status:
 
   # ─── Epic 4: Dependency Graph — Context-Aware Work Discovery ─────────────────
   epic-4: in-progress
-  4-1-establish-and-remove-dependency-relationships: ready-for-dev
+  4-1-establish-and-remove-dependency-relationships: review
   4-2-query-the-ready-queue: ready-for-dev
   4-3-query-blockers-for-a-specific-issue: ready-for-dev
   4-4-visualize-the-full-dependency-graph: ready-for-dev

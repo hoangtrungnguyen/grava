@@ -6,6 +6,7 @@ package cmdgraph
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ import (
 
 var (
 	depType       string
+	depRemove     bool
 	batchFile     string
 	blockedDepth  int
 	searchWisp    bool
@@ -81,12 +83,16 @@ func newDepCmd(d *cmddeps.Deps) *cobra.Command {
 		Short: "Manage task dependencies",
 		Long: `Create, list, or batch manage directed dependency edges between issues.
 
-The default usage 'grava dep <from> <to>' creates a "blocks" dependency.`,
+The default usage 'grava dep <from> <to>' creates a "blocks" dependency.
+Use --remove to delete an existing dependency.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return cmd.Help()
 			}
 			if len(args) == 2 {
+				if depRemove {
+					return removeDependency(cmd, d, args[0], args[1])
+				}
 				return addDependency(cmd, d, args[0], args[1])
 			}
 			return fmt.Errorf("requires exactly 2 arguments for adding a dependency, or use a subcommand")
@@ -94,17 +100,26 @@ The default usage 'grava dep <from> <to>' creates a "blocks" dependency.`,
 	}
 
 	cmd.PersistentFlags().StringVar(&depType, "type", "blocks", "Dependency type (blocks, relates-to, duplicates, parent-child, subtask-of)")
+	cmd.Flags().BoolVar(&depRemove, "remove", false, "Remove an existing dependency instead of creating one")
 	return cmd
 }
 
 func addDependency(cmd *cobra.Command, d *cmddeps.Deps, fromID, toID string) error {
 	if fromID == toID {
-		return fmt.Errorf("from_id and to_id must be different issues")
+		return gravaerrors.New("SELF_LOOP", "from_id and to_id must be different issues", nil)
 	}
 
+	ctx := cmd.Context()
+
+	// Step 1: Validate both issues exist
+	if err := validateIssuesExist(ctx, *d.Store, fromID, toID); err != nil {
+		return err
+	}
+
+	// Step 2: Cycle check via in-memory graph
 	dag, err := graph.LoadGraphFromDB(*d.Store)
 	if err != nil {
-		return fmt.Errorf("failed to load graph for validation: %w", err)
+		return gravaerrors.New("DB_UNREACHABLE", "failed to load graph for validation", err)
 	}
 
 	dt := graph.DependencyType(depType)
@@ -112,28 +127,164 @@ func addDependency(cmd *cobra.Command, d *cmddeps.Deps, fromID, toID string) err
 
 	if dt.IsBlockingType() {
 		if err := dag.AddEdgeWithCycleCheck(edge); err != nil {
-			return fmt.Errorf("invalid dependency: %w", err)
+			return gravaerrors.New("CIRCULAR_DEPENDENCY", "This dependency would create a cycle", err)
 		}
 	} else {
 		if err := dag.AddEdge(edge); err != nil {
-			return fmt.Errorf("invalid dependency: %w", err)
+			return gravaerrors.New("INVALID_DEPENDENCY", "invalid dependency", err)
 		}
 	}
 
-	_, err = (*d.Store).Exec(
-		`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`,
-		fromID, toID, depType, *d.Actor, *d.Actor, *d.AgentModel,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to commit dependency to database: %w", err)
+	// Step 3: Acquire row locks in lexicographic order (ADR-H3), then insert within audited tx
+	lockErr := dolt.WithDeadlockRetry(func() error {
+		ids := []string{fromID, toID}
+		sort.Strings(ids)
+
+		return dolt.WithAuditedTx(ctx, *d.Store, []dolt.AuditEvent{
+			{
+				IssueID:   fromID,
+				EventType: dolt.EventDependencyAdd,
+				Actor:     *d.Actor,
+				Model:     *d.AgentModel,
+				NewValue: map[string]interface{}{
+					"to_id": toID,
+					"type":  depType,
+				},
+			},
+		}, func(tx *sql.Tx) error {
+			// Acquire row locks in sorted order
+			for _, id := range ids {
+				row := tx.QueryRowContext(ctx, "SELECT id FROM issues WHERE id = ? FOR UPDATE", id)
+				var found string
+				if err := row.Scan(&found); err != nil {
+					return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", id), err)
+				}
+			}
+
+			_, err := tx.ExecContext(ctx,
+				`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`,
+				fromID, toID, depType, *d.Actor, *d.Actor, *d.AgentModel,
+			)
+			return err
+		})
+	})
+	if lockErr != nil {
+		return lockErr
 	}
 
-	_ = (*d.Store).LogEvent(fromID, "dependency_add", *d.Actor, *d.AgentModel, nil, map[string]interface{}{
-		"to_id": toID,
-		"type":  depType,
-	})
+	// Step 4: Output
+	if *d.OutputJSON {
+		b, _ := json.Marshal(map[string]string{
+			"from_id": fromID,
+			"to_id":   toID,
+			"type":    depType,
+			"status":  "created",
+		})
+		fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "🔗 Dependency created: %s -[%s]-> %s\n", fromID, depType, toID) //nolint:errcheck
+	}
+	return nil
+}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "🔗 Dependency created: %s -[%s]-> %s\n", fromID, depType, toID) //nolint:errcheck
+// validateIssuesExist checks that both issue IDs exist in the database.
+func validateIssuesExist(ctx context.Context, store dolt.Store, fromID, toID string) error {
+	rows, err := store.QueryContext(ctx, "SELECT id FROM issues WHERE id IN (?, ?)", fromID, toID)
+	if err != nil {
+		return gravaerrors.New("DB_UNREACHABLE", "failed to validate issue existence", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	found := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return gravaerrors.New("DB_UNREACHABLE", "failed to scan issue id", err)
+		}
+		found[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return gravaerrors.New("DB_UNREACHABLE", "row iteration error", err)
+	}
+
+	if !found[fromID] {
+		return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", fromID), nil)
+	}
+	if !found[toID] {
+		return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", toID), nil)
+	}
+	return nil
+}
+
+func removeDependency(cmd *cobra.Command, d *cmddeps.Deps, fromID, toID string) error {
+	ctx := cmd.Context()
+
+	// Step 1: Validate both issues exist
+	if err := validateIssuesExist(ctx, *d.Store, fromID, toID); err != nil {
+		return err
+	}
+
+	// Step 2: Acquire locks in sorted order, check dep exists, then delete within audited tx
+	lockErr := dolt.WithDeadlockRetry(func() error {
+		ids := []string{fromID, toID}
+		sort.Strings(ids)
+
+		return dolt.WithAuditedTx(ctx, *d.Store, []dolt.AuditEvent{
+			{
+				IssueID:   fromID,
+				EventType: dolt.EventDependencyRemove,
+				Actor:     *d.Actor,
+				Model:     *d.AgentModel,
+				OldValue: map[string]interface{}{
+					"to_id": toID,
+					"type":  depType,
+				},
+			},
+		}, func(tx *sql.Tx) error {
+			// Acquire row locks in sorted order
+			for _, id := range ids {
+				row := tx.QueryRowContext(ctx, "SELECT id FROM issues WHERE id = ? FOR UPDATE", id)
+				var found string
+				if err := row.Scan(&found); err != nil {
+					return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", id), err)
+				}
+			}
+
+			// Check dependency exists
+			var count int
+			row := tx.QueryRowContext(ctx,
+				"SELECT COUNT(*) FROM dependencies WHERE from_id = ? AND to_id = ?",
+				fromID, toID,
+			)
+			if err := row.Scan(&count); err != nil {
+				return gravaerrors.New("DB_UNREACHABLE", "failed to check dependency existence", err)
+			}
+			if count == 0 {
+				return gravaerrors.New("DEPENDENCY_NOT_FOUND", fmt.Sprintf("no dependency from %s to %s exists", fromID, toID), nil)
+			}
+
+			_, err := tx.ExecContext(ctx,
+				"DELETE FROM dependencies WHERE from_id = ? AND to_id = ?",
+				fromID, toID,
+			)
+			return err
+		})
+	})
+	if lockErr != nil {
+		return lockErr
+	}
+
+	// Step 3: Output
+	if *d.OutputJSON {
+		b, _ := json.Marshal(map[string]string{
+			"from_id": fromID,
+			"to_id":   toID,
+			"status":  "removed",
+		})
+		fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "🔗 Dependency removed: %s -/-> %s\n", fromID, toID) //nolint:errcheck
+	}
 	return nil
 }
 
