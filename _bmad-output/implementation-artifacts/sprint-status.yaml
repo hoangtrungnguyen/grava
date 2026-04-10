@@ -68,19 +68,19 @@ development_status:
   # ─── Epic 4: Dependency Graph — Context-Aware Work Discovery ─────────────────
   epic-4: in-progress
   4-1-establish-and-remove-dependency-relationships: review
-  4-2-query-the-ready-queue: ready-for-dev
+  4-2-query-the-ready-queue: review
   4-3-query-blockers-for-a-specific-issue: ready-for-dev
   4-4-visualize-the-full-dependency-graph: ready-for-dev
   4-5-filter-search-and-view-issues: ready-for-dev
   4-6-view-workspace-metrics-and-stats: ready-for-dev
   epic-4-retrospective: optional
 
-  # ─── Epic 5: Worktree Orchestration — Multi-Agent Isolation ──────────────────
-  epic-5: in-progress
-  5-1-initialize-grava-in-worktree-mode: ready-for-dev
-  5-2-claim-an-issue-with-worktree-creation: ready-for-dev
-  5-3-complete-work-atomic-teardown-with-grava-close: ready-for-dev
-  5-4-pause-work-atomic-teardown-with-grava-stop: ready-for-dev
+  # ─── Epic 5: Mandatory Worktree Orchestration ──────────────────────────────
+  epic-5: ready-for-dev
+  5-1-automatic-master-root-resolution: ready-for-dev
+  5-2-claim-git-worktree-orchestration: ready-for-dev
+  5-3-claim-claude-orchestration: ready-for-dev
+  5-4-recursive-lifecycle-cleanup: ready-for-dev
   epic-5-retrospective: optional
 
   # ─── Epic 6: Advanced Merge Driver — Schema-Aware 3-Way Merge ───────────────

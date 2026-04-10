@@ -40,6 +40,15 @@ var SearchWisp = &searchWisp
 // QuickVars exposes quick command vars for test resets.
 var StatsDays = &statsDays
 
+// ReadyTaskOutput is the JSON schema for the ready command (AC#2).
+type ReadyTaskOutput struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Status   string `json:"status"`
+	Priority int    `json:"priority"`
+	Assignee string `json:"assignee"`
+}
+
 // IssueListItem is used by search command output.
 type IssueListItem struct {
 	ID        string    `json:"id"`
@@ -607,8 +616,31 @@ Tasks are sorted by their effective priority (highest first) and age.`,
 				tasks = filtered
 			}
 
+			// Fetch assignees for ready tasks (AC#2)
+			assignees := map[string]string{}
+			if len(tasks) > 0 {
+				ids := make([]string, len(tasks))
+				for i, t := range tasks {
+					ids[i] = t.Node.ID
+				}
+				assignees, err = fetchAssignees(cmd.Context(), *d.Store, ids)
+				if err != nil {
+					return gravaerrors.New("DB_UNREACHABLE", "failed to fetch assignees", err)
+				}
+			}
+
 			if *d.OutputJSON {
-				b, err := json.MarshalIndent(tasks, "", "  ")
+				output := make([]ReadyTaskOutput, len(tasks))
+				for i, t := range tasks {
+					output[i] = ReadyTaskOutput{
+						ID:       t.Node.ID,
+						Title:    t.Node.Title,
+						Status:   string(t.Node.Status),
+						Priority: int(t.EffectivePriority),
+						Assignee: assignees[t.Node.ID],
+					}
+				}
+				b, err := json.MarshalIndent(output, "", "  ")
 				if err != nil {
 					return err
 				}
@@ -639,7 +671,7 @@ Tasks are sorted by their effective priority (highest first) and age.`,
 			w.Flush() //nolint:errcheck
 
 			if len(tasks) == 0 {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No ready tasks found.")
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "No tasks are currently ready (all open work is blocked)")
 			}
 			return nil
 		},
@@ -649,6 +681,38 @@ Tasks are sorted by their effective priority (highest first) and age.`,
 	cmd.Flags().IntVarP(&readyPriority, "priority", "p", -1, "Filter by priority level")
 	cmd.Flags().BoolVar(&showInherited, "show-inherited", false, "Show if priority was inherited or boosted (indicated by *)")
 	return cmd
+}
+
+// fetchAssignees retrieves the assignee for each issue ID in a single query.
+func fetchAssignees(ctx context.Context, store dolt.Store, ids []string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+
+	// Build placeholders: (?, ?, ?)
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := "SELECT id, COALESCE(assignee, '') FROM issues WHERE id IN (" + strings.Join(placeholders, ",") + ")"
+
+	rows, err := store.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck
+
+	result := map[string]string{}
+	for rows.Next() {
+		var id, assignee string
+		if err := rows.Scan(&id, &assignee); err != nil {
+			return nil, err
+		}
+		result[id] = assignee
+	}
+	return result, rows.Err()
 }
 
 func newBlockedCmd(d *cmddeps.Deps) *cobra.Command {
