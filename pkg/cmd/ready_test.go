@@ -27,12 +27,6 @@ func TestReadyCmd(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}).
 			AddRow("grava-1", "grava-2", "blocks", nil))
 
-	// Mock assignee query (fetchAssignees for ready tasks)
-	mock.ExpectQuery("SELECT id, COALESCE").
-		WithArgs("grava-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "assignee"}).
-			AddRow("grava-1", ""))
-
 	mock.ExpectClose()
 
 	output, err := executeCommand(rootCmd, "ready")
