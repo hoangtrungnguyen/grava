@@ -594,93 +594,180 @@ Tasks are sorted by their effective priority (highest first) and age.`,
 	return cmd
 }
 
+// BlockerItem represents a single blocker for per-issue queries.
+type BlockerItem struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Status   string `json:"status"`
+	Assignee string `json:"assignee"`
+}
+
 func newBlockedCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "blocked",
-		Short: "Show tasks that are currently blocked",
+		Use:   "blocked [issue-id]",
+		Short: "Show blockers for an issue, or all blocked tasks if no ID given",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dag, err := graph.LoadGraphFromDB(*d.Store)
-			if err != nil {
-				return fmt.Errorf("failed to load graph: %w", err)
+			// Per-issue blocker query
+			if len(args) == 1 {
+				return showBlockersForIssue(cmd, d, args[0])
 			}
 
-			type blockedInfo struct {
-				ID          string   `json:"id"`
-				Title       string   `json:"title"`
-				Blockers    []string `json:"blockers"`
-				GateBlocked bool     `json:"gate_blocked"`
-				AwaitType   string   `json:"await_type,omitempty"`
-				Ephemeral   bool     `json:"ephemeral"`
-			}
-
-			blockedResults := []blockedInfo{}
-
-			for _, node := range dag.GetAllNodes() {
-				if node.Status != graph.StatusOpen {
-					continue
-				}
-
-				blockers, _ := dag.GetTransitiveBlockers(node.ID, blockedDepth)
-
-				gateBlocked := false
-				if node.AwaitType != "" {
-					ge := graph.NewDefaultGateEvaluator()
-					open, _ := ge.IsGateOpen(node)
-					if !open {
-						gateBlocked = true
-					}
-				}
-
-				if len(blockers) > 0 || gateBlocked {
-					blockedResults = append(blockedResults, blockedInfo{
-						ID:          node.ID,
-						Title:       node.Title,
-						Blockers:    blockers,
-						GateBlocked: gateBlocked,
-						AwaitType:   node.AwaitType,
-						Ephemeral:   node.Ephemeral,
-					})
-				}
-			}
-
-			if *d.OutputJSON {
-				b, _ := json.MarshalIndent(blockedResults, "", "  ")
-				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
-				return nil
-			}
-
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tTitle\tBlocked By\tGate") //nolint:errcheck
-
-			for _, info := range blockedResults {
-				blockerStr := "-"
-				if len(info.Blockers) > 0 {
-					blockerStr = fmt.Sprintf("%v", info.Blockers)
-				}
-				gateStr := "-"
-				if info.GateBlocked {
-					gateStr = info.AwaitType
-				}
-				title := info.Title
-				if info.Ephemeral {
-					title = "👻 " + title
-				}
-				if len(title) > 40 {
-					title = title[:37] + "..."
-				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", info.ID, title, blockerStr, gateStr) //nolint:errcheck
-			}
-			w.Flush() //nolint:errcheck
-
-			if len(blockedResults) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No blocked tasks found.") //nolint:errcheck
-			}
-			return nil
+			// Global: show all blocked tasks
+			return showAllBlockedTasks(cmd, d)
 		},
 	}
 
 	cmd.Flags().IntVarP(&blockedDepth, "depth", "d", 1, "Depth of transitive blockers to show")
 	return cmd
+}
+
+// showBlockersForIssue lists what blocks a specific issue (AC: Story 4.3).
+func showBlockersForIssue(cmd *cobra.Command, d *cmddeps.Deps, issueID string) error {
+	// Validate issue exists
+	var exists int
+	if err := (*d.Store).QueryRow(
+		"SELECT COUNT(*) FROM issues WHERE id = ?", issueID,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("failed to check issue: %w", err)
+	}
+	if exists == 0 {
+		return fmt.Errorf("ISSUE_NOT_FOUND: issue %q does not exist", issueID)
+	}
+
+	// Find blockers via both dependency directions
+	rows, err := (*d.Store).Query(
+		`SELECT DISTINCT i.id, i.title, i.status, COALESCE(i.assignee, '') as assignee
+		FROM issues i
+		INNER JOIN dependencies dep ON
+			(dep.from_id = i.id AND dep.to_id = ? AND dep.type = 'blocks')
+			OR (dep.to_id = i.id AND dep.from_id = ? AND dep.type = 'blocked-by')
+		ORDER BY i.priority ASC`,
+		issueID, issueID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to query blockers: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var blockers []BlockerItem
+	for rows.Next() {
+		var b BlockerItem
+		if err := rows.Scan(&b.ID, &b.Title, &b.Status, &b.Assignee); err != nil {
+			return fmt.Errorf("failed to scan blocker: %w", err)
+		}
+		blockers = append(blockers, b)
+	}
+
+	if *d.OutputJSON {
+		if blockers == nil {
+			blockers = []BlockerItem{}
+		}
+		out, err := json.MarshalIndent(blockers, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		return nil
+	}
+
+	if len(blockers) == 0 {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No blockers for %s\n", issueID)
+		return nil
+	}
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "ID\tTitle\tStatus\tAssignee")
+	for _, b := range blockers {
+		title := b.Title
+		if len(title) > 40 {
+			title = title[:37] + "..."
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", b.ID, title, b.Status, b.Assignee)
+	}
+	w.Flush() //nolint:errcheck
+	return nil
+}
+
+// showAllBlockedTasks lists all currently blocked tasks in the workspace.
+func showAllBlockedTasks(cmd *cobra.Command, d *cmddeps.Deps) error {
+	dag, err := graph.LoadGraphFromDB(*d.Store)
+	if err != nil {
+		return fmt.Errorf("failed to load graph: %w", err)
+	}
+
+	type blockedInfo struct {
+		ID          string   `json:"id"`
+		Title       string   `json:"title"`
+		Blockers    []string `json:"blockers"`
+		GateBlocked bool     `json:"gate_blocked"`
+		AwaitType   string   `json:"await_type,omitempty"`
+		Ephemeral   bool     `json:"ephemeral"`
+	}
+
+	blockedResults := []blockedInfo{}
+
+	for _, node := range dag.GetAllNodes() {
+		if node.Status != graph.StatusOpen {
+			continue
+		}
+
+		blockers, _ := dag.GetTransitiveBlockers(node.ID, blockedDepth)
+
+		gateBlocked := false
+		if node.AwaitType != "" {
+			ge := graph.NewDefaultGateEvaluator()
+			open, _ := ge.IsGateOpen(node)
+			if !open {
+				gateBlocked = true
+			}
+		}
+
+		if len(blockers) > 0 || gateBlocked {
+			blockedResults = append(blockedResults, blockedInfo{
+				ID:          node.ID,
+				Title:       node.Title,
+				Blockers:    blockers,
+				GateBlocked: gateBlocked,
+				AwaitType:   node.AwaitType,
+				Ephemeral:   node.Ephemeral,
+			})
+		}
+	}
+
+	if *d.OutputJSON {
+		b, _ := json.MarshalIndent(blockedResults, "", "  ")
+		fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+		return nil
+	}
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tTitle\tBlocked By\tGate") //nolint:errcheck
+
+	for _, info := range blockedResults {
+		blockerStr := "-"
+		if len(info.Blockers) > 0 {
+			blockerStr = fmt.Sprintf("%v", info.Blockers)
+		}
+		gateStr := "-"
+		if info.GateBlocked {
+			gateStr = info.AwaitType
+		}
+		title := info.Title
+		if info.Ephemeral {
+			title = "👻 " + title
+		}
+		if len(title) > 40 {
+			title = title[:37] + "..."
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", info.ID, title, blockerStr, gateStr) //nolint:errcheck
+	}
+	w.Flush() //nolint:errcheck
+
+	if len(blockedResults) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No blocked tasks found.") //nolint:errcheck
+	}
+	return nil
 }
 
 func newSearchCmd(d *cmddeps.Deps) *cobra.Command {

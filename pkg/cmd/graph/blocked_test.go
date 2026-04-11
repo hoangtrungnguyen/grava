@@ -229,3 +229,143 @@ func TestBlockedCmd_ShowsEphemeralTasks(t *testing.T) {
 	assert.True(t, result[0].Ephemeral)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// --- Per-issue blocker queries (Story 4.3) ---
+
+var qBlockersForIssue = regexp.QuoteMeta(
+	`SELECT DISTINCT i.id, i.title, i.status, COALESCE(i.assignee, '') as assignee
+		FROM issues i
+		INNER JOIN dependencies dep ON
+			(dep.from_id = i.id AND dep.to_id = ? AND dep.type = 'blocks')
+			OR (dep.to_id = i.id AND dep.from_id = ? AND dep.type = 'blocked-by')
+		ORDER BY i.priority ASC`,
+)
+
+var qIssueExists = regexp.QuoteMeta("SELECT COUNT(*) FROM issues WHERE id = ?")
+
+func TestBlockedCmd_PerIssue_ShowsBlockers(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	var s dolt.Store = dolt.NewClientFromDB(db)
+	outputJSON := false
+	actor := "test"
+	model := ""
+	deps := &cmddeps.Deps{Store: &s, Actor: &actor, AgentModel: &model, OutputJSON: &outputJSON}
+
+	mock.ExpectQuery(qIssueExists).
+		WithArgs("task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(qBlockersForIssue).
+		WithArgs("task-B", "task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "assignee"}).
+			AddRow("task-A", "Blocker Task", "open", "alice").
+			AddRow("task-C", "Another Blocker", "in_progress", "bob"))
+
+	buf := &bytes.Buffer{}
+	cmd := newBlockedCmd(deps)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"task-B"})
+	err = cmd.ExecuteContext(context.Background())
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "task-A")
+	assert.Contains(t, out, "Blocker Task")
+	assert.Contains(t, out, "alice")
+	assert.Contains(t, out, "task-C")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBlockedCmd_PerIssue_JSONOutput(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	var s dolt.Store = dolt.NewClientFromDB(db)
+	outputJSON := true
+	actor := "test"
+	model := ""
+	deps := &cmddeps.Deps{Store: &s, Actor: &actor, AgentModel: &model, OutputJSON: &outputJSON}
+
+	mock.ExpectQuery(qIssueExists).
+		WithArgs("task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(qBlockersForIssue).
+		WithArgs("task-B", "task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "assignee"}).
+			AddRow("task-A", "Blocker", "open", "alice"))
+
+	buf := &bytes.Buffer{}
+	cmd := newBlockedCmd(deps)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"task-B"})
+	err = cmd.ExecuteContext(context.Background())
+	require.NoError(t, err)
+
+	var result []BlockerItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	require.Len(t, result, 1)
+	assert.Equal(t, "task-A", result[0].ID)
+	assert.Equal(t, "Blocker", result[0].Title)
+	assert.Equal(t, "open", result[0].Status)
+	assert.Equal(t, "alice", result[0].Assignee)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBlockedCmd_PerIssue_NoBlockers(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	var s dolt.Store = dolt.NewClientFromDB(db)
+	outputJSON := true
+	actor := "test"
+	model := ""
+	deps := &cmddeps.Deps{Store: &s, Actor: &actor, AgentModel: &model, OutputJSON: &outputJSON}
+
+	mock.ExpectQuery(qIssueExists).
+		WithArgs("task-A").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(qBlockersForIssue).
+		WithArgs("task-A", "task-A").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "assignee"}))
+
+	buf := &bytes.Buffer{}
+	cmd := newBlockedCmd(deps)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"task-A"})
+	err = cmd.ExecuteContext(context.Background())
+	require.NoError(t, err)
+
+	var result []BlockerItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	assert.Len(t, result, 0)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBlockedCmd_PerIssue_NotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	var s dolt.Store = dolt.NewClientFromDB(db)
+	outputJSON := false
+	actor := "test"
+	model := ""
+	deps := &cmddeps.Deps{Store: &s, Actor: &actor, AgentModel: &model, OutputJSON: &outputJSON}
+
+	mock.ExpectQuery(qIssueExists).
+		WithArgs("nonexistent").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	buf := &bytes.Buffer{}
+	cmd := newBlockedCmd(deps)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"nonexistent"})
+	err = cmd.ExecuteContext(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ISSUE_NOT_FOUND")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
