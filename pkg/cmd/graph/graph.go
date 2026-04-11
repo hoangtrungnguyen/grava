@@ -696,19 +696,20 @@ func newSearchCmd(d *cmddeps.Deps) *cobra.Command {
 
 			pattern := "%" + query + "%"
 
-			sql := `SELECT id, title, issue_type, priority, status, created_at
-		        FROM issues
-		        WHERE ephemeral = ?
-		          AND status != 'tombstone'
-		          AND (title LIKE ? OR description LIKE ? OR COALESCE(metadata,'') LIKE ?)
-		        ORDER BY priority ASC, created_at DESC`
+			sql := `SELECT DISTINCT i.id, i.title, i.issue_type, i.priority, i.status, i.created_at
+		        FROM issues i
+		        LEFT JOIN issue_comments c ON i.id = c.issue_id
+		        WHERE i.ephemeral = ?
+		          AND i.status != 'tombstone'
+		          AND (i.title LIKE ? OR i.description LIKE ? OR COALESCE(i.metadata,'') LIKE ? OR COALESCE(c.message,'') LIKE ?)
+		        ORDER BY i.priority ASC, i.created_at DESC`
 
 			ephemeralVal := 0
 			if searchWisp {
 				ephemeralVal = 1
 			}
 
-			rows, err := (*d.Store).Query(sql, ephemeralVal, pattern, pattern, pattern)
+			rows, err := (*d.Store).Query(sql, ephemeralVal, pattern, pattern, pattern, pattern)
 			if err != nil {
 				return fmt.Errorf("search failed: %w", err)
 			}

@@ -415,6 +415,8 @@ You can filter by status or type, and sort by various criteria.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			listStatus, _ := cmd.Flags().GetString("status")
 			listType, _ := cmd.Flags().GetString("type")
+			listPriority, _ := cmd.Flags().GetInt("priority")
+			listAssignee, _ := cmd.Flags().GetString("assignee")
 			listWisp, _ := cmd.Flags().GetBool("wisp")
 			listSort, _ := cmd.Flags().GetString("sort")
 			includeArchived, _ := cmd.Flags().GetBool("include-archived")
@@ -444,6 +446,14 @@ You can filter by status or type, and sort by various criteria.`,
 			if listType != "" {
 				whereParts = append(whereParts, "issue_type = ?")
 				params = append(params, listType)
+			}
+			if cmd.Flags().Changed("priority") {
+				whereParts = append(whereParts, "priority = ?")
+				params = append(params, listPriority)
+			}
+			if listAssignee != "" {
+				whereParts = append(whereParts, "assignee = ?")
+				params = append(params, listAssignee)
 			}
 
 			if len(whereParts) > 0 {
@@ -520,6 +530,8 @@ You can filter by status or type, and sort by various criteria.`,
 
 	cmd.Flags().StringP("status", "s", "", "Filter by status")
 	cmd.Flags().StringP("type", "t", "", "Filter by type")
+	cmd.Flags().IntP("priority", "p", -1, "Filter by priority (0=critical, 1=high, 2=medium, 3=low, 4=backlog)")
+	cmd.Flags().StringP("assignee", "a", "", "Filter by assignee")
 	cmd.Flags().Bool("wisp", false, "Show only ephemeral Wisp issues")
 	cmd.Flags().String("sort", "", "Sort by fields (e.g. priority:asc,created:desc)")
 	cmd.Flags().Bool("include-archived", false, "Include archived issues in results")
