@@ -60,35 +60,46 @@ Conduct the review focusing on:
 
 Cross-reference the changes against the issue's description and acceptance criteria (from `grava show`) to verify completeness.
 
-### 4. Post the review as a comment
+Classify every finding into exactly one severity bucket:
 
-Compile findings into a structured review and post it:
+- **CRITICAL** — blocks merge. Data loss, security holes, broken correctness, crashes on normal inputs, regressions in acceptance criteria.
+- **HIGH** — should fix before merge. Clear bugs on edge paths, missing error handling on failure modes, missing tests for new branches, API contract drift.
+- **MEDIUM** — fix soon. Brittle patterns, unclear naming that will cost later, weak test coverage, minor spec gaps.
+- **LOW** — nice to have. Style nits, comment/doc polish, micro-refactors.
+
+### 4. Post findings as separate comments per severity
+
+The `issue_comments` table stores `message` as plain TEXT with no severity column, so severity lives in the message body. Post **one comment per severity level that has findings** (skip empty buckets). This lets readers scan, filter, and prioritize by the leading tag without parsing a monolithic review.
+
+Post in order from highest to lowest severity so the comment timeline reads top-down by priority:
 
 ```bash
-grava comment <issue-id> -m "<review content>"
+grava comment <issue-id> -m "[CRITICAL] review <short-hash> — <N> finding(s)
+
+- <file:line> — <finding>. <why it matters>. <suggested fix>
+- <file:line> — <finding>. <why it matters>. <suggested fix>"
 ```
 
-Use this format for the review comment:
+Use the identical template for `[HIGH]`, `[MEDIUM]`, `[LOW]`. Rules for the message body:
 
-```
-## Code Review for <commit-short-hash>
+- **First line**: `[<SEVERITY>] review <short-hash> — <N> finding(s)`. The bracketed tag must be the very first characters so `SELECT ... WHERE message LIKE '[CRITICAL]%'` and text sorts work.
+- **Blank line**, then a bullet per finding.
+- Each bullet: `<file:line> — <what> . <why> . <fix>`. Keep each bullet self-contained — readers may see one comment in isolation.
+- No nested headers inside a severity comment. One severity, one flat list.
 
-### Summary
-<1-2 sentence overview of what was changed and overall assessment>
+After the per-severity comments, post a final summary comment:
 
-### Findings
-<list issues found, categorized by severity>
+```bash
+grava comment <issue-id> -m "[REVIEW] <short-hash> — <files> files, critical=<n> high=<n> medium=<n> low=<n>
 
-#### Critical
-- <blocking issues that must be fixed>
+Summary: <1–2 sentences on what changed and overall assessment>
 
-#### Suggestions
-- <non-blocking improvements>
-
-### Verdict: APPROVED | CHANGES_REQUESTED
+Verdict: APPROVED | CHANGES_REQUESTED"
 ```
 
-If there are no critical findings, the verdict is `APPROVED`. If there are critical issues, use `CHANGES_REQUESTED`.
+**Verdict rule**: `CHANGES_REQUESTED` if there is any `CRITICAL` or `HIGH` finding; otherwise `APPROVED`. `MEDIUM` and `LOW` alone do not block.
+
+If there are zero findings at every severity, skip the per-severity comments and post only the `[REVIEW]` summary with `APPROVED`.
 
 ### 5. Update labels
 
@@ -99,7 +110,7 @@ grava label <issue-id> --remove code_review
 grava label <issue-id> --add reviewed
 ```
 
-If the verdict is `CHANGES_REQUESTED`, add `changes_requested` instead of `reviewed`:
+If the verdict is `CHANGES_REQUESTED` (any CRITICAL or HIGH finding), add `changes_requested` instead of `reviewed`:
 
 ```bash
 grava label <issue-id> --remove code_review
@@ -119,7 +130,8 @@ grava commit -m "code review for <issue-id> (commit: <short-hash>)"
 Issue:      <issue-id> — <title>
 Commit:     <full-hash>
 Files:      <count> files reviewed
-Findings:   <count> critical, <count> suggestions
+Findings:   critical=<n> high=<n> medium=<n> low=<n>
+Comments:   <count> posted (one per non-empty severity + summary)
 Verdict:    APPROVED | CHANGES_REQUESTED
 Label:      reviewed | changes_requested
 ```
