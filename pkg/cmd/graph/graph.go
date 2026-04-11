@@ -774,15 +774,18 @@ func newSearchCmd(d *cmddeps.Deps) *cobra.Command {
 
 // StatsResult holds the statistics response data.
 type StatsResult struct {
-	Total         int            `json:"total_issues"`
-	Open          int            `json:"open_issues"`
-	Closed        int            `json:"closed_issues"`
-	ByStatus      map[string]int `json:"by_status"`
-	ByPriority    map[int]int    `json:"by_priority"`
-	ByAuthor      map[string]int `json:"by_author"`
-	ByAssignee    map[string]int `json:"by_assignee"`
-	CreatedByDate map[string]int `json:"created_by_date"`
-	ClosedByDate  map[string]int `json:"closed_by_date"`
+	Total                int            `json:"total_issues"`
+	Open                 int            `json:"open_issues"`
+	Closed               int            `json:"closed_issues"`
+	BlockedCount         int            `json:"blocked_count"`
+	StaleInProgressCount int            `json:"stale_in_progress_count"`
+	AvgCycleTimeMinutes  float64        `json:"avg_cycle_time_minutes"`
+	ByStatus             map[string]int `json:"by_status"`
+	ByPriority           map[int]int    `json:"by_priority"`
+	ByAuthor             map[string]int `json:"by_author"`
+	ByAssignee           map[string]int `json:"by_assignee"`
+	CreatedByDate        map[string]int `json:"created_by_date"`
+	ClosedByDate         map[string]int `json:"closed_by_date"`
 }
 
 func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
@@ -817,6 +820,31 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 					stats.Open += count
 				}
 				stats.Total += count
+			}
+
+			// Blocked count
+			if err := (*d.Store).QueryRow(
+				"SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'blocked'",
+			).Scan(&stats.BlockedCount); err != nil {
+				return fmt.Errorf("query blocked count failed: %w", err)
+			}
+
+			// Stale in_progress: no heartbeat or update in the last hour
+			if err := (*d.Store).QueryRow(
+				"SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'in_progress' AND COALESCE(wisp_heartbeat_at, updated_at) < DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+			).Scan(&stats.StaleInProgressCount); err != nil {
+				return fmt.Errorf("query stale in_progress failed: %w", err)
+			}
+
+			// Average cycle time in minutes for closed issues with work session data
+			var avgMinutes *float64
+			if err := (*d.Store).QueryRow(
+				"SELECT AVG(TIMESTAMPDIFF(MINUTE, started_at, stopped_at)) FROM issues WHERE ephemeral = 0 AND status = 'closed' AND started_at IS NOT NULL AND stopped_at IS NOT NULL",
+			).Scan(&avgMinutes); err != nil {
+				return fmt.Errorf("query avg cycle time failed: %w", err)
+			}
+			if avgMinutes != nil {
+				stats.AvgCycleTimeMinutes = *avgMinutes
 			}
 
 			rows, err = (*d.Store).Query("SELECT priority, COUNT(*) FROM issues WHERE ephemeral = 0 GROUP BY priority")
@@ -906,6 +934,11 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 			_, _ = fmt.Fprintf(w, "Total Issues:\t%d\n", stats.Total)
 			_, _ = fmt.Fprintf(w, "Open Issues:\t%d\n", stats.Open)
 			_, _ = fmt.Fprintf(w, "Closed Issues:\t%d\n", stats.Closed)
+			_, _ = fmt.Fprintf(w, "Blocked Issues:\t%d\n", stats.BlockedCount)
+			_, _ = fmt.Fprintf(w, "Stale In-Progress:\t%d\n", stats.StaleInProgressCount)
+			if stats.AvgCycleTimeMinutes > 0 {
+				_, _ = fmt.Fprintf(w, "Avg Cycle Time:\t%.0f min\n", stats.AvgCycleTimeMinutes)
+			}
 			_, _ = fmt.Fprintln(w, "")
 
 			_, _ = fmt.Fprintln(w, "By Status:")
