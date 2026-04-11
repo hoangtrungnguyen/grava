@@ -472,13 +472,19 @@ func newGraphHealthCmd(d *cmddeps.Deps) *cobra.Command {
 }
 
 func newGraphVisualizeCmd(d *cmddeps.Deps) *cobra.Command {
-	var graphFormat string
+	var graphFormat, rootID string
 	cmd := &cobra.Command{
 		Use:   "visualize",
-		Short: "Export graph to DOT or Mermaid format",
+		Short: "Visualize the dependency graph in various formats",
+		Long: `Visualize the full dependency graph or a subgraph rooted at a specific node.
+
+Formats:
+  ascii  - ASCII art tree (default)
+  dot    - Graphviz DOT format
+  json   - JSON adjacency list`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if graphFormat != "dot" && graphFormat != "mermaid" {
-				return fmt.Errorf("unsupported format %q: must be \"dot\" or \"mermaid\"", graphFormat)
+			if graphFormat != "ascii" && graphFormat != "dot" && graphFormat != "json" {
+				return fmt.Errorf("unsupported format %q: must be \"ascii\", \"dot\", or \"json\"", graphFormat)
 			}
 
 			dag, err := graph.LoadGraphFromDB(*d.Store)
@@ -486,39 +492,20 @@ func newGraphVisualizeCmd(d *cmddeps.Deps) *cobra.Command {
 				return err
 			}
 
-			if graphFormat == "mermaid" {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), graph.ToMermaid(dag))
-				return nil
+			output, err := dag.Render(graph.RenderOptions{
+				Format: graphFormat,
+				RootID: rootID,
+			})
+			if err != nil {
+				return err
 			}
 
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "digraph G {")
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  rankdir=LR;")
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  node [shape=box, style=rounded];")
-
-			for _, node := range dag.GetAllNodes() {
-				color := "white"
-				switch node.Status {
-				case graph.StatusClosed:
-					color = "gray"
-				case graph.StatusInProgress:
-					color = "lightblue"
-				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  \"%s\" [label=\"%s\", fillcolor=\"%s\", style=\"filled,rounded\"];\n", node.ID, node.Title, color)
-			}
-
-			for _, edge := range dag.GetAllEdges() {
-				style := "solid"
-				if edge.Type == graph.DependencyWaitsFor || edge.Type == graph.DependencyRelatesTo {
-					style = "dashed"
-				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  \"%s\" -> \"%s\" [label=\"%s\", style=\"%s\"];\n", edge.FromID, edge.ToID, edge.Type, style)
-			}
-
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "}")
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&graphFormat, "format", "f", "dot", "Output format (dot, mermaid)")
+	cmd.Flags().StringVarP(&graphFormat, "format", "f", "ascii", "Output format (ascii, dot, json)")
+	cmd.Flags().StringVarP(&rootID, "root", "r", "", "Root node ID for subgraph (optional)")
 	return cmd
 }
 
