@@ -23,17 +23,15 @@ import (
 )
 
 var (
-	depType          string
-	depRemove        bool
-	batchFile        string
-	blockedDepth     int
-	blockedAll       bool
-	blockedRecursive bool
-	searchWisp       bool
-	statsDays        int
-	readyLimit       int
-	readyPriority    int
-	showInherited    bool
+	depType       string
+	batchFile     string
+	blockedDepth  int
+	searchWisp    bool
+	statsDays     int
+	readyLimit    int
+	readyPriority int
+	showInherited bool
+	removeDep     bool
 )
 
 // SearchWisp is exported for test access.
@@ -41,23 +39,6 @@ var SearchWisp = &searchWisp
 
 // QuickVars exposes quick command vars for test resets.
 var StatsDays = &statsDays
-
-// ReadyTaskOutput is the JSON schema for the ready command (AC#2).
-type ReadyTaskOutput struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Status   string `json:"status"`
-	Priority int    `json:"priority"`
-	Assignee string `json:"assignee"`
-}
-
-// BlockedBlockerOutput is the JSON schema for a single blocker in the blocked command.
-type BlockedBlockerOutput struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Status   string `json:"status"`
-	Assignee string `json:"assignee"`
-}
 
 // IssueListItem is used by search command output.
 type IssueListItem struct {
@@ -98,213 +79,169 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 
 func newDepCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "dep",
+		Use:   "dep <from> <to>",
 		Short: "Manage task dependencies",
-		Long: `Create, list, or batch manage directed dependency edges between issues.
+		Long: `Create or remove directed dependency edges between issues.
 
 The default usage 'grava dep <from> <to>' creates a "blocks" dependency.
-Use --remove to delete an existing dependency.`,
+Use the --remove flag to delete an existing relationship.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return cmd.Help()
 			}
 			if len(args) == 2 {
-				if depRemove {
+				if removeDep {
 					return removeDependency(cmd, d, args[0], args[1])
 				}
 				return addDependency(cmd, d, args[0], args[1])
 			}
-			return fmt.Errorf("requires exactly 2 arguments for adding a dependency, or use a subcommand")
+			return fmt.Errorf("requires exactly 2 arguments for managing a dependency, or use a subcommand")
 		},
 	}
 
 	cmd.PersistentFlags().StringVar(&depType, "type", "blocks", "Dependency type (blocks, relates-to, duplicates, parent-child, subtask-of)")
-	cmd.Flags().BoolVar(&depRemove, "remove", false, "Remove an existing dependency instead of creating one")
+	cmd.Flags().BoolVar(&removeDep, "remove", false, "Remove the specified dependency")
 	return cmd
 }
 
 func addDependency(cmd *cobra.Command, d *cmddeps.Deps, fromID, toID string) error {
 	if fromID == toID {
-		return gravaerrors.New("SELF_LOOP", "from_id and to_id must be different issues", nil)
+		return fmt.Errorf("from_id and to_id must be different issues")
 	}
 
-	ctx := cmd.Context()
-
-	// Step 1: Validate both issues exist
-	if err := validateIssuesExist(ctx, *d.Store, fromID, toID); err != nil {
-		return err
-	}
-
-	// Step 2: Cycle check via in-memory graph
-	dag, err := graph.LoadGraphFromDB(*d.Store)
-	if err != nil {
-		return gravaerrors.New("DB_UNREACHABLE", "failed to load graph for validation", err)
-	}
-
+	// 1. Load graph for cycle detection (blocking types only)
 	dt := graph.DependencyType(depType)
-	edge := &graph.Edge{FromID: fromID, ToID: toID, Type: dt}
-
+	var dag *graph.AdjacencyDAG
 	if dt.IsBlockingType() {
-		if err := dag.AddEdgeWithCycleCheck(edge); err != nil {
-			return gravaerrors.New("CIRCULAR_DEPENDENCY", "This dependency would create a cycle", err)
-		}
-	} else {
-		if err := dag.AddEdge(edge); err != nil {
-			return gravaerrors.New("INVALID_DEPENDENCY", "invalid dependency", err)
+		var err error
+		dag, err = graph.LoadGraphFromDB(*d.Store)
+		if err != nil {
+			return fmt.Errorf("failed to load graph for validation: %w", err)
 		}
 	}
 
-	// Step 3: Acquire row locks in lexicographic order (ADR-H3), then insert within audited tx
-	lockErr := dolt.WithDeadlockRetry(func() error {
-		ids := []string{fromID, toID}
-		sort.Strings(ids)
+	return dolt.WithDeadlockRetry(func() error {
+		return dolt.WithAuditedTx(cmd.Context(), *d.Store, nil, func(tx *sql.Tx) error {
+			// ADR-H3: Lexicographic lock ordering to prevent deadlocks
+			ids := []string{fromID, toID}
+			sort.Strings(ids)
 
-		return dolt.WithAuditedTx(ctx, *d.Store, []dolt.AuditEvent{
-			{
-				IssueID:   fromID,
-				EventType: dolt.EventDependencyAdd,
-				Actor:     *d.Actor,
-				Model:     *d.AgentModel,
-				NewValue: map[string]interface{}{
-					"to_id": toID,
-					"type":  depType,
-				},
-			},
-		}, func(tx *sql.Tx) error {
-			// Acquire row locks in sorted order
-			for _, id := range ids {
-				row := tx.QueryRowContext(ctx, "SELECT id FROM issues WHERE id = ? FOR UPDATE", id)
-				var found string
-				if err := row.Scan(&found); err != nil {
-					return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", id), err)
+			// 2. Lock issues and verify existence
+			rows, err := tx.QueryContext(cmd.Context(), `SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE`, ids[0], ids[1])
+			if err != nil {
+				return fmt.Errorf("failed to lock issues: %w", err)
+			}
+			found := make(map[string]bool)
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err == nil {
+					found[id] = true
+				}
+			}
+			rows.Close() //nolint:errcheck
+
+			if !found[fromID] {
+				return gravaerrors.New("NODE_NOT_FOUND", fmt.Sprintf("issue %s not found", fromID), nil)
+			}
+			if !found[toID] {
+				return gravaerrors.New("NODE_NOT_FOUND", fmt.Sprintf("issue %s not found", toID), nil)
+			}
+
+			if dt.IsBlockingType() {
+				edge := &graph.Edge{FromID: fromID, ToID: toID, Type: dt}
+				if err := dag.AddEdgeWithCycleCheck(edge); err != nil {
+					return fmt.Errorf("invalid dependency: %w", err)
 				}
 			}
 
-			_, err := tx.ExecContext(ctx,
+			// 3. Insert and log
+			_, err = tx.ExecContext(cmd.Context(),
 				`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`,
 				fromID, toID, depType, *d.Actor, *d.Actor, *d.AgentModel,
 			)
-			return err
+			if err != nil {
+				return fmt.Errorf("failed to insert dependency: %w", err)
+			}
+
+			if err := (*d.Store).LogEventTx(cmd.Context(), tx, fromID, dolt.EventDependencyAdd, *d.Actor, *d.AgentModel, nil, map[string]interface{}{
+				"to_id": toID,
+				"type":  depType,
+			}); err != nil {
+				return err
+			}
+
+			if *d.OutputJSON {
+				res := map[string]interface{}{
+					"status":  "created",
+					"from_id": fromID,
+					"to_id":   toID,
+					"type":    depType,
+				}
+				b, _ := json.MarshalIndent(res, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "🔗 Dependency created: %s -[%s]-> %s\n", fromID, depType, toID) //nolint:errcheck
+			}
+			return nil
 		})
 	})
-	if lockErr != nil {
-		return lockErr
-	}
-
-	// Step 4: Output
-	if *d.OutputJSON {
-		b, _ := json.Marshal(map[string]string{
-			"from_id": fromID,
-			"to_id":   toID,
-			"type":    depType,
-			"status":  "created",
-		})
-		fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
-	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "🔗 Dependency created: %s -[%s]-> %s\n", fromID, depType, toID) //nolint:errcheck
-	}
-	return nil
-}
-
-// validateIssuesExist checks that both issue IDs exist in the database.
-func validateIssuesExist(ctx context.Context, store dolt.Store, fromID, toID string) error {
-	rows, err := store.QueryContext(ctx, "SELECT id FROM issues WHERE id IN (?, ?)", fromID, toID)
-	if err != nil {
-		return gravaerrors.New("DB_UNREACHABLE", "failed to validate issue existence", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	found := map[string]bool{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return gravaerrors.New("DB_UNREACHABLE", "failed to scan issue id", err)
-		}
-		found[id] = true
-	}
-	if err := rows.Err(); err != nil {
-		return gravaerrors.New("DB_UNREACHABLE", "row iteration error", err)
-	}
-
-	if !found[fromID] {
-		return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", fromID), nil)
-	}
-	if !found[toID] {
-		return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", toID), nil)
-	}
-	return nil
 }
 
 func removeDependency(cmd *cobra.Command, d *cmddeps.Deps, fromID, toID string) error {
-	ctx := cmd.Context()
+	return dolt.WithDeadlockRetry(func() error {
+		return dolt.WithAuditedTx(cmd.Context(), *d.Store, nil, func(tx *sql.Tx) error {
+			// Lock issues (ADR-H3 order)
+			ids := []string{fromID, toID}
+			sort.Strings(ids)
+			rows, err := tx.QueryContext(cmd.Context(), `SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE`, ids[0], ids[1])
+			if err != nil {
+				return err
+			}
+			rows.Close() //nolint:errcheck
 
-	// Step 1: Validate both issues exist
-	if err := validateIssuesExist(ctx, *d.Store, fromID, toID); err != nil {
-		return err
-	}
-
-	// Step 2: Acquire locks in sorted order, check dep exists, then delete within audited tx
-	lockErr := dolt.WithDeadlockRetry(func() error {
-		ids := []string{fromID, toID}
-		sort.Strings(ids)
-
-		return dolt.WithAuditedTx(ctx, *d.Store, []dolt.AuditEvent{
-			{
-				IssueID:   fromID,
-				EventType: dolt.EventDependencyRemove,
-				Actor:     *d.Actor,
-				Model:     *d.AgentModel,
-				OldValue: map[string]interface{}{
-					"to_id": toID,
-					"type":  depType,
-				},
-			},
-		}, func(tx *sql.Tx) error {
-			// Acquire row locks in sorted order
-			for _, id := range ids {
-				row := tx.QueryRowContext(ctx, "SELECT id FROM issues WHERE id = ? FOR UPDATE", id)
-				var found string
-				if err := row.Scan(&found); err != nil {
-					return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", id), err)
-				}
+			res, err := tx.ExecContext(cmd.Context(),
+				`DELETE FROM dependencies WHERE from_id = ? AND to_id = ? AND type = ?`,
+				fromID, toID, depType)
+			if err != nil {
+				return fmt.Errorf("failed to remove dependency: %w", err)
 			}
 
-			// Check dependency exists
-			var count int
-			row := tx.QueryRowContext(ctx,
-				"SELECT COUNT(*) FROM dependencies WHERE from_id = ? AND to_id = ?",
-				fromID, toID,
-			)
-			if err := row.Scan(&count); err != nil {
-				return gravaerrors.New("DB_UNREACHABLE", "failed to check dependency existence", err)
-			}
+			count, _ := res.RowsAffected()
 			if count == 0 {
-				return gravaerrors.New("DEPENDENCY_NOT_FOUND", fmt.Sprintf("no dependency from %s to %s exists", fromID, toID), nil)
+				fmt.Fprintf(cmd.OutOrStdout(), "ℹ️ No dependency found between %s and %s of type %s\n", fromID, toID, depType) //nolint:errcheck
+				return nil
 			}
 
-			_, err := tx.ExecContext(ctx,
-				"DELETE FROM dependencies WHERE from_id = ? AND to_id = ?",
-				fromID, toID,
-			)
-			return err
+			err = (*d.Store).LogEventTx(cmd.Context(), tx, fromID, dolt.EventDependencyRemove, *d.Actor, *d.AgentModel, map[string]interface{}{
+				"to_id": toID,
+				"type":  depType,
+			}, nil)
+			if err != nil {
+				return err
+			}
+
+			if err := (*d.Store).LogEventTx(cmd.Context(), tx, fromID, dolt.EventDependencyRemove, *d.Actor, *d.AgentModel, map[string]interface{}{
+				"to_id": toID,
+				"type":  depType,
+			}, nil); err != nil {
+				return err
+			}
+
+			if *d.OutputJSON {
+				res := map[string]interface{}{
+					"status":  "removed",
+					"from_id": fromID,
+					"to_id":   toID,
+					"type":    depType,
+				}
+				b, _ := json.MarshalIndent(res, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "✂️ Dependency removed: %s -[%s]-> %s\n", fromID, depType, toID) //nolint:errcheck
+			}
+			return nil
 		})
 	})
-	if lockErr != nil {
-		return lockErr
-	}
-
-	// Step 3: Output
-	if *d.OutputJSON {
-		b, _ := json.Marshal(map[string]string{
-			"from_id": fromID,
-			"to_id":   toID,
-			"status":  "removed",
-		})
-		fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
-	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "🔗 Dependency removed: %s -/-> %s\n", fromID, toID) //nolint:errcheck
-	}
-	return nil
 }
 
 func newDepBatchCmd(d *cmddeps.Deps) *cobra.Command {
@@ -626,31 +563,8 @@ Tasks are sorted by their effective priority (highest first) and age.`,
 				tasks = filtered
 			}
 
-			// Fetch assignees for ready tasks (AC#2)
-			assignees := map[string]string{}
-			if len(tasks) > 0 {
-				ids := make([]string, len(tasks))
-				for i, t := range tasks {
-					ids[i] = t.Node.ID
-				}
-				assignees, err = fetchAssignees(cmd.Context(), *d.Store, ids)
-				if err != nil {
-					return gravaerrors.New("DB_UNREACHABLE", "failed to fetch assignees", err)
-				}
-			}
-
 			if *d.OutputJSON {
-				output := make([]ReadyTaskOutput, len(tasks))
-				for i, t := range tasks {
-					output[i] = ReadyTaskOutput{
-						ID:       t.Node.ID,
-						Title:    t.Node.Title,
-						Status:   string(t.Node.Status),
-						Priority: int(t.EffectivePriority),
-						Assignee: assignees[t.Node.ID],
-					}
-				}
-				b, err := json.MarshalIndent(output, "", "  ")
+				b, err := json.MarshalIndent(tasks, "", "  ")
 				if err != nil {
 					return err
 				}
@@ -681,7 +595,7 @@ Tasks are sorted by their effective priority (highest first) and age.`,
 			w.Flush() //nolint:errcheck
 
 			if len(tasks) == 0 {
-				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "No tasks are currently ready (all open work is blocked)")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No ready tasks found.")
 			}
 			return nil
 		},
@@ -693,263 +607,93 @@ Tasks are sorted by their effective priority (highest first) and age.`,
 	return cmd
 }
 
-// fetchAssignees retrieves the assignee for each issue ID in a single query.
-func fetchAssignees(ctx context.Context, store dolt.Store, ids []string) (map[string]string, error) {
-	if len(ids) == 0 {
-		return map[string]string{}, nil
-	}
-
-	// Build placeholders: (?, ?, ?)
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-	query := "SELECT id, COALESCE(assignee, '') FROM issues WHERE id IN (" + strings.Join(placeholders, ",") + ")"
-
-	rows, err := store.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close() //nolint:errcheck
-
-	result := map[string]string{}
-	for rows.Next() {
-		var id, assignee string
-		if err := rows.Scan(&id, &assignee); err != nil {
-			return nil, err
-		}
-		result[id] = assignee
-	}
-	return result, rows.Err()
-}
-
 func newBlockedCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "blocked [issue-id]",
-		Short: "Show tasks that are currently blocked, or show blockers for a specific issue",
-		Long: `Without arguments, shows all tasks that are currently blocked.
-With an issue ID argument, shows the blockers for that specific issue.
-
-Use --all to include done/closed blockers, --recursive to show transitive blockers.`,
+		Use:   "blocked",
+		Short: "Show tasks that are currently blocked",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) > 0 {
-				return runBlockedForIssue(cmd, d, args[0])
+			dag, err := graph.LoadGraphFromDB(*d.Store)
+			if err != nil {
+				return fmt.Errorf("failed to load graph: %w", err)
 			}
-			return runBlockedAll(cmd, d)
+
+			type blockedInfo struct {
+				ID          string   `json:"id"`
+				Title       string   `json:"title"`
+				Blockers    []string `json:"blockers"`
+				GateBlocked bool     `json:"gate_blocked"`
+				AwaitType   string   `json:"await_type,omitempty"`
+				Ephemeral   bool     `json:"ephemeral"`
+			}
+
+			blockedResults := []blockedInfo{}
+
+			for _, node := range dag.GetAllNodes() {
+				if node.Status != graph.StatusOpen {
+					continue
+				}
+
+				blockers, _ := dag.GetTransitiveBlockers(node.ID, blockedDepth)
+
+				gateBlocked := false
+				if node.AwaitType != "" {
+					ge := graph.NewDefaultGateEvaluator()
+					open, _ := ge.IsGateOpen(node)
+					if !open {
+						gateBlocked = true
+					}
+				}
+
+				if len(blockers) > 0 || gateBlocked {
+					blockedResults = append(blockedResults, blockedInfo{
+						ID:          node.ID,
+						Title:       node.Title,
+						Blockers:    blockers,
+						GateBlocked: gateBlocked,
+						AwaitType:   node.AwaitType,
+						Ephemeral:   node.Ephemeral,
+					})
+				}
+			}
+
+			if *d.OutputJSON {
+				b, _ := json.MarshalIndent(blockedResults, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+				return nil
+			}
+
+			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "ID\tTitle\tBlocked By\tGate") //nolint:errcheck
+
+			for _, info := range blockedResults {
+				blockerStr := "-"
+				if len(info.Blockers) > 0 {
+					blockerStr = fmt.Sprintf("%v", info.Blockers)
+				}
+				gateStr := "-"
+				if info.GateBlocked {
+					gateStr = info.AwaitType
+				}
+				title := info.Title
+				if info.Ephemeral {
+					title = "👻 " + title
+				}
+				if len(title) > 40 {
+					title = title[:37] + "..."
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", info.ID, title, blockerStr, gateStr) //nolint:errcheck
+			}
+			w.Flush() //nolint:errcheck
+
+			if len(blockedResults) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "No blocked tasks found.") //nolint:errcheck
+			}
+			return nil
 		},
 	}
 
-	cmd.Flags().IntVarP(&blockedDepth, "depth", "d", 1, "Depth of transitive blockers to show (legacy mode)")
-	cmd.Flags().BoolVar(&blockedAll, "all", false, "Include done/closed blockers in output")
-	cmd.Flags().BoolVarP(&blockedRecursive, "recursive", "r", false, "Show all transitive (recursive) blockers")
+	cmd.Flags().IntVarP(&blockedDepth, "depth", "d", 1, "Depth of transitive blockers to show")
 	return cmd
-}
-
-// runBlockedForIssue shows blockers for a specific issue (AC#1-#5).
-func runBlockedForIssue(cmd *cobra.Command, d *cmddeps.Deps, issueID string) error {
-	dag, err := graph.LoadGraphFromDB(*d.Store)
-	if err != nil {
-		return gravaerrors.New("DB_UNREACHABLE", "failed to load graph", err)
-	}
-
-	// AC#4: Validate issue exists
-	targetNode, err := dag.GetNode(issueID)
-	if err != nil {
-		return gravaerrors.New("ISSUE_NOT_FOUND", fmt.Sprintf("issue %s not found", issueID), err)
-	}
-	_ = targetNode // used for existence check
-
-	// Determine effective depth
-	effectiveDepth := blockedDepth
-	if blockedRecursive {
-		effectiveDepth = 0 // 0 means unlimited in GetTransitiveBlockers
-	}
-
-	// Collect blocker IDs
-	var blockerIDs []string
-	if blockedAll {
-		// AC#2: Include all blockers regardless of status
-		blockerIDs, err = getAllBlockers(dag, issueID, effectiveDepth)
-		if err != nil {
-			return err
-		}
-	} else {
-		// Default: only active (open) blockers
-		blockerIDs, err = dag.GetTransitiveBlockers(issueID, effectiveDepth)
-		if err != nil {
-			return gravaerrors.New("DB_UNREACHABLE", "failed to compute blockers", err)
-		}
-	}
-
-	// Fetch assignees for blockers (AC#1, AC#3)
-	assignees := map[string]string{}
-	if len(blockerIDs) > 0 {
-		assignees, err = fetchAssignees(cmd.Context(), *d.Store, blockerIDs)
-		if err != nil {
-			return gravaerrors.New("DB_UNREACHABLE", "failed to fetch assignees", err)
-		}
-	}
-
-	// Build output
-	output := make([]BlockedBlockerOutput, 0, len(blockerIDs))
-	for _, id := range blockerIDs {
-		node, nodeErr := dag.GetNode(id)
-		if nodeErr != nil {
-			continue
-		}
-		output = append(output, BlockedBlockerOutput{
-			ID:       id,
-			Title:    node.Title,
-			Status:   string(node.Status),
-			Assignee: assignees[id],
-		})
-	}
-
-	if *d.OutputJSON {
-		b, err := json.MarshalIndent(output, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
-		return nil
-	}
-
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tTitle\tStatus\tAssignee")
-
-	for _, b := range output {
-		title := b.Title
-		if len(title) > 50 {
-			title = title[:47] + "..."
-		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", b.ID, title, b.Status, b.Assignee)
-	}
-	w.Flush() //nolint:errcheck
-
-	if len(output) == 0 {
-		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "No blockers found for "+issueID)
-	}
-	return nil
-}
-
-// getAllBlockers collects all blockers (including done/closed) for the given issue,
-// optionally recursing up to effectiveDepth levels (0 = unlimited).
-func getAllBlockers(dag *graph.AdjacencyDAG, issueID string, effectiveDepth int) ([]string, error) {
-	visited := map[string]bool{issueID: true}
-	result := []string{}
-	type queueItem struct {
-		nodeID string
-		depth  int
-	}
-	queue := []queueItem{{nodeID: issueID, depth: 0}}
-
-	for len(queue) > 0 {
-		item := queue[0]
-		queue = queue[1:]
-
-		if effectiveDepth > 0 && item.depth >= effectiveDepth {
-			continue
-		}
-
-		edges, err := dag.GetIncomingEdges(item.nodeID)
-		if err != nil {
-			continue
-		}
-		for _, e := range edges {
-			if !e.Type.IsBlockingType() {
-				continue
-			}
-			if !visited[e.FromID] {
-				visited[e.FromID] = true
-				result = append(result, e.FromID)
-				queue = append(queue, queueItem{nodeID: e.FromID, depth: item.depth + 1})
-			}
-		}
-	}
-	return result, nil
-}
-
-// runBlockedAll shows all blocked tasks (legacy behavior when no arg provided).
-func runBlockedAll(cmd *cobra.Command, d *cmddeps.Deps) error {
-	dag, err := graph.LoadGraphFromDB(*d.Store)
-	if err != nil {
-		return fmt.Errorf("failed to load graph: %w", err)
-	}
-
-	type blockedInfo struct {
-		ID          string   `json:"id"`
-		Title       string   `json:"title"`
-		Blockers    []string `json:"blockers"`
-		GateBlocked bool     `json:"gate_blocked"`
-		AwaitType   string   `json:"await_type,omitempty"`
-		Ephemeral   bool     `json:"ephemeral"`
-	}
-
-	blockedResults := []blockedInfo{}
-
-	for _, node := range dag.GetAllNodes() {
-		if node.Status != graph.StatusOpen {
-			continue
-		}
-
-		blockers, _ := dag.GetTransitiveBlockers(node.ID, blockedDepth)
-
-		gateBlocked := false
-		if node.AwaitType != "" {
-			ge := graph.NewDefaultGateEvaluator()
-			open, _ := ge.IsGateOpen(node)
-			if !open {
-				gateBlocked = true
-			}
-		}
-
-		if len(blockers) > 0 || gateBlocked {
-			blockedResults = append(blockedResults, blockedInfo{
-				ID:          node.ID,
-				Title:       node.Title,
-				Blockers:    blockers,
-				GateBlocked: gateBlocked,
-				AwaitType:   node.AwaitType,
-				Ephemeral:   node.Ephemeral,
-			})
-		}
-	}
-
-	if *d.OutputJSON {
-		b, _ := json.MarshalIndent(blockedResults, "", "  ")
-		fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
-		return nil
-	}
-
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tTitle\tBlocked By\tGate") //nolint:errcheck
-
-	for _, info := range blockedResults {
-		blockerStr := "-"
-		if len(info.Blockers) > 0 {
-			blockerStr = fmt.Sprintf("%v", info.Blockers)
-		}
-		gateStr := "-"
-		if info.GateBlocked {
-			gateStr = info.AwaitType
-		}
-		title := info.Title
-		if info.Ephemeral {
-			title = "👻 " + title
-		}
-		if len(title) > 40 {
-			title = title[:37] + "..."
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", info.ID, title, blockerStr, gateStr) //nolint:errcheck
-	}
-	w.Flush() //nolint:errcheck
-
-	if len(blockedResults) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No blocked tasks found.") //nolint:errcheck
-	}
-	return nil
 }
 
 func newSearchCmd(d *cmddeps.Deps) *cobra.Command {

@@ -99,11 +99,11 @@ func TestShowCmd(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	rows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files", "assignee"}).
-		AddRow("My Issue", "Desc", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", "gemini-pro", `["pkg/cmd/root.go","pkg/cmd/show.go"]`, "")
+	rows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files", "assignee", "metadata"}).
+		AddRow("My Issue", "Desc", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", "gemini-pro", `["pkg/cmd/root.go","pkg/cmd/show.go"]`, "", "{}")
 
 	// Match query with whitespace flexibility
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, '')") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, ''), COALESCE(metadata, '{}')") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
 		WithArgs("grava-123").
 		WillReturnRows(rows)
 
@@ -470,10 +470,10 @@ func TestShowCmd_WithSubtasks(t *testing.T) {
 
 	Store = dolt.NewClientFromDB(db)
 
-	issueRows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files", "assignee"}).
-		AddRow("Parent Issue", "Desc", "task", 2, "open", time.Now(), time.Now(), "alice", "alice", nil, nil, "")
+	issueRows := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files", "assignee", "metadata"}).
+		AddRow("Parent Issue", "Desc", "task", 2, "open", time.Now(), time.Now(), "alice", "alice", nil, nil, "", "{}")
 
-	mock.ExpectQuery(`SELECT title`).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, ''), COALESCE(metadata, '{}')") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
 		WithArgs("grava-abc").
 		WillReturnRows(issueRows)
 
@@ -481,7 +481,7 @@ func TestShowCmd_WithSubtasks(t *testing.T) {
 	subtaskRows := sqlmock.NewRows([]string{"from_id"}).
 		AddRow("grava-abc.1").
 		AddRow("grava-abc.2")
-	mock.ExpectQuery(`SELECT d.from_id FROM dependencies`).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT d.from_id FROM dependencies d WHERE d.to_id = ? AND d.type = 'subtask-of' ORDER BY d.from_id")).
 		WithArgs("grava-abc").
 		WillReturnRows(subtaskRows)
 
@@ -509,10 +509,10 @@ func TestShowCmd_LabelsAndComments(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	issueRow := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files", "assignee"}).
-		AddRow("Labeled Issue", "Has labels and comments", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", nil, "[]", "")
+	issueRow := sqlmock.NewRows([]string{"title", "description", "issue_type", "priority", "status", "created_at", "updated_at", "created_by", "updated_by", "agent_model", "affected_files", "assignee", "metadata"}).
+		AddRow("Labeled Issue", "Has labels and comments", "bug", 1, "open", time.Now(), time.Now(), "alice", "bob", nil, "[]", "", "{}")
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, '')") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, ''), COALESCE(metadata, '{}')") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
 		WithArgs("grava-lbl").
 		WillReturnRows(issueRow)
 
@@ -650,11 +650,7 @@ func TestDepCmd(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	// validateIssuesExist
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id IN")).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc").AddRow("grava-def"))
-
-	// Graph load for validation
+	// Graph load for validation (happens first, only for blocking types like "blocks")
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
 			AddRow("grava-abc", "T1", "task", "open", 2, time.Now(), nil, nil, 0, nil).
@@ -664,12 +660,9 @@ func TestDepCmd(t *testing.T) {
 
 	// WithAuditedTx
 	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ? FOR UPDATE")).
-		WithArgs("grava-abc").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc"))
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ? FOR UPDATE")).
-		WithArgs("grava-def").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-def"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE")).
+		WithArgs("grava-abc", "grava-def").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc").AddRow("grava-def"))
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
 		WithArgs("grava-abc", "grava-def", "blocks", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -694,26 +687,14 @@ func TestDepCmdCustomType(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	// validateIssuesExist
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id IN")).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc").AddRow("grava-def"))
-
-	// Graph load for validation
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
-			AddRow("grava-abc", "T1", "task", "open", 2, time.Now(), nil, nil, 0, nil).
-			AddRow("grava-def", "T2", "task", "open", 2, time.Now(), nil, nil, 0, nil))
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
-		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}))
+	// Note: "relates-to" is NOT a blocking type, so graph load is skipped for this test
+	// Graph would only load for blocking types like "blocks", "parent-child", "subtask-of"
 
 	// WithAuditedTx
 	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ? FOR UPDATE")).
-		WithArgs("grava-abc").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc"))
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ? FOR UPDATE")).
-		WithArgs("grava-def").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-def"))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE")).
+		WithArgs("grava-abc", "grava-def").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc").AddRow("grava-def"))
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
 		WithArgs("grava-abc", "grava-def", "relates-to", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))

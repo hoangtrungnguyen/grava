@@ -1,6 +1,6 @@
 # Story 4.1: Establish and Remove Dependency Relationships
 
-Status: review
+Status: in-progress
 
 ## Story
 
@@ -51,38 +51,38 @@ so that the system knows which tasks must complete before others can start.
 
 ## Tasks / Subtasks
 
-- [x] Task 1: Add `--remove` flag and `EventDependencyRemove` constant (AC: #2)
-  - [x] 1.1 Add `EventDependencyRemove = "dependency_remove"` to `pkg/dolt/events.go`
-  - [x] 1.2 Add `--remove` boolean flag to `newDepCmd` in `pkg/cmd/graph/graph.go`
-  - [x] 1.3 Route `--remove` to a `removeDependency` function; keep `addDependency` for the default path
+- [ ] Task 1: Add `--remove` flag and `EventDependencyRemove` constant (AC: #2)
+  - [ ] 1.1 Add `EventDependencyRemove = "dependency_remove"` to `pkg/dolt/events.go`
+  - [ ] 1.2 Add `--remove` boolean flag to `newDepCmd` in `pkg/cmd/graph/graph.go`
+  - [ ] 1.3 Route `--remove` to a `removeDependency` function; keep `addDependency` for the default path
 
-- [x] Task 2: Refactor `addDependency` to use `WithAuditedTx` + `WithDeadlockRetry` + issue existence validation (AC: #1, #3, #4, #5)
-  - [x] 2.1 Before graph load: validate both `fromID` and `toID` exist in `issues` table via `SELECT id FROM issues WHERE id IN (?, ?)` -- return `GravaError("ISSUE_NOT_FOUND", ...)` if either is missing
-  - [x] 2.2 Acquire row locks in lexicographic order: `sort.Strings([]string{fromID, toID})` then `SELECT id FROM issues WHERE id = ? FOR UPDATE` for each (ADR-H3)
-  - [x] 2.3 Wrap lock acquisition in `WithDeadlockRetry`
-  - [x] 2.4 Load graph, run `AddEdgeWithCycleCheck` for blocking types -- map `graph.ErrCycleDetected` to `GravaError("CIRCULAR_DEPENDENCY", "This dependency would create a cycle")`
-  - [x] 2.5 Wrap the DB INSERT + audit log in `WithAuditedTx` with `EventDependencyAdd`
-  - [x] 2.6 Add `--json` output support: return `{"from_id": "...", "to_id": "...", "type": "...", "status": "created"}`
+- [ ] Task 2: Refactor `addDependency` to use `WithAuditedTx` + `WithDeadlockRetry` + issue existence validation (AC: #1, #3, #4, #5)
+  - [ ] 2.1 Before graph load: validate both `fromID` and `toID` exist in `issues` table via `SELECT id FROM issues WHERE id IN (?, ?)` -- return `GravaError("ISSUE_NOT_FOUND", ...)` if either is missing
+  - [ ] 2.2 Acquire row locks in lexicographic order: `sort.Strings([]string{fromID, toID})` then `SELECT id FROM issues WHERE id = ? FOR UPDATE` for each (ADR-H3)
+  - [ ] 2.3 Wrap lock acquisition in `WithDeadlockRetry`
+  - [ ] 2.4 Load graph, run `AddEdgeWithCycleCheck` for blocking types -- map `graph.ErrCycleDetected` to `GravaError("CIRCULAR_DEPENDENCY", "This dependency would create a cycle")`
+  - [ ] 2.5 Wrap the DB INSERT + audit log in `WithAuditedTx` with `EventDependencyAdd`
+  - [ ] 2.6 Add `--json` output support: return `{"from_id": "...", "to_id": "...", "type": "...", "status": "created"}`
 
-- [x] Task 3: Implement `removeDependency` with `WithAuditedTx` + audit log (AC: #2, #6)
-  - [x] 3.1 Validate both issues exist (same as add path)
-  - [x] 3.2 Check dependency exists before deleting: `SELECT 1 FROM dependencies WHERE from_id = ? AND to_id = ?`
-  - [x] 3.3 Delete row within `WithAuditedTx` with `EventDependencyRemove`
-  - [x] 3.4 Add `--json` output support: return `{"from_id": "...", "to_id": "...", "status": "removed"}`
+- [ ] Task 3: Implement `removeDependency` with `WithAuditedTx` + audit log (AC: #2, #6)
+  - [ ] 3.1 Validate both issues exist (same as add path)
+  - [ ] 3.2 Check dependency exists before deleting: `SELECT 1 FROM dependencies WHERE from_id = ? AND to_id = ?`
+  - [ ] 3.3 Delete row within `WithAuditedTx` with `EventDependencyRemove`
+  - [ ] 3.4 Add `--json` output support: return `{"from_id": "...", "to_id": "...", "status": "removed"}`
 
-- [x] Task 4: Write unit tests (AC: #1-#6)
-  - [x] 4.1 Test add dependency happy path (sqlmock: issue exists, insert succeeds, audit logged)
-  - [x] 4.2 Test add dependency with non-existent issue (ISSUE_NOT_FOUND error)
-  - [x] 4.3 Test circular dependency rejection (CIRCULAR_DEPENDENCY error via graph engine)
-  - [x] 4.4 Test self-loop rejection
-  - [x] 4.5 Test remove dependency happy path
-  - [x] 4.6 Test remove non-existent dependency
-  - [x] 4.7 Test `--json` output format for both add and remove
+- [ ] Task 4: Write unit tests (AC: #1-#6)
+  - [ ] 4.1 Test add dependency happy path (sqlmock: issue exists, insert succeeds, audit logged)
+  - [ ] 4.2 Test add dependency with non-existent issue (ISSUE_NOT_FOUND error)
+  - [ ] 4.3 Test circular dependency rejection (CIRCULAR_DEPENDENCY error via graph engine)
+  - [ ] 4.4 Test self-loop rejection
+  - [ ] 4.5 Test remove dependency happy path
+  - [ ] 4.6 Test remove non-existent dependency
+  - [ ] 4.7 Test `--json` output format for both add and remove
 
-- [x] Task 5: Verify no regressions (AC: all)
-  - [x] 5.1 Run `go test ./pkg/cmd/graph/...` -- all existing tests pass
-  - [x] 5.2 Run `go test ./pkg/graph/...` -- all graph engine tests pass
-  - [x] 5.3 Run `go vet ./...` -- no warnings
+- [ ] Task 5: Verify no regressions (AC: all)
+  - [ ] 5.1 Run `go test ./pkg/cmd/graph/...` -- all existing tests pass
+  - [ ] 5.2 Run `go test ./pkg/graph/...` -- all graph engine tests pass
+  - [ ] 5.3 Run `go vet ./...` -- no warnings
 
 ## Dev Notes
 
@@ -176,33 +176,15 @@ All commands receive `*cmddeps.Deps` containing `Store`, `Actor`, `AgentModel`, 
 ## Dev Agent Record
 
 ### Agent Model Used
+Gemini-3-Flash
 
-Claude (Sonnet via Claude Code)
+### Grava Tracking
+story=grava-fc44, subtasks=Task 1: grava-fc44.1, Task 2: grava-fc44.2, Task 3: grava-fc44.3, Task 4: grava-fc44.4, Task 5: grava-fc44.5
 
 ### Debug Log References
 
-- cobra.Command.Context() returns nil on bare commands (not context.Background()) — must set context explicitly in tests via cmd.SetContext(context.Background())
-- sqlmock AnyArg() cannot be used in AddRow() — only in WithArgs()
-- depType is a package-level var set by cobra flags — direct function tests must reset it
-
 ### Completion Notes List
-
-- All 6 ACs satisfied: add happy path, remove happy path, circular rejection, non-existent issue, self-loop rejection, remove non-existent dep
-- Refactored addDependency from raw Store.Exec + LogEvent to WithAuditedTx + WithDeadlockRetry + validateIssuesExist + lexicographic lock ordering
-- Implemented removeDependency with WithAuditedTx, dep existence check, proper error codes
-- Added --json output for both add and remove paths
-- Added EventDependencyRemove constant to events.go
-- Updated existing TestDepCmd/TestDepCmdCustomType tests to match new transactional flow
-- 10 new unit tests in dep_test.go, all pass
-- Full test suite passes with 0 regressions, go vet clean
 
 ### File List
 
-- `pkg/dolt/events.go` — added EventDependencyRemove constant
-- `pkg/cmd/graph/graph.go` — refactored addDependency, added removeDependency, validateIssuesExist, --remove flag, database/sql import
-- `pkg/cmd/graph/dep_test.go` — new: 10 unit tests covering AC#1-#6
-- `pkg/cmd/commands_test.go` — updated TestDepCmd and TestDepCmdCustomType for new transactional flow
-
 ### Change Log
-
-- 2026-04-10: Story 4.1 implementation complete — all ACs satisfied, all tests pass
