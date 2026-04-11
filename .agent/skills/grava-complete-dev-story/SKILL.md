@@ -28,23 +28,9 @@ If the issue doesn't exist, stop and tell the user. If the status isn't `in_prog
 
 ### 2. Run unit tests
 
-Run the project's test suite before committing. Detect the test runner from the project:
+Detect the project's language and run the appropriate test command (e.g., `go test ./...` for Go, `npm test` for Node, `pytest` for Python).
 
-```bash
-# Go projects
-go test ./...
-
-# Node projects
-npm test
-
-# Python projects
-pytest
-
-# Rust projects
-cargo test
-```
-
-If tests fail, stop immediately. Show the failures and do not proceed. The user needs to fix them first.
+If tests fail, check whether the failures are related to the current changes or pre-existing. If pre-existing (i.e., they also fail on a clean checkout), warn the user but continue — don't block the commit for unrelated failures. If the failures are caused by the current changes, stop and show the failures.
 
 ### 3. Stage and commit code
 
