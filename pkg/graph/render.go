@@ -38,6 +38,11 @@ type RenderOptions struct {
 
 // Render renders the graph in the specified format
 func (g *AdjacencyDAG) Render(opts RenderOptions) (string, error) {
+	if opts.RootID != "" {
+		if _, err := g.GetNode(opts.RootID); err != nil {
+			return "", fmt.Errorf("root node %q not found in graph", opts.RootID)
+		}
+	}
 	switch opts.Format {
 	case "ascii":
 		return g.RenderASCII(opts)

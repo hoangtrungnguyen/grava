@@ -267,3 +267,15 @@ func TestRenderJSON_EmptyGraph(t *testing.T) {
 	assert.Equal(t, 0, len(result.Nodes))
 	assert.Equal(t, 0, len(result.Edges))
 }
+
+func TestRender_NonExistentRootReturnsError(t *testing.T) {
+	dag := NewAdjacencyDAG(false)
+	n := &Node{ID: "task-1", Title: "Task 1", Type: "task", Status: StatusOpen}
+	require.NoError(t, dag.AddNode(n))
+
+	for _, format := range []string{"ascii", "dot", "json"} {
+		_, err := dag.Render(RenderOptions{Format: format, RootID: "does-not-exist"})
+		require.Error(t, err, "format=%s should error on non-existent root", format)
+		assert.Contains(t, err.Error(), "not found in graph")
+	}
+}
