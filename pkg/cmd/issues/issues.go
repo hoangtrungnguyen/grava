@@ -479,7 +479,6 @@ You can filter by status or type, and sort by various criteria.`,
 			defer rows.Close() //nolint:errcheck
 
 			var results []IssueListItem
-			count := 0
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			if !*d.OutputJSON {
@@ -504,7 +503,6 @@ You can filter by status or type, and sort by various criteria.`,
 						CreatedAt: createdAt,
 					})
 				} else {
-					count++
 					if len(title) > 50 {
 						title = title[:47] + "..."
 					}
@@ -520,7 +518,6 @@ You can filter by status or type, and sort by various criteria.`,
 				}
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			} else {
-				_ = count
 				w.Flush() //nolint:errcheck
 			}
 
