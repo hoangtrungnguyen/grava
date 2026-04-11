@@ -1,6 +1,7 @@
 package cmdgraph
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -49,14 +50,18 @@ func TestRemoveDependency_Flag(t *testing.T) {
 	}
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT id FROM issues WHERE id IN .* FOR UPDATE").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE")).
 		WithArgs("ISSUE-1", "ISSUE-2").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ISSUE-1").AddRow("ISSUE-2"))
-	mock.ExpectExec("DELETE FROM dependencies").
+	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM dependencies WHERE from_id = ? AND to_id = ? AND type = ?")).
 		WithArgs("ISSUE-1", "ISSUE-2", "blocks").
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec("INSERT INTO events.*").
-		WillReturnResult(sqlmock.NewResult(1, 1))
+	// LogEventTx is called twice in removeDependency (lines 215 and 223)
+	for i := 0; i < 2; i++ {
+		mock.ExpectExec(regexp.QuoteMeta("INSERT INTO events (issue_id, event_type, actor, old_value, new_value, created_by, updated_by, agent_model, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")).
+			WithArgs("ISSUE-1", "dependency_remove", "Alice", sqlmock.AnyArg(), "{}", "Alice", "Alice", "Gemini", sqlmock.AnyArg()).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+	}
 	mock.ExpectCommit()
 
 	cmd := newDepCmd(d)
