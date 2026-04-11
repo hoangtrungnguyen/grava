@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [v0.0.7] - 2026-04-11
+
+* fix: resolve critical and high-severity Story 3.4 findings (3b5b3e7)
+* fix: resolve 7 findings in Story 3.3 code review (e0d35ba)
+* refactor: prune legacy BMAD documentation and workflow files while updating active agent skills and configurations. (161b189)
+* fix: update RemoveDependency test to expect all queries and handle duplicate LogEventTx calls (ebf50c1)
+* fix: remove unnecessary assignee query mock from ready/blocked tests (f91695c)
+* fix: update test mocks to match implementation with metadata column and corrected query expectations (bab0f5a)
+* chore: add .DS_Store to gitignore (39c5c48)
+* fix: update blocked and ready command tests to match implementation (f9fb8c0)
+* chore(data): refresh issues.jsonl export (bed2c99)
+* chore(skills): split grava code review into severity-tagged comments (b1291ed)
+* chore(skills): streamline complete-dev-story skill (grava-d193) (0782158)
+* chore(skills): add grava workflow skills (grava-03bc) (b44c36c)
+* fix(cli): allow --last-commit as sole update flag and expose last_commit in show --json (grava-7b39) (dbf8db0)
+* chore(config): update gitignore and add deferred work artifact (grava-a3fd) (aa9758c)
+* chore(data): refresh issues.jsonl export (4e6d9a2)
+* chore(skills): split grava code review into severity-tagged comments (4622db2)
+* chore(skills): streamline complete-dev-story skill (grava-d193) (b10ff38)
+* chore(skills): add grava workflow skills (grava-03bc) (12711ec)
+* fix(cli): allow --last-commit as sole update flag and expose last_commit in show --json (grava-7b39) (00e0f68)
+* chore(config): update gitignore and add deferred work artifact (grava-a3fd) (ea84b94)
+* feat: implement dependency management and audit logging (Story 4.1) (91c931c)
+* feat(cli): add blocked command to query blockers for a specific issue (4-3) (b3c323e)
+* docs: standardize mandatory worktree orchestration on .worktree folder and Claude integration (3aae95c)
+* feat(cli): add assignee field to ready command JSON output and fix empty state (4-2) (ccfbc79)
+* feat(cli): add --remove flag, audited transactions, and validation to dep command (4-1) (17a2b78)
+* docs: finalize Epic 6 story implementation specs and sync sprint status (db63bbc)
+* clean (937b367)
+* docs: finalize implementation stories for Epics 4 and 5; sync roadmap tracking (50abde7)
+* docs: reorder phase 1 roadmap for worktree-first strategy and remove onboarding (c3a8540)
+* chore: move test docs and scripts into sandbox directory (6f32557)
+* docs: correct release process documentation to match script automation (2d7d815)
+* docs: restructure README to match explicit project specifications (413841a)
+
+
 ## [v0.0.6] - 2026-04-09
 
 ### Added
