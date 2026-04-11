@@ -843,7 +843,8 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 			).Scan(&avgMinutes); err != nil {
 				return fmt.Errorf("query avg cycle time failed: %w", err)
 			}
-			if avgMinutes != nil {
+			hasCycleTimeData := avgMinutes != nil
+			if hasCycleTimeData {
 				stats.AvgCycleTimeMinutes = *avgMinutes
 			}
 
@@ -936,7 +937,7 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 			_, _ = fmt.Fprintf(w, "Closed Issues:\t%d\n", stats.Closed)
 			_, _ = fmt.Fprintf(w, "Blocked Issues:\t%d\n", stats.BlockedCount)
 			_, _ = fmt.Fprintf(w, "Stale In-Progress:\t%d\n", stats.StaleInProgressCount)
-			if stats.AvgCycleTimeMinutes > 0 {
+			if hasCycleTimeData {
 				_, _ = fmt.Fprintf(w, "Avg Cycle Time:\t%.0f min\n", stats.AvgCycleTimeMinutes)
 			}
 			_, _ = fmt.Fprintln(w, "")

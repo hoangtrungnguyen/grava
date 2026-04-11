@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"regexp"
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
@@ -27,7 +29,7 @@ func setupStatsMock(t *testing.T, outputJSON bool) (*cmddeps.Deps, sqlmock.Sqlmo
 
 func expectStatsQueries(mock sqlmock.Sqlmock, blockedCount, staleCount int, avgCycle *float64) {
 	// by-status query
-	mock.ExpectQuery("SELECT status, COUNT").
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status, COUNT(*) FROM issues WHERE ephemeral = 0 GROUP BY status`)).
 		WillReturnRows(sqlmock.NewRows([]string{"status", "count"}).
 			AddRow("open", 5).
 			AddRow("in_progress", 3).
@@ -35,11 +37,11 @@ func expectStatsQueries(mock sqlmock.Sqlmock, blockedCount, staleCount int, avgC
 			AddRow("closed", 2))
 
 	// blocked count
-	mock.ExpectQuery("SELECT COUNT.*status = 'blocked'").
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'blocked'`)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(blockedCount))
 
 	// stale in_progress count
-	mock.ExpectQuery("SELECT COUNT.*in_progress.*INTERVAL 1 HOUR").
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'in_progress' AND COALESCE(wisp_heartbeat_at, updated_at) < DATE_SUB(NOW(), INTERVAL 1 HOUR)`)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(staleCount))
 
 	// avg cycle time
@@ -49,30 +51,31 @@ func expectStatsQueries(mock sqlmock.Sqlmock, blockedCount, staleCount int, avgC
 	} else {
 		row = row.AddRow(nil)
 	}
-	mock.ExpectQuery("SELECT AVG.*TIMESTAMPDIFF").WillReturnRows(row)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT AVG(TIMESTAMPDIFF(MINUTE, started_at, stopped_at)) FROM issues WHERE ephemeral = 0 AND status = 'closed' AND started_at IS NOT NULL AND stopped_at IS NOT NULL`)).
+		WillReturnRows(row)
 
 	// by-priority query
-	mock.ExpectQuery("SELECT priority, COUNT").
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT priority, COUNT(*) FROM issues WHERE ephemeral = 0 GROUP BY priority`)).
 		WillReturnRows(sqlmock.NewRows([]string{"priority", "count"}).
 			AddRow(0, 1).AddRow(2, 4))
 
 	// by-author query
-	mock.ExpectQuery("SELECT created_by, COUNT").
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT created_by, COUNT(*) FROM issues WHERE ephemeral = 0 GROUP BY created_by ORDER BY COUNT(*) DESC LIMIT 10`)).
 		WillReturnRows(sqlmock.NewRows([]string{"created_by", "count"}).
 			AddRow("alice", 6))
 
 	// by-assignee query
-	mock.ExpectQuery("SELECT assignee, COUNT").
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT assignee, COUNT(*) FROM issues WHERE ephemeral = 0 AND assignee IS NOT NULL AND assignee != '' GROUP BY assignee ORDER BY COUNT(*) DESC LIMIT 10`)).
 		WillReturnRows(sqlmock.NewRows([]string{"assignee", "count"}).
 			AddRow("bob", 3))
 
-	// created by date
-	mock.ExpectQuery("DATE_FORMAT.*created_at").
+	// created by date (default --days=7)
+	mock.ExpectQuery(regexp.QuoteMeta(fmt.Sprintf(`SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') as day, COUNT(*) FROM issues WHERE ephemeral = 0 AND created_at >= DATE_SUB(NOW(), INTERVAL %d DAY) GROUP BY day ORDER BY day DESC`, 7))).
 		WillReturnRows(sqlmock.NewRows([]string{"day", "count"}).
 			AddRow("2026-04-11", 2))
 
-	// closed by date
-	mock.ExpectQuery("DATE_FORMAT.*updated_at").
+	// closed by date (default --days=7)
+	mock.ExpectQuery(regexp.QuoteMeta(fmt.Sprintf(`SELECT DATE_FORMAT(updated_at, '%%Y-%%m-%%d') as day, COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'closed' AND updated_at >= DATE_SUB(NOW(), INTERVAL %d DAY) GROUP BY day ORDER BY day DESC`, 7))).
 		WillReturnRows(sqlmock.NewRows([]string{"day", "count"}).
 			AddRow("2026-04-11", 1))
 }
