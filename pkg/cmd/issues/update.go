@@ -246,6 +246,36 @@ Only the flags provided will be updated.`,
 			priority, _ := cmd.Flags().GetString("priority")
 			status, _ := cmd.Flags().GetString("status")
 
+			// Handle --last-commit separately (metadata-only, no audit event needed).
+			// setLastCommit verifies the issue exists via a SELECT on the issues table.
+			lastCommitChanged := cmd.Flags().Changed("last-commit")
+			if lastCommitChanged {
+				val, _ := cmd.Flags().GetString("last-commit")
+				if err := setLastCommit(d, id, val); err != nil {
+					return err
+				}
+			}
+
+			// If only --last-commit was provided, skip the main update path
+			if len(changedFields) == 0 {
+				if !lastCommitChanged {
+					err := gravaerrors.New("MISSING_REQUIRED_FIELD",
+						"at least one field must be specified to update", nil)
+					if *d.OutputJSON {
+						return writeJSONError(cmd, err)
+					}
+					return err
+				}
+				result := UpdateResult{ID: id, Status: "updated"}
+				if *d.OutputJSON {
+					b, _ := json.MarshalIndent(result, "", "  ") //nolint:errcheck // UpdateResult is always serializable
+					fmt.Fprintln(cmd.OutOrStdout(), string(b))   //nolint:errcheck
+					return nil
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "✅ Updated issue %s\n", result.ID) //nolint:errcheck
+				return nil
+			}
+
 			result, err := updateIssue(cmd.Context(), *d.Store, UpdateParams{
 				ID:            id,
 				Title:         title,
@@ -263,14 +293,6 @@ Only the flags provided will be updated.`,
 					return writeJSONError(cmd, err)
 				}
 				return err
-			}
-
-			// Handle --last-commit separately (metadata-only, no audit event needed)
-			if cmd.Flags().Changed("last-commit") {
-				val, _ := cmd.Flags().GetString("last-commit")
-				if err := setLastCommit(d, id, val); err != nil {
-					return err
-				}
 			}
 
 			if *d.OutputJSON {

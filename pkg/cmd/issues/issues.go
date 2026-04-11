@@ -62,6 +62,7 @@ type IssueDetail struct {
 	Subtasks      []string       `json:"subtasks,omitempty"`
 	Labels        []string       `json:"labels,omitempty"`
 	Comments      []CommentEntry `json:"comments,omitempty"`
+	LastCommit    string         `json:"last_commit,omitempty"`
 }
 
 // CommentEntry is the JSON output model for a single comment in show output.
@@ -151,7 +152,7 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 				return showTreeVisualization(d, id)
 			}
 
-			query := `SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, '')
+			query := `SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, ''), COALESCE(metadata, '{}')
                   FROM issues WHERE id = ?`
 
 			var title, desc, iType, status string
@@ -160,8 +161,9 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 			var createdBy, updatedBy, assignee string
 			var agentModelStr *string
 			var affectedFilesJSON *string
+			var metadataJSON string
 
-			err := (*d.Store).QueryRow(query, id).Scan(&title, &desc, &iType, &priority, &status, &createdAt, &updatedAt, &createdBy, &updatedBy, &agentModelStr, &affectedFilesJSON, &assignee)
+			err := (*d.Store).QueryRow(query, id).Scan(&title, &desc, &iType, &priority, &status, &createdAt, &updatedAt, &createdBy, &updatedBy, &agentModelStr, &affectedFilesJSON, &assignee, &metadataJSON)
 			if err != nil {
 				return fmt.Errorf("failed to fetch issue %s: %w", id, err)
 			}
@@ -241,6 +243,17 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 				return fmt.Errorf("error reading comment rows for %s: %w", id, err)
 			}
 
+			// Extract last_commit from metadata
+			var lastCommit string
+			if metadataJSON != "" && metadataJSON != "{}" {
+				var meta map[string]any
+				if err := json.Unmarshal([]byte(metadataJSON), &meta); err == nil {
+					if lc, ok := meta["last_commit"].(string); ok {
+						lastCommit = lc
+					}
+				}
+			}
+
 			if *d.OutputJSON {
 				detail := IssueDetail{
 					ID:            id,
@@ -259,6 +272,7 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 					Subtasks:      subtasks,
 					Labels:        labels,
 					Comments:      comments,
+					LastCommit:    lastCommit,
 				}
 				if agentModelStr != nil {
 					detail.AgentModel = *agentModelStr
@@ -289,6 +303,9 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 			}
 			if len(files) > 0 {
 				cmd.Printf("Files:       %v\n", files)
+			}
+			if lastCommit != "" {
+				cmd.Printf("Last Commit: %s\n", lastCommit)
 			}
 			if len(subtasks) > 0 {
 				cmd.Printf("Subtasks:    %v\n", subtasks)
