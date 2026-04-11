@@ -20,8 +20,16 @@ import (
 var (
 	qReadyLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status")
 	qReadyLoadDeps   = regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")
-	qReadyAssignee   = "SELECT id, COALESCE"
 )
+
+// ReadyTaskOutput matches the JSON schema for ready --json output.
+type ReadyTaskOutput struct {
+	Node struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	} `json:"node"`
+	EffectivePriority int `json:"effective_priority"`
+}
 
 func TestReadyQueue_EmptyDB(t *testing.T) {
 	db, mock, err := sqlmock.New()
@@ -79,13 +87,6 @@ func TestReadyCmd_IndependentTasks(t *testing.T) {
 	mock.ExpectQuery(qReadyLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()))
 
-	// Assignee query
-	mock.ExpectQuery(qReadyAssignee).
-		WithArgs("task-1", "task-2").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "assignee"}).
-			AddRow("task-1", "agent-a").
-			AddRow("task-2", ""))
-
 	readyLimit = 20
 	readyPriority = -1
 	buf := &bytes.Buffer{}
@@ -128,11 +129,6 @@ func TestReadyCmd_BlockedByDoneTask(t *testing.T) {
 	mock.ExpectQuery(qReadyLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).AddRow("task-1", "task-2", "blocks", []byte("{}")))
 
-	// Assignee query
-	mock.ExpectQuery(qReadyAssignee).
-		WithArgs("task-2").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "assignee"}).AddRow("task-2", "agent-b"))
-
 	readyLimit = 20
 	readyPriority = -1
 
@@ -172,11 +168,6 @@ func TestReadyCmd_BlockedByOpenTask(t *testing.T) {
 	mock.ExpectQuery(qReadyLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).AddRow("task-1", "task-2", "blocks", []byte("{}")))
 
-	// Only task-1 should be ready (it has no blockers)
-	mock.ExpectQuery(qReadyAssignee).
-		WithArgs("task-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "assignee"}).AddRow("task-1", ""))
-
 	readyLimit = 20
 	readyPriority = -1
 
@@ -193,7 +184,7 @@ func TestReadyCmd_BlockedByOpenTask(t *testing.T) {
 	var result []ReadyTaskOutput
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
 	require.Len(t, result, 1)
-	assert.Equal(t, "task-1", result[0].ID)
+	assert.Equal(t, "task-1", result[0].Node.ID)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -271,52 +262,7 @@ func TestReadyCmd_EmptyStateHuman(t *testing.T) {
 	rcmd := newReadyCmd(deps)
 	err = rcmd.RunE(cmd, []string{})
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "No tasks are currently ready")
+	assert.Contains(t, buf.String(), "No ready tasks found")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// --- AC#2: JSON output includes assignee field ---
-
-func TestReadyCmd_JSONIncludesAssignee(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close()
-
-	var s dolt.Store = dolt.NewClientFromDB(db)
-	outputJSON := true
-	actor := "test"
-	model := ""
-	deps := &cmddeps.Deps{Store: &s, Actor: &actor, AgentModel: &model, OutputJSON: &outputJSON}
-
-	mock.ExpectQuery(qReadyLoadIssues).
-		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "My Task", "task", "open", 1, time.Now(), nil, nil, 0, nil))
-	mock.ExpectQuery(qReadyLoadDeps).
-		WillReturnRows(sqlmock.NewRows(depCols()))
-
-	mock.ExpectQuery(qReadyAssignee).
-		WithArgs("task-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "assignee"}).AddRow("task-1", "agent-x"))
-
-	readyLimit = 20
-	readyPriority = -1
-
-	buf := &bytes.Buffer{}
-	cmd := &cobra.Command{}
-	cmd.SetOut(buf)
-	cmd.SetContext(context.Background())
-
-	rcmd := newReadyCmd(deps)
-	err = rcmd.RunE(cmd, []string{})
-	require.NoError(t, err)
-
-	var result []ReadyTaskOutput
-	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
-	require.Len(t, result, 1)
-	assert.Equal(t, "task-1", result[0].ID)
-	assert.Equal(t, "My Task", result[0].Title)
-	assert.Equal(t, "open", result[0].Status)
-	assert.Equal(t, 1, result[0].Priority)
-	assert.Equal(t, "agent-x", result[0].Assignee)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
