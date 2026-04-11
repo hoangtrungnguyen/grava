@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
@@ -26,15 +27,9 @@ type HistoryEntry struct {
 // issueHistory retrieves the ordered progression log of an issue from the events table.
 // If since is non-empty, only events after that timestamp are returned.
 // Returns ISSUE_NOT_FOUND if the issue does not exist.
+// If the issue exists but has no events, returns an empty slice (AC#5).
 func issueHistory(ctx context.Context, store dolt.Store, issueID, since string) ([]HistoryEntry, error) {
-	// Enforce a 5s timeout if the caller didn't set one.
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-	}
-
-	// Verify issue exists.
+	// Verify issue exists (AC#6: non-existent issue returns error).
 	var existingID string
 	row := store.QueryRowContext(ctx, "SELECT id FROM issues WHERE id = ?", issueID)
 	if err := row.Scan(&existingID); err != nil {
@@ -61,7 +56,7 @@ func issueHistory(ctx context.Context, store dolt.Store, issueID, since string) 
 		args = append(args, sinceTime)
 	}
 
-	query += " ORDER BY timestamp ASC, id ASC LIMIT 500"
+	query += " ORDER BY timestamp ASC, id ASC"
 
 	rows, err := store.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -69,7 +64,7 @@ func issueHistory(ctx context.Context, store dolt.Store, issueID, since string) 
 	}
 	defer rows.Close() //nolint:errcheck
 
-	entries := []HistoryEntry{}
+	entries := make([]HistoryEntry, 0, 100)
 	for rows.Next() {
 		var eventType, actor string
 		var oldValueJSON, newValueJSON sql.NullString
@@ -106,30 +101,40 @@ func parseSinceDate(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("cannot parse %q as date", s)
 }
 
-func parseJSONToMap(s sql.NullString) map[string]any {
+func parseJSONToMap(s sql.NullString) (map[string]any, error) {
 	if !s.Valid || s.String == "" || s.String == "{}" {
-		return nil
+		return nil, nil
 	}
 	var m map[string]any
 	if err := json.Unmarshal([]byte(s.String), &m); err == nil {
-		return m
+		return m, nil
 	}
 	// Fallback for valid JSON that is not an object (e.g. array, string)
 	var fallback any
 	if err := json.Unmarshal([]byte(s.String), &fallback); err == nil {
-		return map[string]any{"value": fallback}
+		return map[string]any{"value": fallback}, nil
 	}
-	// Corrupted JSON — preserve raw string and flag the issue
-	return map[string]any{"_raw": s.String, "_parse_error": "invalid JSON in events table"}
+	// Return error for corrupted JSON
+	return nil, gravaerrors.New("CORRUPTED_JSON",
+		fmt.Sprintf("invalid JSON in events table: %s", s.String), nil)
 }
 
 // mergeEventDetails combines old_value and new_value JSON into a single details map.
 // Returns new_value fields, with old_value fields prefixed with "old_" when both exist.
+// If JSON parsing fails, includes error details in the map.
 func mergeEventDetails(oldJSON, newJSON sql.NullString) map[string]any {
 	details := make(map[string]any)
 
-	oldMap := parseJSONToMap(oldJSON)
-	newMap := parseJSONToMap(newJSON)
+	oldMap, oldErr := parseJSONToMap(oldJSON)
+	newMap, newErr := parseJSONToMap(newJSON)
+
+	// Record any parsing errors in output for visibility.
+	if oldErr != nil {
+		details["_old_value_error"] = oldErr.Error()
+	}
+	if newErr != nil {
+		details["_new_value_error"] = newErr.Error()
+	}
 
 	// If both exist, show old_ prefixed and new values.
 	if len(oldMap) > 0 && len(newMap) > 0 {
@@ -213,20 +218,13 @@ func formatDetails(d map[string]any) string {
 	sort.Strings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		b, _ := json.Marshal(d[k])
+		b, err := json.Marshal(d[k])
+		if err != nil {
+			parts = append(parts, k+"=<error>")
+			continue
+		}
 		parts = append(parts, k+"="+string(b))
 	}
-	return fmt.Sprintf("{%s}", joinStrings(parts, ", "))
+	return fmt.Sprintf("{%s}", strings.Join(parts, ", "))
 }
 
-// joinStrings joins a slice of strings with a separator.
-func joinStrings(ss []string, sep string) string {
-	if len(ss) == 0 {
-		return ""
-	}
-	result := ss[0]
-	for _, s := range ss[1:] {
-		result += sep + s
-	}
-	return result
-}
