@@ -2,10 +2,12 @@ import sys
 import threading
 from grava_test_utils import run_grava, create_test_issue, cleanup_test_issue
 import os
+import time
 
-def claim_issue(issue_id, actor, results):
+def claim_issue(issue_id, actor, results, lock):
     code, out = run_grava(["claim", issue_id, "--actor", actor, "--json"])
-    results.append((actor, code, out))
+    with lock:
+        results.append((actor, code, out))
 
 def test_rapid_claims():
     issue = create_test_issue("Rapid Claim Test Issue")
@@ -15,9 +17,15 @@ def test_rapid_claims():
         sys.exit(1)
 
     try:
+        # M1: Verify initial state before concurrent operations (AC#1 precondition)
+        code, initial_state = run_grava(["show", issue_id, "--json"])
+        assert code == 0, f"Failed to query initial state: {initial_state}"
+        assert initial_state.get("status") == "open", f"Expected initial status=open, got {initial_state.get('status')}"
+
         results = []
-        t1 = threading.Thread(target=claim_issue, args=(issue_id, "agent-1", results))
-        t2 = threading.Thread(target=claim_issue, args=(issue_id, "agent-2", results))
+        results_lock = threading.Lock()
+        t1 = threading.Thread(target=claim_issue, args=(issue_id, "agent-1", results, results_lock))
+        t2 = threading.Thread(target=claim_issue, args=(issue_id, "agent-2", results, results_lock))
         
         t1.start()
         t2.start()

@@ -34,20 +34,33 @@ def run_grava(args, check=False):
     """Run a grava command and return the parsed JSON output or raw string if not JSON."""
     ensure_built()
     cmd = [GRAVA_BIN] + args
-    
+
     db_url = os.environ.get("GRAVA_DB_URL")
     if not db_url:
         # Default to 3311 for this environment since server is on 3311
         db_url = "root@tcp(127.0.0.1:3311)/test_grava?parseTime=true"
-        
+
     if "--db-url" not in args:
         cmd += ["--db-url", db_url]
-        
+
     # print(f"Running: {' '.join(cmd)}") # Removed loud debug print (L1)
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
     if check and result.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(cmd)}\nStdout: {result.stdout}\nStderr: {result.stderr}")
+        # Sanitize command for error output (hide --db-url credentials)
+        sanitized_cmd = []
+        skip_next = False
+        for i, arg in enumerate(cmd):
+            if skip_next:
+                skip_next = False
+                continue
+            if arg == "--db-url":
+                sanitized_cmd.append("--db-url")
+                sanitized_cmd.append("<redacted>")
+                skip_next = True
+            else:
+                sanitized_cmd.append(arg)
+        raise RuntimeError(f"Command failed: {' '.join(sanitized_cmd)}\nStdout: {result.stdout}\nStderr: {result.stderr}")
     
     if result.returncode != 0:
         # Check if output is JSON, even if it failed
@@ -79,8 +92,12 @@ def create_test_issue(title=None):
 
 def cleanup_test_issue(issue_id):
     """Permanently delete the test issue using the Archive & Purge lifecycle."""
-    # 1. Mark as archived (Story 2.6)
-    run_grava(["update", issue_id, "--status", "archived", "--json"])
-    # 2. Trigger hard delete via maintenance clear
-    run_grava(["clear", "--json"])
+    try:
+        # 1. Mark as archived (Story 2.6)
+        run_grava(["update", issue_id, "--status", "archived", "--json"])
+        # 2. Trigger hard delete via maintenance clear
+        run_grava(["clear", "--json"])
+    except Exception as e:
+        # Log but don't fail tests due to cleanup errors
+        print(f"Cleanup warning for {issue_id}: {e}")
 

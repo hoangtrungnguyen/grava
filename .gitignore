@@ -63,4 +63,4 @@ skills-lock.json
 
 .venv/
 docs/.DS_Store
-.claude/worktrees/*
+.claude/worktrees/*grava_test_bin
