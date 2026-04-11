@@ -18,7 +18,7 @@ import (
 func TestListCmd_NoFilters(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
@@ -45,7 +45,7 @@ func TestListCmd_NoFilters(t *testing.T) {
 func TestListCmd_FilterByPriority(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
@@ -74,7 +74,7 @@ func TestListCmd_FilterByPriority(t *testing.T) {
 func TestListCmd_FilterByAssignee(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
@@ -103,7 +103,7 @@ func TestListCmd_FilterByAssignee(t *testing.T) {
 func TestListCmd_MultipleFilters(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
@@ -132,7 +132,7 @@ func TestListCmd_MultipleFilters(t *testing.T) {
 func TestListCmd_EmptyResults(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
