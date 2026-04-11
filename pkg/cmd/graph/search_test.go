@@ -19,7 +19,7 @@ import (
 func TestSearchCmd_SearchTitle(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
@@ -32,6 +32,7 @@ func TestSearchCmd_SearchTitle(t *testing.T) {
 		        LEFT JOIN issue_comments c ON i.id = c.issue_id
 		        WHERE i.ephemeral = ?
 		          AND i.status != 'tombstone'
+		          AND i.status != 'archived'
 		          AND (i.title LIKE ? OR i.description LIKE ? OR COALESCE(i.metadata,'') LIKE ? OR COALESCE(c.message,'') LIKE ?)
 		        ORDER BY i.priority ASC, i.created_at DESC`)
 	mock.ExpectQuery(expectedQuery).
@@ -56,7 +57,7 @@ func TestSearchCmd_SearchTitle(t *testing.T) {
 func TestSearchCmd_SearchComments(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
@@ -69,6 +70,7 @@ func TestSearchCmd_SearchComments(t *testing.T) {
 		        LEFT JOIN issue_comments c ON i.id = c.issue_id
 		        WHERE i.ephemeral = ?
 		          AND i.status != 'tombstone'
+		          AND i.status != 'archived'
 		          AND (i.title LIKE ? OR i.description LIKE ? OR COALESCE(i.metadata,'') LIKE ? OR COALESCE(c.message,'') LIKE ?)
 		        ORDER BY i.priority ASC, i.created_at DESC`)
 	mock.ExpectQuery(expectedQuery).
@@ -93,7 +95,7 @@ func TestSearchCmd_SearchComments(t *testing.T) {
 func TestSearchCmd_DistinctResults(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
@@ -106,6 +108,7 @@ func TestSearchCmd_DistinctResults(t *testing.T) {
 		        LEFT JOIN issue_comments c ON i.id = c.issue_id
 		        WHERE i.ephemeral = ?
 		          AND i.status != 'tombstone'
+		          AND i.status != 'archived'
 		          AND (i.title LIKE ? OR i.description LIKE ? OR COALESCE(i.metadata,'') LIKE ? OR COALESCE(c.message,'') LIKE ?)
 		        ORDER BY i.priority ASC, i.created_at DESC`)
 	mock.ExpectQuery(expectedQuery).
@@ -130,7 +133,7 @@ func TestSearchCmd_DistinctResults(t *testing.T) {
 func TestSearchCmd_JSONOutput(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := true
@@ -143,6 +146,7 @@ func TestSearchCmd_JSONOutput(t *testing.T) {
 		        LEFT JOIN issue_comments c ON i.id = c.issue_id
 		        WHERE i.ephemeral = ?
 		          AND i.status != 'tombstone'
+		          AND i.status != 'archived'
 		          AND (i.title LIKE ? OR i.description LIKE ? OR COALESCE(i.metadata,'') LIKE ? OR COALESCE(c.message,'') LIKE ?)
 		        ORDER BY i.priority ASC, i.created_at DESC`)
 	now := time.Now()
@@ -169,7 +173,7 @@ func TestSearchCmd_JSONOutput(t *testing.T) {
 func TestSearchCmd_EmptyQuery(t *testing.T) {
 	db, _, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
@@ -193,7 +197,7 @@ func TestSearchCmd_EmptyQuery(t *testing.T) {
 func TestSearchCmd_NoResults(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var s dolt.Store = dolt.NewClientFromDB(db)
 	outputJSON := false
@@ -206,6 +210,7 @@ func TestSearchCmd_NoResults(t *testing.T) {
 		        LEFT JOIN issue_comments c ON i.id = c.issue_id
 		        WHERE i.ephemeral = ?
 		          AND i.status != 'tombstone'
+		          AND i.status != 'archived'
 		          AND (i.title LIKE ? OR i.description LIKE ? OR COALESCE(i.metadata,'') LIKE ? OR COALESCE(c.message,'') LIKE ?)
 		        ORDER BY i.priority ASC, i.created_at DESC`)
 	mock.ExpectQuery(expectedQuery).

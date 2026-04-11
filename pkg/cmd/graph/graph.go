@@ -701,6 +701,7 @@ func newSearchCmd(d *cmddeps.Deps) *cobra.Command {
 		        LEFT JOIN issue_comments c ON i.id = c.issue_id
 		        WHERE i.ephemeral = ?
 		          AND i.status != 'tombstone'
+		          AND i.status != 'archived'
 		          AND (i.title LIKE ? OR i.description LIKE ? OR COALESCE(i.metadata,'') LIKE ? OR COALESCE(c.message,'') LIKE ?)
 		        ORDER BY i.priority ASC, i.created_at DESC`
 
