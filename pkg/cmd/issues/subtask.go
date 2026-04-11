@@ -97,15 +97,15 @@ func subtaskIssue(ctx context.Context, store dolt.Store, params SubtaskParams) (
 	auditEvents := []dolt.AuditEvent{
 		{
 			IssueID:   id,
-			EventType: dolt.EventSubtask,
+			EventType: dolt.EventCreate,
 			Actor:     params.Actor,
 			Model:     params.Model,
 			OldValue:  nil,
 			NewValue: map[string]any{
-				"title":     params.Title,
-				"type":      params.IssueType,
-				"priority":  pInt,
-				"parent_id": params.ParentID,
+				"title":    params.Title,
+				"type":     params.IssueType,
+				"priority": pInt,
+				"status":   "open",
 			},
 		},
 		{
