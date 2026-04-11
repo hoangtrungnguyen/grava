@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [v0.0.8] - 2026-04-11
+
+* feat(blocked): add per-issue blocker query to grava blocked (grava-722b.3) (713348f)
+* fix: return error for non-existent --root node in graph render (grava-722b.4) (61813fc)
+* fix: resolve Story 4.6 code review findings (grava-722b.6) (a1e0f0c)
+* feat(stats): add blocked count, stale in_progress, and avg cycle time (grava-722b.6) (684f930)
+* fix: resolve Story 4.5 code review findings (f99dfcd)
+* style: add nolint comments to test db.Close() (grava-722b.5) (a27a5b5)
+* fix: remove unused count variable in list command (grava-722b.5) (2ccd4ee)
+* docs: complete story 4.5 implementation artifact (grava-722b.5) (93efcd7)
+* feat(cmd): implement list filtering and enhanced search for issues (grava-722b.5) (6829910)
+* feat(graph): implement dependency graph visualization (grava-722b.4) (389349c)
+* fix: log EventCreate instead of EventSubtask for subtask creation (4be8642)
+
+
 ## [v0.0.7] - 2026-04-11
 
 * fix: resolve critical and high-severity Story 3.4 findings (3b5b3e7)
