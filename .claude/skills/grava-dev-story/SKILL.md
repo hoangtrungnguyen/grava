@@ -1,6 +1,12 @@
 ---
-name: bmad-dev-story
-description: 'Execute story implementation following a context filled story spec file. Use when the user says "dev this story [story file]" or "implement the next story in the sprint plan"'
+name: grava-dev-story
+description: 'Execute story implementation following a grava issue. Use when the user says "dev this story [story file]" or "implement the next story in the sprint plan"'
 ---
 
-Follow the instructions in ./workflow.md.
+# Grava Dev Story
+
+Implement a grava issue end-to-end: claim it, build it with TDD, track progress via CLI, validate, and hand off for review.
+
+**Announce at start:** "Using grava-dev-story to implement `<issue-id>`."
+
+Follow the workflow in [workflow.md](./workflow.md). Use [checklist.md](./checklist.md) for final Definition of Done validation before marking complete.
