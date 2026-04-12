@@ -1,0 +1,164 @@
+package utils
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// IsWorktree checks if the current directory is a Git worktree by examining
+// whether .git is a file (worktree) or directory (main repo).
+// Zero subprocess cost — pure filesystem check.
+func IsWorktree(cwd string) bool {
+	gitPath := filepath.Join(cwd, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		// .git doesn't exist or can't be stat'd — not in a repo
+		return false
+	}
+	// If .git is a file, it's a worktree pointer
+	return !info.IsDir()
+}
+
+// ComputeRedirectPath computes the relative path from a worktree to the main repo's .grava directory.
+// Walks up from cwd until it finds a directory with .git as a directory (main repo).
+// Returns the relative path like "../../.grava" or an error if main repo not found.
+func ComputeRedirectPath(cwd string) (string, error) {
+	current := cwd
+	worktreeDepth := 0
+
+	// Walk up until we find a main repo (.git is a directory)
+	for {
+		gitPath := filepath.Join(current, ".git")
+		info, err := os.Stat(gitPath)
+		if err == nil && info.IsDir() {
+			// Found main repo — compute relative path back
+			relPath, err := filepath.Rel(cwd, filepath.Join(current, ".grava"))
+			if err != nil {
+				return "", fmt.Errorf("failed to compute relative path: %w", err)
+			}
+			return relPath, nil
+		}
+
+		// Move up one level
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached filesystem root without finding main repo
+			return "", fmt.Errorf("main repository not found: walked up to filesystem root")
+		}
+		current = parent
+		worktreeDepth++
+
+		// Safety: prevent infinite loops
+		if worktreeDepth > 20 {
+			return "", fmt.Errorf("main repository not found within 20 parent directories")
+		}
+	}
+}
+
+// WriteRedirectFile creates or updates .grava/redirect in a worktree.
+// The redirect file contains a relative path to the main repo's .grava directory.
+// Idempotent: if file exists, verifies content is correct (or updates silently).
+// Returns an error if cwd is not a worktree.
+func WriteRedirectFile(cwd string) (bool, error) {
+	// Verify this is a worktree before creating redirect
+	if !IsWorktree(cwd) {
+		return false, fmt.Errorf("not a git worktree: .git must be a file (worktree pointer), not a directory")
+	}
+
+	gravaDir := filepath.Join(cwd, ".grava")
+	redirectPath := filepath.Join(gravaDir, "redirect")
+
+	// Ensure .grava directory exists
+	if err := os.MkdirAll(gravaDir, 0755); err != nil {
+		return false, fmt.Errorf("failed to create .grava directory: %w", err)
+	}
+
+	// Compute the redirect path
+	relPath, err := ComputeRedirectPath(cwd)
+	if err != nil {
+		return false, fmt.Errorf("failed to compute redirect path: %w", err)
+	}
+
+	// Check if redirect file already exists
+	if _, err := os.Stat(redirectPath); err == nil {
+		// File exists — verify content (idempotent)
+		existingContent, err := os.ReadFile(redirectPath)
+		if err == nil && strings.TrimSpace(string(existingContent)) == relPath {
+			// Content is correct, no change needed
+			return false, nil
+		}
+		// Content differs or unreadable — update it
+	}
+
+	// Write redirect file
+	if err := os.WriteFile(redirectPath, []byte(relPath+"\n"), 0644); err != nil {
+		return false, fmt.Errorf("failed to write redirect file: %w", err)
+	}
+
+	// Check if this is the first time writing
+	return true, nil
+}
+
+// ResolveGravaDirWithRedirect resolves the .grava directory using the priority chain:
+// 1. GRAVA_DIR environment variable (if set)
+// 2. Per-worktree .grava/redirect file (if present)
+// 3. Main repository's .grava/ directory
+// 4. Walk up filesystem from cwd
+//
+// Returns an absolute path to the .grava directory.
+// This is the ADR-004 worktree-aware version.
+func ResolveGravaDirWithRedirect(cwd string) (string, error) {
+	// Priority 1: GRAVA_DIR environment variable
+	if envDir := os.Getenv("GRAVA_DIR"); envDir != "" {
+		// Convert to absolute path if relative
+		if !filepath.IsAbs(envDir) {
+			absDir, err := filepath.Abs(envDir)
+			if err != nil {
+				return "", fmt.Errorf("failed to resolve GRAVA_DIR: %w", err)
+			}
+			envDir = absDir
+		}
+		if _, err := os.Stat(envDir); err == nil {
+			return envDir, nil
+		}
+		// GRAVA_DIR set but doesn't exist — fall through
+	}
+
+	// Priority 2: Per-worktree .grava/redirect file (if in a worktree)
+	if IsWorktree(cwd) {
+		redirectPath := filepath.Join(cwd, ".grava", "redirect")
+		if content, err := os.ReadFile(redirectPath); err == nil {
+			relPath := strings.TrimSpace(string(content))
+			absPath := filepath.Join(cwd, relPath)
+			absPath, _ = filepath.Abs(absPath)
+			if _, err := os.Stat(absPath); err == nil {
+				return absPath, nil
+			}
+			// Redirect exists but path doesn't — fall through
+		}
+	}
+
+	// Priority 3: .grava/ in current directory
+	gravaDir := filepath.Join(cwd, ".grava")
+	if _, err := os.Stat(gravaDir); err == nil {
+		return gravaDir, nil
+	}
+
+	// Priority 4: Walk up filesystem from cwd
+	current := cwd
+	for {
+		gravaDir := filepath.Join(current, ".grava")
+		if _, err := os.Stat(gravaDir); err == nil {
+			return gravaDir, nil
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached filesystem root without finding .grava
+			return "", fmt.Errorf(".grava directory not found: searched from %s to filesystem root", cwd)
+		}
+		current = parent
+	}
+}

@@ -30,6 +30,33 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			return fmt.Errorf("failed to get working directory: %w", err)
 		}
 
+		// 0. Check if this is a worktree — if so, just write redirect and exit
+		if utils.IsWorktree(cwd) {
+			if !outputJSON {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "🌳 Detected Git worktree. Writing redirect to main repo .grava...")
+			}
+			created, err := utils.WriteRedirectFile(cwd)
+			if err != nil {
+				return fmt.Errorf("failed to initialize worktree: %w", err)
+			}
+			if !outputJSON {
+				if created {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Worktree initialized. Redirect to main repo .grava created.")
+				} else {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Worktree already initialized.")
+				}
+			}
+			if outputJSON {
+				resp := map[string]interface{}{
+					"status":   "initialized",
+					"worktree": true,
+				}
+				b, _ := json.MarshalIndent(resp, "", "  ")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			}
+			return nil
+		}
+
 		// 1. Resolve or install Dolt
 		doltBin, err := utils.ResolveDoltBinary(cwd)
 		if err != nil {
