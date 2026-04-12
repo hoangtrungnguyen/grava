@@ -194,8 +194,8 @@ func ProvisionWorktree(cwd, issueID string) error {
 	cmd := exec.Command("git", "worktree", "add", worktreeDir, "-b", branchName)
 	cmd.Dir = cwd
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to provision worktree: %w", err)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to provision worktree: %w\ngit output: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	return nil
@@ -204,23 +204,26 @@ func ProvisionWorktree(cwd, issueID string) error {
 // DeleteWorktree removes the worktree directory and prunes the branch (for rollback).
 // Executes: git worktree remove .worktree/<issueID> --force
 // Then: git branch -D grava/<issueID> (if branch exists)
+// Returns an error if worktree removal fails; branch deletion failures are collected
+// but do not block cleanup.
 func DeleteWorktree(cwd, issueID string) error {
 	worktreeDir := filepath.Join(cwd, ".worktree", issueID)
 	branchName := fmt.Sprintf("grava/%s", issueID)
+	var errs []string
 
 	// Remove worktree
 	cmd := exec.Command("git", "worktree", "remove", worktreeDir, "--force")
 	cmd.Dir = cwd
-
-	if err := cmd.Run(); err != nil {
-		// Only log but don't fail if worktree doesn't exist
-		fmt.Fprintf(os.Stderr, "Warning: failed to remove worktree: %v\n", err)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		errs = append(errs, fmt.Sprintf("worktree remove: %v (%s)", err, strings.TrimSpace(string(output))))
 	}
 
 	// Delete branch
 	cmd = exec.Command("git", "branch", "-D", branchName)
 	cmd.Dir = cwd
-	_ = cmd.Run() // Ignore error if branch doesn't exist
+	if output, err := cmd.CombinedOutput(); err != nil {
+		errs = append(errs, fmt.Sprintf("branch delete: %v (%s)", err, strings.TrimSpace(string(output))))
+	}
 
 	// Clean up empty .worktree directory
 	worktreeParent := filepath.Join(cwd, ".worktree")
@@ -228,5 +231,8 @@ func DeleteWorktree(cwd, issueID string) error {
 		_ = os.RemoveAll(worktreeParent)
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("delete worktree cleanup errors: %s", strings.Join(errs, "; "))
+	}
 	return nil
 }
