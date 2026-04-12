@@ -2,6 +2,7 @@ package issues
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -113,4 +114,48 @@ func TestClaimIssue_AlreadyClaimed_OpenWithAssignee(t *testing.T) {
 	var gravaErr *gravaerrors.GravaError
 	require.True(t, errors.As(err, &gravaErr))
 	assert.Equal(t, "ALREADY_CLAIMED", gravaErr.Code)
+}
+
+
+// TestRollbackClaimDB verifies that rollback restores DB state on worktree failure.
+func TestRollbackClaimDB(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	issueID := "grava-rollback-test"
+
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE issues SET status='open'").
+		WithArgs(issueID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO events").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	store := dolt.NewClientFromDB(db)
+	err = rollbackClaimDB(context.Background(), store, issueID)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestRollbackClaimDB_DBError verifies error handling when rollback fails.
+func TestRollbackClaimDB_DBError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	issueID := "grava-rollback-error"
+
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE issues SET status='open'").
+		WithArgs(issueID).
+		WillReturnError(sql.ErrConnDone)
+
+	store := dolt.NewClientFromDB(db)
+	err = rollbackClaimDB(context.Background(), store, issueID)
+	require.Error(t, err)
+	var gravaErr *gravaerrors.GravaError
+	require.True(t, errors.As(err, &gravaErr))
+	assert.Equal(t, "DB_UNREACHABLE", gravaErr.Code)
 }

@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -161,4 +162,71 @@ func ResolveGravaDirWithRedirect(cwd string) (string, error) {
 		}
 		current = parent
 	}
+}
+
+// CheckWorktreeConflict checks if a worktree directory or branch already exists.
+// Returns an error if either .worktree/<issueID> or grava/<issueID> branch exists.
+func CheckWorktreeConflict(cwd, issueID string) error {
+	// Check if worktree directory exists
+	worktreeDir := filepath.Join(cwd, ".worktree", issueID)
+	if _, err := os.Stat(worktreeDir); err == nil {
+		return fmt.Errorf("worktree directory %s already exists", worktreeDir)
+	}
+
+	// Check if branch exists (grava/<issueID>)
+	cmd := exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("grava/%s", issueID))
+	cmd.Dir = cwd
+	if err := cmd.Run(); err == nil {
+		// Branch exists
+		return fmt.Errorf("branch grava/%s already exists", issueID)
+	}
+
+	return nil
+}
+
+// ProvisionWorktree creates a git worktree at .worktree/<issueID> with branch grava/<issueID>.
+// Executes: git worktree add .worktree/<issueID> -b grava/<issueID>
+// Assumes cwd is the main repository root.
+func ProvisionWorktree(cwd, issueID string) error {
+	worktreeDir := filepath.Join(cwd, ".worktree", issueID)
+	branchName := fmt.Sprintf("grava/%s", issueID)
+
+	cmd := exec.Command("git", "worktree", "add", worktreeDir, "-b", branchName)
+	cmd.Dir = cwd
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to provision worktree: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteWorktree removes the worktree directory and prunes the branch (for rollback).
+// Executes: git worktree remove .worktree/<issueID> --force
+// Then: git branch -D grava/<issueID> (if branch exists)
+func DeleteWorktree(cwd, issueID string) error {
+	worktreeDir := filepath.Join(cwd, ".worktree", issueID)
+	branchName := fmt.Sprintf("grava/%s", issueID)
+
+	// Remove worktree
+	cmd := exec.Command("git", "worktree", "remove", worktreeDir, "--force")
+	cmd.Dir = cwd
+
+	if err := cmd.Run(); err != nil {
+		// Only log but don't fail if worktree doesn't exist
+		fmt.Fprintf(os.Stderr, "Warning: failed to remove worktree: %v\n", err)
+	}
+
+	// Delete branch
+	cmd = exec.Command("git", "branch", "-D", branchName)
+	cmd.Dir = cwd
+	_ = cmd.Run() // Ignore error if branch doesn't exist
+
+	// Clean up empty .worktree directory
+	worktreeParent := filepath.Join(cwd, ".worktree")
+	if entries, err := os.ReadDir(worktreeParent); err == nil && len(entries) == 0 {
+		_ = os.RemoveAll(worktreeParent)
+	}
+
+	return nil
 }

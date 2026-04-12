@@ -2,6 +2,7 @@ package utils
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -386,4 +387,102 @@ func TestResolveGravaDirWithRedirect(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCheckWorktreeConflict verifies conflict detection for existing worktrees/branches.
+func TestCheckWorktreeConflict(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(t *testing.T) (string, string) // Returns (cwd, issueID)
+		expectErr bool
+		errMsg    string
+	}{
+		{
+			name: "no conflict",
+			setup: func(t *testing.T) (string, string) {
+				return t.TempDir(), "grava-test"
+			},
+			expectErr: false,
+		},
+		{
+			name: "existing worktree directory",
+			setup: func(t *testing.T) (string, string) {
+				tmpdir := t.TempDir()
+				issueID := "grava-test"
+				worktreeDir := filepath.Join(tmpdir, ".worktree", issueID)
+				if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+					t.Fatalf("failed to create worktree dir: %v", err)
+				}
+				return tmpdir, issueID
+			},
+			expectErr: true,
+			errMsg:    "already exists",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cwd, issueID := tt.setup(t)
+			err := CheckWorktreeConflict(cwd, issueID)
+			if (err != nil) != tt.expectErr {
+				t.Errorf("CheckWorktreeConflict() error = %v, expectErr %v", err, tt.expectErr)
+			}
+			if tt.expectErr && tt.errMsg != "" && (err == nil || !strings.Contains(err.Error(), tt.errMsg)) {
+				t.Errorf("CheckWorktreeConflict() error message doesn't contain %q: %v", tt.errMsg, err)
+			}
+		})
+	}
+}
+
+// TestDeleteWorktree verifies worktree deletion for directory cleanup.
+func TestDeleteWorktree(t *testing.T) {
+	tmpdir := t.TempDir()
+	issueID := "grava-test"
+
+	// Initialize a test git repo
+	if err := runCmd(tmpdir, "git", "init"); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("failed to configure git: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.name", "Test User"); err != nil {
+		t.Fatalf("failed to configure git: %v", err)
+	}
+
+	// Create initial commit
+	dummyFile := filepath.Join(tmpdir, "dummy.txt")
+	if err := os.WriteFile(dummyFile, []byte("dummy"), 0644); err != nil {
+		t.Fatalf("failed to create dummy file: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "add", "dummy.txt"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "commit", "-m", "initial commit"); err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	// Create worktree using ProvisionWorktree
+	if err := ProvisionWorktree(tmpdir, issueID); err != nil {
+		t.Fatalf("ProvisionWorktree() error = %v", err)
+	}
+
+	// Test deletion
+	if err := DeleteWorktree(tmpdir, issueID); err != nil {
+		t.Errorf("DeleteWorktree() error = %v", err)
+	}
+
+	// Verify directory was deleted
+	worktreeDir := filepath.Join(tmpdir, ".worktree", issueID)
+	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
+		t.Errorf("worktree directory still exists")
+	}
+}
+
+// runCmd executes a command with given arguments in the specified directory.
+// Used by tests for git operations.
+func runCmd(dir, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	return cmd.Run()
 }

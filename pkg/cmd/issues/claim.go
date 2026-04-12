@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
+	"github.com/hoangtrungnguyen/grava/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -111,22 +113,81 @@ func tryClaimIssue(ctx context.Context, store dolt.Store, issueID, actor, model 
 func newClaimCmd(d *cmddeps.Deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "claim <issue-id>",
-		Short: "Claim an issue (set status to in_progress)",
-		Long:  `Claim an issue by atomically setting its status to in_progress and assigning it to the current actor.`,
+		Short: "Claim an issue and provision a Git worktree",
+		Long:  `Claim an issue by setting its status to in_progress and provisioning a Git worktree at .worktree/<issue-id> with branch grava/<issue-id>.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			issueID := args[0]
+
+			// Get current working directory for worktree operations
+			cwd, err := os.Getwd()
+			if err != nil {
+				return gravaerrors.New("CWD_UNREACHABLE", "failed to get working directory", err)
+			}
+
+			// Step 1: Check for worktree conflicts BEFORE attempting DB claim
+			if err := utils.CheckWorktreeConflict(cwd, issueID); err != nil {
+				return gravaerrors.New("WORKTREE_CONFLICT", err.Error(), err)
+			}
+
+			// Step 2: Attempt DB claim
 			result, err := claimIssue(ctx, *d.Store, issueID, *d.Actor, *d.AgentModel)
 			if err != nil {
 				return err
 			}
+
+			// Step 3: DB claim succeeded, now provision worktree
+			if provErr := utils.ProvisionWorktree(cwd, issueID); provErr != nil {
+				// Step 4: Worktree provisioning failed, rollback DB state
+				rollbackErr := rollbackClaimDB(ctx, *d.Store, issueID)
+				if rollbackErr != nil {
+					// Both worktree and rollback failed — critical error
+					return gravaerrors.New("ATOMIC_FAILURE",
+						fmt.Sprintf("worktree provisioning failed (%v) and rollback failed (%v)", provErr, rollbackErr),
+						provErr)
+				}
+				// Rollback succeeded, return the worktree provisioning error
+				return gravaerrors.New("WORKTREE_PROVISION_FAILED",
+					fmt.Sprintf("failed to provision worktree: %v", provErr), provErr)
+			}
+
+			// Success
 			if *d.OutputJSON {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Claimed %s (status: in_progress, actor: %s)\n",
-				result.IssueID, result.Actor)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Claimed %s (status: in_progress, actor: %s)\n✅ Provisioned worktree: .worktree/%s (branch: grava/%s)\n",
+				result.IssueID, result.Actor, issueID, issueID)
 			return nil
 		},
 	}
+}
+
+// rollbackClaimDB reverts the issue status from in_progress back to open.
+// Called when worktree provisioning fails after DB claim succeeds.
+func rollbackClaimDB(ctx context.Context, store dolt.Store, issueID string) error {
+	// Enforce a 5s timeout if the caller didn't set one
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
+	err := dolt.WithAuditedTx(ctx, store, []dolt.AuditEvent{
+		{
+			IssueID:   issueID,
+			EventType: dolt.EventUpdate,
+			OldValue:  map[string]any{"status": "in_progress"},
+			NewValue:  map[string]any{"status": "open"},
+		},
+	}, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			"UPDATE issues SET status='open', assignee=NULL, agent_model=NULL, updated_at=NOW() WHERE id=?",
+			issueID)
+		if err != nil {
+			return gravaerrors.New("DB_UNREACHABLE", "failed to rollback issue status", err)
+		}
+		return nil
+	})
+	return err
 }
