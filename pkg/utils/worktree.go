@@ -259,7 +259,9 @@ func LinkClaudeWorktree(cwd, issueID string) error {
 			return nil // Already correct
 		}
 		// Wrong target — remove and recreate
-		os.Remove(symlinkPath)
+		if err := os.Remove(symlinkPath); err != nil {
+			return fmt.Errorf("failed to remove stale symlink: %w", err)
+		}
 	}
 
 	// Ensure .claude/worktrees/ directory exists
