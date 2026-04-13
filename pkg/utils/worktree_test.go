@@ -486,3 +486,84 @@ func runCmd(dir, name string, args ...string) error {
 	cmd.Dir = dir
 	return cmd.Run()
 }
+
+// TestLinkClaudeWorktree verifies symlink creation from .claude/worktrees/<id> to .worktree/<id>.
+func TestLinkClaudeWorktree(t *testing.T) {
+	tmpdir := t.TempDir()
+	issueID := "grava-symlink-test"
+
+	// Create the target worktree directory (as if ProvisionWorktree already ran)
+	worktreeDir := filepath.Join(tmpdir, ".worktree", issueID)
+	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	// Write a marker file so we can verify the symlink works
+	if err := os.WriteFile(filepath.Join(worktreeDir, "marker.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatalf("failed to write marker: %v", err)
+	}
+
+	// Run the function
+	if err := LinkClaudeWorktree(tmpdir, issueID); err != nil {
+		t.Fatalf("LinkClaudeWorktree() error = %v", err)
+	}
+
+	// Verify symlink exists at .claude/worktrees/<id>
+	symlinkPath := filepath.Join(tmpdir, ".claude", "worktrees", issueID)
+	info, err := os.Lstat(symlinkPath)
+	if err != nil {
+		t.Fatalf("symlink not created: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("expected symlink, got %v", info.Mode())
+	}
+
+	// Verify symlink resolves to the worktree directory
+	target, err := os.Readlink(symlinkPath)
+	if err != nil {
+		t.Fatalf("failed to read symlink: %v", err)
+	}
+	// Resolve and compare absolute paths
+	resolvedTarget := filepath.Join(filepath.Dir(symlinkPath), target)
+	absTarget, _ := filepath.Abs(resolvedTarget)
+	absWorktree, _ := filepath.Abs(worktreeDir)
+	if absTarget != absWorktree {
+		t.Errorf("symlink target = %s, want %s", absTarget, absWorktree)
+	}
+
+	// Verify we can read through the symlink
+	content, err := os.ReadFile(filepath.Join(symlinkPath, "marker.txt"))
+	if err != nil {
+		t.Errorf("failed to read through symlink: %v", err)
+	}
+	if string(content) != "hello" {
+		t.Errorf("content = %q, want %q", string(content), "hello")
+	}
+}
+
+// TestLinkClaudeWorktree_Idempotent verifies that calling it twice doesn't fail.
+func TestLinkClaudeWorktree_Idempotent(t *testing.T) {
+	tmpdir := t.TempDir()
+	issueID := "grava-idem-test"
+
+	worktreeDir := filepath.Join(tmpdir, ".worktree", issueID)
+	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	// Call twice
+	if err := LinkClaudeWorktree(tmpdir, issueID); err != nil {
+		t.Fatalf("first call error = %v", err)
+	}
+	if err := LinkClaudeWorktree(tmpdir, issueID); err != nil {
+		t.Fatalf("second call error = %v", err)
+	}
+}
+
+// TestLinkClaudeWorktree_MissingTarget verifies error when .worktree/<id> doesn't exist.
+func TestLinkClaudeWorktree_MissingTarget(t *testing.T) {
+	tmpdir := t.TempDir()
+	err := LinkClaudeWorktree(tmpdir, "grava-nonexistent")
+	if err == nil {
+		t.Error("expected error for missing worktree target, got nil")
+	}
+}

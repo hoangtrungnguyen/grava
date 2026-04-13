@@ -111,10 +111,12 @@ func tryClaimIssue(ctx context.Context, store dolt.Store, issueID, actor, model 
 }
 
 func newClaimCmd(d *cmddeps.Deps) *cobra.Command {
-	return &cobra.Command{
+	var launch bool
+
+	cmd := &cobra.Command{
 		Use:   "claim <issue-id>",
 		Short: "Claim an issue and provision a Git worktree",
-		Long:  `Claim an issue by setting its status to in_progress and provisioning a Git worktree at .worktree/<issue-id> with branch grava/<issue-id>.`,
+		Long:  `Claim an issue by setting its status to in_progress and provisioning a Git worktree at .worktree/<issue-id> with branch grava/<issue-id>. Use --launch to also create a Claude-compatible symlink.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -139,17 +141,22 @@ func newClaimCmd(d *cmddeps.Deps) *cobra.Command {
 
 			// Step 3: DB claim succeeded, now provision worktree
 			if provErr := utils.ProvisionWorktree(cwd, issueID); provErr != nil {
-				// Step 4: Worktree provisioning failed, rollback DB state
+				// Worktree provisioning failed, rollback DB state
 				rollbackErr := rollbackClaimDB(ctx, *d.Store, issueID)
 				if rollbackErr != nil {
-					// Both worktree and rollback failed — critical error
 					return gravaerrors.New("ATOMIC_FAILURE",
 						fmt.Sprintf("worktree provisioning failed (%v) and rollback failed (%v)", provErr, rollbackErr),
 						provErr)
 				}
-				// Rollback succeeded, return the worktree provisioning error
 				return gravaerrors.New("WORKTREE_PROVISION_FAILED",
 					fmt.Sprintf("failed to provision worktree: %v", provErr), provErr)
+			}
+
+			// Step 4: If --launch, create Claude symlink
+			if launch {
+				if linkErr := utils.LinkClaudeWorktree(cwd, issueID); linkErr != nil {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Claude symlink failed: %v\n", linkErr)
+				}
 			}
 
 			// Success
@@ -158,9 +165,17 @@ func newClaimCmd(d *cmddeps.Deps) *cobra.Command {
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Claimed %s (status: in_progress, actor: %s)\n✅ Provisioned worktree: .worktree/%s (branch: grava/%s)\n",
 				result.IssueID, result.Actor, issueID, issueID)
+			if launch {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Claude symlink: .claude/worktrees/%s → .worktree/%s\n"+
+					"   Launch Claude in worktree: cd .worktree/%s && claude\n",
+					issueID, issueID, issueID)
+			}
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&launch, "launch", false, "Create Claude-compatible symlink at .claude/worktrees/<id>")
+	return cmd
 }
 
 // rollbackClaimDB reverts the issue status from in_progress back to open.

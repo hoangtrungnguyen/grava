@@ -236,3 +236,46 @@ func DeleteWorktree(cwd, issueID string) error {
 	}
 	return nil
 }
+
+// LinkClaudeWorktree creates a symlink from .claude/worktrees/<issueID> to .worktree/<issueID>.
+// This redirects Claude Code's default worktree location to grava's unified .worktree/ directory.
+// Idempotent: if the symlink already exists and points to the correct target, returns nil.
+// Returns an error if the target .worktree/<issueID> does not exist.
+func LinkClaudeWorktree(cwd, issueID string) error {
+	worktreeDir := filepath.Join(cwd, ".worktree", issueID)
+	if _, err := os.Stat(worktreeDir); err != nil {
+		return fmt.Errorf("worktree target does not exist: %s", worktreeDir)
+	}
+
+	claudeWorktreesDir := filepath.Join(cwd, ".claude", "worktrees")
+	symlinkPath := filepath.Join(claudeWorktreesDir, issueID)
+
+	// Check if symlink already exists
+	if target, err := os.Readlink(symlinkPath); err == nil {
+		resolved := filepath.Join(filepath.Dir(symlinkPath), target)
+		absResolved, _ := filepath.Abs(resolved)
+		absWorktree, _ := filepath.Abs(worktreeDir)
+		if absResolved == absWorktree {
+			return nil // Already correct
+		}
+		// Wrong target — remove and recreate
+		os.Remove(symlinkPath)
+	}
+
+	// Ensure .claude/worktrees/ directory exists
+	if err := os.MkdirAll(claudeWorktreesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .claude/worktrees directory: %w", err)
+	}
+
+	// Compute relative path from symlink location to target
+	relPath, err := filepath.Rel(claudeWorktreesDir, worktreeDir)
+	if err != nil {
+		return fmt.Errorf("failed to compute relative path: %w", err)
+	}
+
+	if err := os.Symlink(relPath, symlinkPath); err != nil {
+		return fmt.Errorf("failed to create symlink: %w", err)
+	}
+
+	return nil
+}
