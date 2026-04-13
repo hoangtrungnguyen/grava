@@ -132,6 +132,7 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	root.AddCommand(newSubtaskCmd(d))
 	root.AddCommand(newQuickCmd(d))
 	root.AddCommand(newClaimCmd(d))
+	root.AddCommand(newCloseCmd(d))
 	root.AddCommand(newStartCmd(d))
 	root.AddCommand(newStopCmd(d))
 	root.AddCommand(newWispCmd(d))

@@ -567,3 +567,123 @@ func TestLinkClaudeWorktree_MissingTarget(t *testing.T) {
 		t.Error("expected error for missing worktree target, got nil")
 	}
 }
+
+// TestIsWorktreeDirty verifies dirty-state detection in a worktree.
+func TestIsWorktreeDirty(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	// Set up a real git repo with a worktree
+	if err := runCmd(tmpdir, "git", "init"); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.email", "test@test.com"); err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.name", "Test"); err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpdir, "f.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "add", "f.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "commit", "-m", "init"); err != nil {
+		t.Fatal(err)
+	}
+
+	issueID := "grava-dirty-test"
+	if err := ProvisionWorktree(tmpdir, issueID); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	wtDir := filepath.Join(tmpdir, ".worktree", issueID)
+
+	// Clean worktree — should not be dirty
+	dirty, err := IsWorktreeDirty(tmpdir, issueID)
+	if err != nil {
+		t.Fatalf("IsWorktreeDirty (clean): %v", err)
+	}
+	if dirty {
+		t.Error("expected clean worktree, got dirty")
+	}
+
+	// Create untracked file — should be dirty
+	if err := os.WriteFile(filepath.Join(wtDir, "new.txt"), []byte("y"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	dirty, err = IsWorktreeDirty(tmpdir, issueID)
+	if err != nil {
+		t.Fatalf("IsWorktreeDirty (untracked): %v", err)
+	}
+	if !dirty {
+		t.Error("expected dirty worktree (untracked file)")
+	}
+}
+
+// TestRemoveWorktreeOnly verifies worktree directory removal while keeping the branch.
+func TestRemoveWorktreeOnly(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	if err := runCmd(tmpdir, "git", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.email", "t@t.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.name", "T"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpdir, "f.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "add", "f.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "commit", "-m", "init"); err != nil {
+		t.Fatal(err)
+	}
+
+	issueID := "grava-remove-only"
+	if err := ProvisionWorktree(tmpdir, issueID); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	// Remove worktree only
+	if err := RemoveWorktreeOnly(tmpdir, issueID); err != nil {
+		t.Fatalf("RemoveWorktreeOnly: %v", err)
+	}
+
+	// Directory should be gone
+	wtDir := filepath.Join(tmpdir, ".worktree", issueID)
+	if _, err := os.Stat(wtDir); !os.IsNotExist(err) {
+		t.Error("worktree directory still exists")
+	}
+
+	// Branch should still exist
+	cmd := exec.Command("git", "rev-parse", "--verify", "grava/"+issueID)
+	cmd.Dir = tmpdir
+	if err := cmd.Run(); err != nil {
+		t.Error("branch grava/" + issueID + " was deleted, should have been kept")
+	}
+}
+
+// TestIsInsideClaudeWorktree verifies Claude worktree environment detection.
+func TestIsInsideClaudeWorktree(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	// Not inside Claude worktree
+	if IsInsideClaudeWorktree(tmpdir) {
+		t.Error("false positive: tmpdir is not a Claude worktree")
+	}
+
+	// Create .claude/worktrees/<id> structure
+	claudeWT := filepath.Join(tmpdir, ".claude", "worktrees", "grava-test")
+	if err := os.MkdirAll(claudeWT, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if IsInsideClaudeWorktree(claudeWT) {
+		t.Log("correctly detected Claude worktree")
+	} else {
+		t.Error("failed to detect Claude worktree directory")
+	}
+}

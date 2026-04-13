@@ -281,3 +281,46 @@ func LinkClaudeWorktree(cwd, issueID string) error {
 
 	return nil
 }
+
+// IsWorktreeDirty checks if the worktree at .worktree/<issueID> has uncommitted changes.
+// Returns true if there are staged, unstaged, or untracked files.
+func IsWorktreeDirty(cwd, issueID string) (bool, error) {
+	worktreeDir := filepath.Join(cwd, ".worktree", issueID)
+	if _, err := os.Stat(worktreeDir); err != nil {
+		return false, fmt.Errorf("worktree does not exist: %s", worktreeDir)
+	}
+
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = worktreeDir
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to check worktree status: %w", err)
+	}
+
+	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// RemoveWorktreeOnly removes the worktree directory but keeps the branch intact.
+// Used by `grava stop` for pausing work — the branch is preserved for future resumption.
+func RemoveWorktreeOnly(cwd, issueID string) error {
+	worktreeDir := filepath.Join(cwd, ".worktree", issueID)
+
+	cmd := exec.Command("git", "worktree", "remove", worktreeDir, "--force")
+	cmd.Dir = cwd
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to remove worktree: %w\ngit output: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	// Clean up empty .worktree directory
+	worktreeParent := filepath.Join(cwd, ".worktree")
+	if entries, err := os.ReadDir(worktreeParent); err == nil && len(entries) == 0 {
+		_ = os.RemoveAll(worktreeParent)
+	}
+
+	return nil
+}
+
+// IsInsideClaudeWorktree checks if the given path is inside a .claude/worktrees/ directory.
+func IsInsideClaudeWorktree(cwd string) bool {
+	return strings.Contains(filepath.ToSlash(cwd), ".claude/worktrees/")
+}

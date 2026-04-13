@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
+	"github.com/hoangtrungnguyen/grava/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -110,6 +113,17 @@ Example:
 					return writeJSONError(cmd, err)
 				}
 				return err
+			}
+
+			// AC#3: Remove worktree directory but keep branch for future resumption
+			cwd, cwdErr := os.Getwd()
+			if cwdErr == nil {
+				worktreeDir := filepath.Join(cwd, ".worktree", id)
+				if _, statErr := os.Stat(worktreeDir); statErr == nil {
+					if removeErr := utils.RemoveWorktreeOnly(cwd, id); removeErr != nil {
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Worktree cleanup warning: %v\n", removeErr)
+					}
+				}
 			}
 
 			if *d.OutputJSON {
