@@ -20,8 +20,9 @@ const (
 )
 
 // hookShim returns the shim content for a named hook.
-// The shim delegates to 'grava hook run <name>' and preserves any
-// renamed original hook by calling it first.
+// The shim delegates exclusively to 'grava hook run <name>'. Any pre-existing
+// hook is preserved on disk as <name>.pre-grava but is not chained by the shim
+// itself; hook dispatch (including calling the original) is handled by grava.
 func hookShim(name string) string {
 	return fmt.Sprintf("#!/bin/sh\n%s\ngrava hook run %s \"$@\"\n", ShimMarker, name)
 }
@@ -54,6 +55,9 @@ type DeployResult struct {
 //     grava writes the shim on top of the primary path (Action="installed").
 //
 // All shim files are written with mode 0755.
+//
+// On error, results contains the successfully processed hooks up to the failure
+// point; the caller should treat results as partial and not assume completeness.
 func DeployAll(hooksDir string, w io.Writer) ([]DeployResult, error) {
 	if err := os.MkdirAll(hooksDir, 0755); err != nil { //nolint:gosec
 		return nil, fmt.Errorf("failed to create hooks directory %s: %w", hooksDir, err)
@@ -94,7 +98,11 @@ func deployOne(hooksDir, name string, w io.Writer) (DeployResult, error) {
 		} else {
 			// Foreign hook — preserve it.
 			preserved := path + preservedSuffix
-			if _, err := os.Stat(preserved); os.IsNotExist(err) {
+			_, statErr := os.Stat(preserved)
+			if statErr != nil && !os.IsNotExist(statErr) {
+				return DeployResult{}, fmt.Errorf("failed to stat %s: %w", preserved, statErr)
+			}
+			if os.IsNotExist(statErr) {
 				_, _ = fmt.Fprintf(w, "⚠️  Existing hook %s renamed to %s\n", path, preserved)
 				if err := os.Rename(path, preserved); err != nil {
 					return DeployResult{}, fmt.Errorf("failed to rename %s: %w", path, err)
