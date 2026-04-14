@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/hoangtrungnguyen/grava/pkg/orchestrator"
 	"github.com/spf13/cobra"
@@ -84,7 +88,37 @@ Example config (.grava/orchestrator.yaml):
 				a.ID, a.Endpoint, a.MaxConcurrentTasks,
 			)
 		}
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator ready. (polling not yet implemented)")
+		// When Store is nil (e.g. dry-run / tests), print config summary and exit.
+		if Store == nil {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator ready.")
+			return nil
+		}
+
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator ready. Starting poll loop...")
+
+		pool := orchestrator.NewAgentPool(agents)
+		orc := orchestrator.NewOrchestrator(Store, pool, cfg)
+
+		// Cancel context on SIGTERM / SIGINT for graceful shutdown.
+		cmdCtx := cmd.Context()
+		if cmdCtx == nil {
+			cmdCtx = context.Background()
+		}
+		ctx, cancel := context.WithCancel(cmdCtx)
+		defer cancel()
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		go func() {
+			select {
+			case <-sigCh:
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "\nSignal received — draining in-flight tasks...")
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+
+		orc.Run(ctx)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator exited cleanly.")
 		return nil
 	},
 }
