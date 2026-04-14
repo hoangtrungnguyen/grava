@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
@@ -63,10 +64,14 @@ func (p *Poller) Run(ctx context.Context) {
 func (p *Poller) poll(ctx context.Context) {
 	tasks, err := p.fetchTasks(ctx)
 	if err != nil {
-		// Transient error — log nothing (callers can wrap with a logger if needed).
+		slog.Error("poller: failed to fetch tasks", "error", err)
 		return
 	}
+	if len(tasks) > 0 {
+		slog.Debug("poller: fetched tasks", "count", len(tasks))
+	}
 	for _, t := range tasks {
+		slog.Debug("poller: dispatching task to sink", "task_id", t.ID, "priority", t.Priority)
 		p.sink(t)
 	}
 }

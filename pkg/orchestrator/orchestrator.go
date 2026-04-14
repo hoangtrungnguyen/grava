@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -43,6 +44,11 @@ func NewOrchestrator(store dolt.Store, pool *AgentPool, cfg *Config) *Orchestrat
 // SIGTERM), the poller and watchdog stop; Run blocks until all in-flight
 // dispatches complete before returning (graceful drain).
 func (o *Orchestrator) Run(ctx context.Context) {
+	slog.Info("orchestrator: starting",
+		"poll_interval_secs", o.cfg.PollIntervalSecs,
+		"heartbeat_timeout_secs", o.cfg.HeartbeatTimeoutSecs,
+		"task_timeout_secs", o.cfg.TaskTimeoutSecs)
+
 	// dispatchCtx allows in-flight goroutines to finish after polling stops.
 	// A 30s drain timeout ensures Run() is not blocked forever by a hung agent.
 	drainTimeout := time.Duration(o.cfg.TaskTimeoutSecs) * time.Second
@@ -54,8 +60,10 @@ func (o *Orchestrator) Run(ctx context.Context) {
 	o.dispatchCtx = dispatchCtx
 	o.mu.Unlock()
 	defer func() {
-		o.wg.Wait()   // drain in-flight dispatches (bounded by drainTimeout)
+		slog.Info("orchestrator: draining in-flight tasks")
+		o.wg.Wait() // drain in-flight dispatches (bounded by drainTimeout)
 		cancelDispatch()
+		slog.Info("orchestrator: shutdown complete")
 	}()
 
 	poller := NewPoller(
@@ -66,6 +74,7 @@ func (o *Orchestrator) Run(ctx context.Context) {
 
 	go o.watchdog.Run(ctx)
 	poller.Run(ctx) // blocks until ctx cancelled
+	slog.Info("orchestrator: poll loop exited, waiting for in-flight tasks")
 }
 
 // sink is the TaskSink callback invoked by the Poller for each discovered task.
@@ -82,6 +91,7 @@ func (o *Orchestrator) sink(task DispatchableTask) {
 	agent := o.pool.Pick()
 	if agent == nil {
 		// No capacity — task stays open; next poll tick will retry.
+		slog.Debug("orchestrator: no agent available for task", "task_id", task.ID)
 		return
 	}
 
@@ -96,7 +106,12 @@ func (o *Orchestrator) sink(task DispatchableTask) {
 		}
 		// Mark task in_progress so the Poller does not re-dispatch it.
 		// Uses AND status='open' guard to prevent overwriting a concurrent close.
-		_ = o.claimTask(dispatchCtx, task.ID, agent.cfg.ID)
+		if err := o.claimTask(dispatchCtx, task.ID, agent.cfg.ID); err != nil {
+			slog.Error("orchestrator: failed to claim task after dispatch",
+				"task_id", task.ID, "agent", agent.cfg.ID, "error", err)
+		} else {
+			slog.Info("orchestrator: task claimed", "task_id", task.ID, "agent", agent.cfg.ID)
+		}
 	}()
 }
 

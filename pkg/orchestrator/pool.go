@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -69,6 +70,9 @@ func (p *AgentPool) Pick() *Agent {
 	}
 	if best != nil {
 		best.activeTasks++ // reserve slot optimistically
+		slog.Debug("pool: agent slot reserved", "agent", best.cfg.ID, "active_tasks", best.activeTasks)
+	} else {
+		slog.Debug("pool: no available agent with capacity")
 	}
 	return best
 }
@@ -116,6 +120,7 @@ func (p *AgentPool) Dispatch(ctx context.Context, agent *Agent, task Dispatchabl
 	if err != nil {
 		// Network-level failure: release slot and mark agent unavailable.
 		p.releaseSlot(agent, true)
+		slog.Warn("pool: dispatch failed (network error)", "agent", agent.cfg.ID, "task_id", task.ID, "error", err)
 		return fmt.Errorf("pool: dispatch to %s: %w", agent.cfg.ID, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
@@ -124,9 +129,11 @@ func (p *AgentPool) Dispatch(ctx context.Context, agent *Agent, task Dispatchabl
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		p.releaseSlot(agent, false)
+		slog.Warn("pool: dispatch rejected by agent", "agent", agent.cfg.ID, "task_id", task.ID, "http_status", resp.StatusCode)
 		return fmt.Errorf("pool: agent %s returned HTTP %d", agent.cfg.ID, resp.StatusCode)
 	}
 
+	slog.Info("pool: task dispatched", "agent", agent.cfg.ID, "task_id", task.ID)
 	return nil
 }
 

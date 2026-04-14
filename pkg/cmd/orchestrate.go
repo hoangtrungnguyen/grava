@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -93,6 +94,21 @@ Example config (.grava/orchestrator.yaml):
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator ready.")
 			return nil
 		}
+
+		// Configure structured logger: JSON by default, text when LOG_FORMAT=text.
+		// LOG_LEVEL=debug enables debug-level output.
+		logLevel := slog.LevelInfo
+		if os.Getenv("LOG_LEVEL") == "debug" {
+			logLevel = slog.LevelDebug
+		}
+		handlerOpts := &slog.HandlerOptions{Level: logLevel}
+		var handler slog.Handler
+		if os.Getenv("LOG_FORMAT") == "text" {
+			handler = slog.NewTextHandler(os.Stderr, handlerOpts)
+		} else {
+			handler = slog.NewJSONHandler(os.Stderr, handlerOpts)
+		}
+		slog.SetDefault(slog.New(handler))
 
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator ready. Starting poll loop...")
 

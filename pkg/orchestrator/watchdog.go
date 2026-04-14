@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -80,21 +81,34 @@ func (w *Watchdog) checkHeartbeats(ctx context.Context) {
 			alreadyDead := agent.dead
 			w.pool.mu.Unlock()
 
+			slog.Warn("watchdog: agent heartbeat failed",
+				"agent", agent.cfg.ID,
+				"consecutive_failures", failures,
+				"error", err)
+
 			// Only fire markAgentDead on the exact tick that crosses the threshold,
 			// not on every subsequent tick while the agent remains unresponsive.
 			if failures == w.maxFailures && !alreadyDead {
 				w.pool.mu.Lock()
 				agent.dead = true
 				w.pool.mu.Unlock()
+				slog.Error("watchdog: agent declared dead", "agent", agent.cfg.ID)
 				w.markAgentDead(ctx, agent)
 			}
 		} else {
 			// Successful heartbeat: reset failure counter and restore availability.
 			w.pool.mu.Lock()
+			wasUnavailable := !agent.available
 			agent.consecutiveFailures = 0
 			agent.available = true
 			agent.dead = false
 			w.pool.mu.Unlock()
+
+			if wasUnavailable {
+				slog.Info("watchdog: agent recovered", "agent", agent.cfg.ID)
+			} else {
+				slog.Debug("watchdog: agent heartbeat ok", "agent", agent.cfg.ID)
+			}
 		}
 	}
 }
@@ -186,6 +200,7 @@ WHERE status = 'in_progress'
 	}
 
 	for _, id := range ids {
+		slog.Warn("watchdog: task timeout exceeded, resetting to open", "task_id", id, "timeout_secs", w.taskTimeoutSecs)
 		_ = w.resetTask(ctx, id)
 		_ = w.writeComment(ctx, id, "Task timeout exceeded. Task reassigned.")
 	}
