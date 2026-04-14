@@ -241,54 +241,54 @@ With --dry-run, doctor shows what --fix would change without executing any write
 
 			// Check #12: expired file reservations (FR-ECS-1c).
 			expiredLeases, expiredCheckErr := queryExpiredLeases(ctx, store)
+			var fixResult map[string]any // non-nil when --fix ran
 			if expiredCheckErr != nil {
 				checks = append(checks, doctorCheck{"Expired file leases", "WARN",
 					fmt.Sprintf("could not check: %v", expiredCheckErr)})
 			} else if len(expiredLeases) > 0 {
-				detail := fmt.Sprintf("%d expired lease(s) not yet released", len(expiredLeases))
-				if flagDryRun {
-					detail += " (--dry-run: would release)"
-				} else if !flagFix {
-					detail += " — run `grava doctor --fix` to auto-release"
+				switch {
+				case flagDryRun:
+					// List exact IDs so the user knows what would be released.
+					detail := fmt.Sprintf("%d expired lease(s) would be released: %s",
+						len(expiredLeases), strings.Join(expiredLeases, ", "))
+					checks = append(checks, doctorCheck{"Expired file leases", "WARN", detail})
+				case flagFix:
+					// Release expired leases and fold result into the check.
+					released, fixErr := releaseExpiredLeases(ctx, store, expiredLeases)
+					if fixErr != nil {
+						checks = append(checks, doctorCheck{"Expired file leases", "FAIL",
+							fmt.Sprintf("auto-release failed: %v", fixErr)})
+						hasFailure = true
+						fixResult = map[string]any{
+							"check":        "expired_file_reservations",
+							"status":       "error",
+							"action_taken": fmt.Sprintf("error during release: %v", fixErr),
+						}
+					} else {
+						checks = append(checks, doctorCheck{"Expired file leases", "PASS",
+							fmt.Sprintf("released %d expired lease(s) (auto-fix)", released)})
+						fixResult = map[string]any{
+							"check":        "expired_file_reservations",
+							"status":       "fixed",
+							"action_taken": fmt.Sprintf("released %d expired lease(s)", released),
+						}
+					}
+				default:
+					detail := fmt.Sprintf("%d expired lease(s) not yet released — run `grava doctor --fix` to auto-release",
+						len(expiredLeases))
+					checks = append(checks, doctorCheck{"Expired file leases", "WARN", detail})
 				}
-				checks = append(checks, doctorCheck{"Expired file leases", "WARN", detail})
 			} else {
 				checks = append(checks, doctorCheck{"Expired file leases", "PASS", "none found"})
-			}
-
-			// --fix: release expired leases (skip in --dry-run mode).
-			if flagFix && !flagDryRun && expiredCheckErr == nil && len(expiredLeases) > 0 {
-				released, fixErr := releaseExpiredLeases(ctx, store, expiredLeases)
-				if fixErr != nil {
-					if outputJSON {
-						b, _ := json.Marshal(map[string]any{
-							"check":       "expired_file_reservations",
-							"status":      "error",
-							"action_taken": fmt.Sprintf("error during release: %v", fixErr),
-						})
-						fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
-					} else {
-						cmd.Printf("❌ Failed to release expired leases: %v\n", fixErr)
-					}
-					return fixErr
-				}
-				if outputJSON {
-					b, _ := json.Marshal(map[string]any{
-						"check":       "expired_file_reservations",
-						"status":      "fixed",
-						"action_taken": fmt.Sprintf("released %d expired lease(s)", released),
-					})
-					fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
-					return nil
-				}
-				cmd.Printf("🔧 Released %d expired lease(s).\n", released)
-				return nil
 			}
 
 			if outputJSON {
 				resp := map[string]any{"status": "healthy", "checks": checks}
 				if hasFailure {
 					resp["status"] = "unhealthy"
+				}
+				if fixResult != nil {
+					resp["fix_result"] = fixResult
 				}
 				b, _ := json.MarshalIndent(resp, "", "  ")
 				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
@@ -353,7 +353,7 @@ func releaseExpiredLeases(ctx context.Context, store dolt.Store, ids []string) (
 		if err != nil {
 			return released, fmt.Errorf("release lease %s: %w", id, err)
 		}
-		n, _ := result.RowsAffected()
+		n, _ := result.RowsAffected() // RowsAffected never errors for MySQL/Dolt drivers
 		released += int(n)
 	}
 	return released, nil

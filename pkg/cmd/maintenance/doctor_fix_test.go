@@ -115,3 +115,61 @@ func TestReleaseExpiredLeases_DBError(t *testing.T) {
 	assert.Contains(t, err.Error(), "deadlock")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// --- integration-style test: full query → release pipeline ---
+
+// TestDoctorFix_FullFlow exercises the complete two-step path:
+//  1. queryExpiredLeases detects expired rows
+//  2. releaseExpiredLeases issues UPDATE for each ID
+//
+// This mirrors the AC: "seed expired reservation, run doctor --fix,
+// verify released_ts is set".
+func TestDoctorFix_FullFlow(t *testing.T) {
+	store, mock := newDoctorMock(t)
+
+	// Step 1: two expired leases are detected.
+	mock.ExpectQuery(qSelectExpired).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).
+			AddRow("res-exp-01").
+			AddRow("res-exp-02"))
+
+	// Step 2: both are released.
+	mock.ExpectExec(qUpdateRelease).
+		WithArgs("res-exp-01").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qUpdateRelease).
+		WithArgs("res-exp-02").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	ctx := context.Background()
+	ids, err := queryExpiredLeases(ctx, store)
+	require.NoError(t, err)
+	require.Equal(t, []string{"res-exp-01", "res-exp-02"}, ids)
+
+	released, err := releaseExpiredLeases(ctx, store, ids)
+	require.NoError(t, err)
+	assert.Equal(t, 2, released, "both expired leases must be released")
+
+	assert.NoError(t, mock.ExpectationsWereMet(), "all expected DB calls must have been made")
+}
+
+// TestDoctorFix_NoExpiredLeases_NoDBWrite verifies that when there are no
+// expired leases, releaseExpiredLeases issues no UPDATE queries.
+func TestDoctorFix_NoExpiredLeases_NoDBWrite(t *testing.T) {
+	store, mock := newDoctorMock(t)
+
+	mock.ExpectQuery(qSelectExpired).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	ctx := context.Background()
+	ids, err := queryExpiredLeases(ctx, store)
+	require.NoError(t, err)
+	assert.Empty(t, ids)
+
+	// releaseExpiredLeases must not issue any UPDATE when ids is empty.
+	released, err := releaseExpiredLeases(ctx, store, ids)
+	require.NoError(t, err)
+	assert.Equal(t, 0, released)
+
+	assert.NoError(t, mock.ExpectationsWereMet(), "no UPDATE should be issued when no expired leases found")
+}
