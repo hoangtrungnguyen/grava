@@ -36,10 +36,6 @@ func expectStatsQueries(mock sqlmock.Sqlmock, blockedCount, staleCount int, avgC
 			AddRow("blocked", blockedCount).
 			AddRow("closed", 2))
 
-	// blocked count
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'blocked'`)).
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(blockedCount))
-
 	// stale in_progress count
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'in_progress' AND COALESCE(wisp_heartbeat_at, updated_at) < DATE_SUB(NOW(), INTERVAL 1 HOUR)`)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(staleCount))
@@ -123,7 +119,8 @@ func TestStatsCmd_JSONOutput(t *testing.T) {
 
 	assert.Equal(t, 3, result.BlockedCount)
 	assert.Equal(t, 2, result.StaleInProgressCount)
-	assert.InDelta(t, 120.5, result.AvgCycleTimeMinutes, 0.01)
+	require.NotNil(t, result.AvgCycleTimeMinutes)
+	assert.InDelta(t, 120.5, *result.AvgCycleTimeMinutes, 0.01)
 	assert.Greater(t, result.Total, 0)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -146,7 +143,27 @@ func TestStatsCmd_ZeroBlockedAndStale(t *testing.T) {
 
 	assert.Equal(t, 0, result.BlockedCount)
 	assert.Equal(t, 0, result.StaleInProgressCount)
-	assert.Equal(t, 0.0, result.AvgCycleTimeMinutes)
+	assert.Nil(t, result.AvgCycleTimeMinutes)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestStatsCmd_ZeroCycleTime tests that a genuine zero-minute average cycle time is shown.
+func TestStatsCmd_ZeroCycleTime(t *testing.T) {
+	deps, mock, cleanup := setupStatsMock(t, false)
+	defer cleanup()
+
+	zero := 0.0
+	expectStatsQueries(mock, 0, 0, &zero)
+
+	buf := &bytes.Buffer{}
+	cmd := newStatsCmd(deps)
+	cmd.SetOut(buf)
+	err := cmd.ExecuteContext(context.Background())
+	require.NoError(t, err)
+
+	// Zero cycle time is real data — line should appear with "0 min"
+	assert.Contains(t, buf.String(), "Avg Cycle Time:")
+	assert.Contains(t, buf.String(), "0 min")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

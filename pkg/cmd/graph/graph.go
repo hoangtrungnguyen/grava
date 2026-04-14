@@ -875,9 +875,9 @@ type StatsResult struct {
 	Total                int            `json:"total_issues"`
 	Open                 int            `json:"open_issues"`
 	Closed               int            `json:"closed_issues"`
-	BlockedCount         int            `json:"blocked_count"`
-	StaleInProgressCount int            `json:"stale_in_progress_count"`
-	AvgCycleTimeMinutes  float64        `json:"avg_cycle_time_minutes"`
+	BlockedCount         int      `json:"blocked_count"`
+	StaleInProgressCount int      `json:"stale_in_progress_count"`
+	AvgCycleTimeMinutes  *float64 `json:"avg_cycle_time_minutes"` // null when no closed issues have session data
 	ByStatus             map[string]int `json:"by_status"`
 	ByPriority           map[int]int    `json:"by_priority"`
 	ByAuthor             map[string]int `json:"by_author"`
@@ -920,12 +920,7 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 				stats.Total += count
 			}
 
-			// Blocked count
-			if err := (*d.Store).QueryRow(
-				"SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'blocked'",
-			).Scan(&stats.BlockedCount); err != nil {
-				return fmt.Errorf("query blocked count failed: %w", err)
-			}
+			stats.BlockedCount = stats.ByStatus["blocked"]
 
 			// Stale in_progress: no heartbeat or update in the last hour
 			if err := (*d.Store).QueryRow(
@@ -941,10 +936,7 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 			).Scan(&avgMinutes); err != nil {
 				return fmt.Errorf("query avg cycle time failed: %w", err)
 			}
-			hasCycleTimeData := avgMinutes != nil
-			if hasCycleTimeData {
-				stats.AvgCycleTimeMinutes = *avgMinutes
-			}
+			stats.AvgCycleTimeMinutes = avgMinutes
 
 			rows, err = (*d.Store).Query("SELECT priority, COUNT(*) FROM issues WHERE ephemeral = 0 GROUP BY priority")
 			if err != nil {
@@ -1035,8 +1027,8 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 			_, _ = fmt.Fprintf(w, "Closed Issues:\t%d\n", stats.Closed)
 			_, _ = fmt.Fprintf(w, "Blocked Issues:\t%d\n", stats.BlockedCount)
 			_, _ = fmt.Fprintf(w, "Stale In-Progress:\t%d\n", stats.StaleInProgressCount)
-			if hasCycleTimeData {
-				_, _ = fmt.Fprintf(w, "Avg Cycle Time:\t%.0f min\n", stats.AvgCycleTimeMinutes)
+			if stats.AvgCycleTimeMinutes != nil {
+				_, _ = fmt.Fprintf(w, "Avg Cycle Time:\t%.0f min\n", *stats.AvgCycleTimeMinutes)
 			}
 			_, _ = fmt.Fprintln(w, "")
 
