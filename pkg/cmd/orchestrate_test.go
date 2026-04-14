@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -112,6 +113,48 @@ func TestOrchestrateCmd_DefaultConfigPath(t *testing.T) {
 	err := orchestrateCmd.RunE(orchestrateCmd, []string{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read config")
+}
+
+func TestOrchestrateCmd_LogFormatText(t *testing.T) {
+	cfgPath, _ := writeOrchestratorConfig(t, t.TempDir())
+
+	t.Setenv("LOG_FORMAT", "text")
+	t.Setenv("LOG_LEVEL", "debug")
+
+	orchestrateConfigPath = cfgPath
+	outputJSON = false
+	t.Cleanup(func() { orchestrateConfigPath = ""; outputJSON = false })
+
+	buf := &bytes.Buffer{}
+	orchestrateCmd.SetOut(buf)
+	orchestrateCmd.SetErr(buf)
+
+	err := orchestrateCmd.RunE(orchestrateCmd, []string{})
+	require.NoError(t, err)
+
+	// Verify slog.Default() was configured with a TextHandler.
+	_, isText := slog.Default().Handler().(*slog.TextHandler)
+	assert.True(t, isText, "LOG_FORMAT=text should configure a slog.TextHandler")
+}
+
+func TestOrchestrateCmd_LogFormatJSONDefault(t *testing.T) {
+	cfgPath, _ := writeOrchestratorConfig(t, t.TempDir())
+
+	t.Setenv("LOG_FORMAT", "") // unset → JSON default
+
+	orchestrateConfigPath = cfgPath
+	outputJSON = false
+	t.Cleanup(func() { orchestrateConfigPath = ""; outputJSON = false })
+
+	buf := &bytes.Buffer{}
+	orchestrateCmd.SetOut(buf)
+	orchestrateCmd.SetErr(buf)
+
+	err := orchestrateCmd.RunE(orchestrateCmd, []string{})
+	require.NoError(t, err)
+
+	_, isJSON := slog.Default().Handler().(*slog.JSONHandler)
+	assert.True(t, isJSON, "empty LOG_FORMAT should configure a slog.JSONHandler")
 }
 
 func TestOrchestrateCmd_RelativeAgentsConfigPath(t *testing.T) {

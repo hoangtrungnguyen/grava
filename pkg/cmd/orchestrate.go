@@ -29,7 +29,11 @@ Example config (.grava/orchestrator.yaml):
   poll_interval_secs: 1
   heartbeat_timeout_secs: 15
   task_timeout_secs: 30
-  agents_config: orchestrator-agents.yaml`,
+  agents_config: orchestrator-agents.yaml
+
+Environment variables:
+  LOG_FORMAT   Log output format: 'json' (default) or 'text' (human-readable)
+  LOG_LEVEL    Log verbosity: 'info' (default) or 'debug'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfgPath := orchestrateConfigPath
 		if cfgPath == "" {
@@ -89,14 +93,9 @@ Example config (.grava/orchestrator.yaml):
 				a.ID, a.Endpoint, a.MaxConcurrentTasks,
 			)
 		}
-		// When Store is nil (e.g. dry-run / tests), print config summary and exit.
-		if Store == nil {
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator ready.")
-			return nil
-		}
-
 		// Configure structured logger: JSON by default, text when LOG_FORMAT=text.
 		// LOG_LEVEL=debug enables debug-level output.
+		// Configured before the dry-run guard so tests can exercise this path.
 		logLevel := slog.LevelInfo
 		if os.Getenv("LOG_LEVEL") == "debug" {
 			logLevel = slog.LevelDebug
@@ -109,6 +108,12 @@ Example config (.grava/orchestrator.yaml):
 			handler = slog.NewJSONHandler(os.Stderr, handlerOpts)
 		}
 		slog.SetDefault(slog.New(handler))
+
+		// When Store is nil (e.g. dry-run / tests), print config summary and exit.
+		if Store == nil {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator ready.")
+			return nil
+		}
 
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator ready. Starting poll loop...")
 

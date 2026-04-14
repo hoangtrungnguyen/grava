@@ -54,7 +54,6 @@ func NewAgentPool(configs []AgentConfig) *AgentPool {
 // decrements it. Returns nil if no eligible agent exists.
 func (p *AgentPool) Pick() *Agent {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	var best *Agent
 	for _, a := range p.agents {
@@ -68,9 +67,18 @@ func (p *AgentPool) Pick() *Agent {
 			best = a
 		}
 	}
+	var logAgentID string
+	var logActiveTasks int
 	if best != nil {
 		best.activeTasks++ // reserve slot optimistically
-		slog.Debug("pool: agent slot reserved", "agent", best.cfg.ID, "active_tasks", best.activeTasks)
+		logAgentID = best.cfg.ID
+		logActiveTasks = best.activeTasks
+	}
+	p.mu.Unlock()
+
+	// Log after releasing the lock to avoid holding the mutex during I/O.
+	if logAgentID != "" {
+		slog.Debug("pool: agent slot reserved", "agent", logAgentID, "active_tasks", logActiveTasks)
 	} else {
 		slog.Debug("pool: no available agent with capacity")
 	}

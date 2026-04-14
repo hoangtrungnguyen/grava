@@ -74,7 +74,6 @@ func (o *Orchestrator) Run(ctx context.Context) {
 
 	go o.watchdog.Run(ctx)
 	poller.Run(ctx) // blocks until ctx cancelled
-	slog.Info("orchestrator: poll loop exited, waiting for in-flight tasks")
 }
 
 // sink is the TaskSink callback invoked by the Poller for each discovered task.
