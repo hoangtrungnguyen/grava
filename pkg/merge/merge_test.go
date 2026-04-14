@@ -106,3 +106,48 @@ func TestProcessMerge_SameChangesBothSides(t *testing.T) {
 	assert.False(t, hasConflict)
 	assert.Contains(t, merged, `"status":"closed"`)
 }
+
+func TestProcessMerge_OutputIsSortedAlphabetically(t *testing.T) {
+	// Fields appear in reverse alphabetical order in the input to ensure we
+	// test that the output is sorted, not just passthrough.
+	ancestor := `{"id":"1","zzz":"z","aaa":"a","mmm":"m"}`
+	current := ancestor
+	other := ancestor
+
+	merged, _, err := ProcessMerge(ancestor, current, other)
+	assert.NoError(t, err)
+	// Expect keys to appear in sorted order: aaa, id, mmm, zzz
+	assert.Equal(t, `{"aaa":"a","id":"1","mmm":"m","zzz":"z"}`+"\n", merged)
+}
+
+func TestProcessMerge_DeterministicAcrossRuns(t *testing.T) {
+	// Run ProcessMerge multiple times on the same input to verify output is
+	// byte-for-byte identical regardless of map iteration order.
+	ancestor := `{"id":"1","alpha":"a","beta":"b","gamma":"g","delta":"d"}`
+	current := `{"id":"1","alpha":"a","beta":"b","gamma":"g","delta":"d","epsilon":"e"}`
+	other := ancestor
+
+	const runs = 20
+	var first string
+	for i := 0; i < runs; i++ {
+		merged, _, err := ProcessMerge(ancestor, current, other)
+		assert.NoError(t, err)
+		if i == 0 {
+			first = merged
+		} else {
+			assert.Equal(t, first, merged, "ProcessMerge output must be identical on run %d", i+1)
+		}
+	}
+}
+
+// TestMarshalSorted verifies the internal helper directly.
+func TestMarshalSorted_NestedMaps(t *testing.T) {
+	input := map[string]interface{}{
+		"z": map[string]interface{}{"b": 2, "a": 1},
+		"a": "first",
+	}
+	b, err := marshalSorted(input)
+	assert.NoError(t, err)
+	// Outer keys sorted: a, z. Inner keys sorted: a, b.
+	assert.Equal(t, `{"a":"first","z":{"a":1,"b":2}}`, string(b))
+}

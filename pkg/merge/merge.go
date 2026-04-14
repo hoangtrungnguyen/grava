@@ -1,6 +1,7 @@
 package merge
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -116,7 +117,7 @@ func ProcessMerge(ancestor, current, other string) (string, bool, error) {
 
 	var sb strings.Builder
 	for _, item := range mergedList {
-		b, err := json.Marshal(item)
+		b, err := marshalSorted(item)
 		if err != nil {
 			return "", false, err
 		}
@@ -125,6 +126,60 @@ func ProcessMerge(ancestor, current, other string) (string, bool, error) {
 	}
 
 	return sb.String(), hasAnyConflict, nil
+}
+
+// marshalSorted encodes v as JSON with map keys sorted alphabetically at every
+// level. This makes the output byte-for-byte stable across runs, ensuring that
+// the same logical merge always produces the same git object hash.
+func marshalSorted(v interface{}) ([]byte, error) {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		keys := make([]string, 0, len(val))
+		for k := range val {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		var buf bytes.Buffer
+		buf.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			keyBytes, err := json.Marshal(k)
+			if err != nil {
+				return nil, err
+			}
+			buf.Write(keyBytes)
+			buf.WriteByte(':')
+			valBytes, err := marshalSorted(val[k])
+			if err != nil {
+				return nil, err
+			}
+			buf.Write(valBytes)
+		}
+		buf.WriteByte('}')
+		return buf.Bytes(), nil
+
+	case []interface{}:
+		var buf bytes.Buffer
+		buf.WriteByte('[')
+		for i, elem := range val {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			b, err := marshalSorted(elem)
+			if err != nil {
+				return nil, err
+			}
+			buf.Write(b)
+		}
+		buf.WriteByte(']')
+		return buf.Bytes(), nil
+
+	default:
+		return json.Marshal(v)
+	}
 }
 
 func parseJSONL(content string) (map[string]map[string]interface{}, error) {
