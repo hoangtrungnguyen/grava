@@ -80,6 +80,21 @@ func TestProcessMerge_BothDeleted(t *testing.T) {
 	assert.Empty(t, merged)
 }
 
+func TestProcessMerge_SameIDAddedInBothWithConflict(t *testing.T) {
+	// Both branches add the same new issue ID with different field values.
+	// ancestor has no issue "5"; current and other both add it with differing titles.
+	ancestor := ``
+	current := `{"id":"5","title":"From current","status":"open"}`
+	other := `{"id":"5","title":"From other","status":"open"}`
+
+	merged, hasConflict, err := ProcessMerge(ancestor, current, other)
+	assert.NoError(t, err)
+	assert.True(t, hasConflict)
+	assert.Contains(t, merged, `"_conflict":true`)
+	assert.Contains(t, merged, `"local":"From current"`)
+	assert.Contains(t, merged, `"remote":"From other"`)
+}
+
 func TestProcessMerge_SameChangesBothSides(t *testing.T) {
 	ancestor := `{"id":"1","title":"A","status":"open"}`
 	current := `{"id":"1","title":"A","status":"closed"}`

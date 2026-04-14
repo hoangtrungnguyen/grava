@@ -141,9 +141,11 @@ func parseJSONL(content string) (map[string]map[string]interface{}, error) {
 		if err := json.Unmarshal([]byte(line), &obj); err != nil {
 			return nil, err
 		}
-		if id, ok := obj["id"].(string); ok {
-			result[id] = obj
+		id, ok := obj["id"].(string)
+		if !ok || id == "" {
+			return nil, fmt.Errorf("JSONL line has no 'id' field: %s", line)
 		}
+		result[id] = obj
 	}
 	return result, nil
 }

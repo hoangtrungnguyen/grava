@@ -14,6 +14,10 @@ var (
 	mergeOther    string
 )
 
+// conflictExitFn is the function called when merge conflicts are detected.
+// Overridable in tests to avoid os.Exit terminating the test process.
+var conflictExitFn = func(code int) { os.Exit(code) }
+
 var mergeSlotCmd = &cobra.Command{
 	Use:   "merge-slot",
 	Short: "Three-way merge driver for JSONL issues files",
@@ -56,7 +60,7 @@ Exit code 1 signals git that conflicts remain.`,
 
 		if hasConflict {
 			// Non-zero exit tells git that conflicts remain
-			os.Exit(1)
+			conflictExitFn(1)
 		}
 
 		return nil
