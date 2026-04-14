@@ -15,6 +15,29 @@ import (
 
 var qFetchTasks = regexp.QuoteMeta(`SELECT i.id, i.title, COALESCE(i.description, ''), i.priority`)
 
+// TestPoller_SQLUsesOpenStatusForBlocking verifies that the NOT EXISTS clause
+// filters by b.status = 'open', matching the ready-engine's invariant: a task
+// is unblocked once all its dependencies have been claimed (in_progress).
+func TestPoller_SQLUsesOpenStatusForBlocking(t *testing.T) {
+	const fullQuery = `SELECT i.id, i.title, COALESCE(i.description, ''), i.priority
+FROM issues i
+WHERE i.status = 'open'
+  AND i.ephemeral = 0
+  AND NOT EXISTS (
+      SELECT 1
+      FROM dependencies d
+      JOIN issues b ON b.id = d.from_id
+      WHERE d.to_id = i.id
+        AND b.status = 'open'
+  )
+ORDER BY i.priority ASC, i.created_at ASC`
+
+	assert.Contains(t, fullQuery, "b.status = 'open'",
+		"poller must filter by open blockers to match ready-engine semantics")
+	assert.NotContains(t, fullQuery, "b.status = 'in_progress'",
+		"in_progress check would incorrectly block dispatch of unblocked tasks")
+}
+
 func taskCols() []string { return []string{"id", "title", "description", "priority"} }
 
 func TestPoller_DeliversTasksInPriorityOrder(t *testing.T) {

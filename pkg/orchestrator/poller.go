@@ -57,9 +57,9 @@ func (p *Poller) Run(ctx context.Context) {
 	}
 }
 
-// poll fetches open tasks not blocked by in-progress dependencies and sends
-// each one to the sink in priority order (lowest priority number = highest
-// urgency).
+// poll fetches open tasks not blocked by unstarted (open) dependencies and
+// sends each one to the sink in priority order (lowest priority number =
+// highest urgency).
 func (p *Poller) poll(ctx context.Context) {
 	tasks, err := p.fetchTasks(ctx)
 	if err != nil {
@@ -71,7 +71,7 @@ func (p *Poller) poll(ctx context.Context) {
 	}
 }
 
-// fetchTasks returns open issues that have no blocking in-progress
+// fetchTasks returns open issues that have no unstarted (open) blocking
 // dependencies, ordered by priority ascending (1 = highest urgency).
 func (p *Poller) fetchTasks(ctx context.Context) ([]DispatchableTask, error) {
 	const query = `
@@ -84,7 +84,7 @@ WHERE i.status = 'open'
       FROM dependencies d
       JOIN issues b ON b.id = d.from_id
       WHERE d.to_id = i.id
-        AND b.status = 'in_progress'
+        AND b.status = 'open'
   )
 ORDER BY i.priority ASC, i.created_at ASC`
 
