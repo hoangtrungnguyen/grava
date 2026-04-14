@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
@@ -150,6 +151,16 @@ func newClaimCmd(d *cmddeps.Deps) *cobra.Command {
 				}
 				return gravaerrors.New("WORKTREE_PROVISION_FAILED",
 					fmt.Sprintf("failed to provision worktree: %v", provErr), provErr)
+			}
+
+			// Step 3b: Sync Claude settings and git user config into the new worktree.
+			// Both calls are non-fatal: on error, warn and continue.
+			worktreeDir := filepath.Join(cwd, ".worktree", issueID)
+			if err := utils.SyncClaudeSettings(cwd, worktreeDir); err != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Claude settings sync failed: %v\n", err)
+			}
+			if err := utils.ConfigureGitUser(cwd, worktreeDir); err != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  git user config failed: %v\n", err)
 			}
 
 			// Step 4: If --launch, create Claude symlink
