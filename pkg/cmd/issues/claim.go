@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
@@ -155,7 +154,7 @@ func newClaimCmd(d *cmddeps.Deps) *cobra.Command {
 
 			// Step 3b: Sync Claude settings and git user config into the new worktree.
 			// Both calls are non-fatal: on error, warn and continue.
-			worktreeDir := filepath.Join(cwd, ".worktree", issueID)
+			worktreeDir := utils.WorktreePath(cwd, issueID)
 			if err := utils.SyncClaudeSettings(cwd, worktreeDir); err != nil {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Claude settings sync failed: %v\n", err)
 			}

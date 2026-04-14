@@ -184,11 +184,18 @@ func CheckWorktreeConflict(cwd, issueID string) error {
 	return nil
 }
 
+// WorktreePath returns the canonical worktree directory for an issue:
+// <cwd>/.worktree/<issueID>. Used by ProvisionWorktree and any callers that
+// need to reference the worktree directory after provisioning.
+func WorktreePath(cwd, issueID string) string {
+	return filepath.Join(cwd, ".worktree", issueID)
+}
+
 // ProvisionWorktree creates a git worktree at .worktree/<issueID> with branch grava/<issueID>.
 // Executes: git worktree add .worktree/<issueID> -b grava/<issueID>
 // Assumes cwd is the main repository root.
 func ProvisionWorktree(cwd, issueID string) error {
-	worktreeDir := filepath.Join(cwd, ".worktree", issueID)
+	worktreeDir := WorktreePath(cwd, issueID)
 	branchName := fmt.Sprintf("grava/%s", issueID)
 
 	cmd := exec.Command("git", "worktree", "add", worktreeDir, "-b", branchName)
