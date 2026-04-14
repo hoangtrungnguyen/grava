@@ -149,6 +149,10 @@ func (w *Watchdog) markAgentDead(ctx context.Context, agent *Agent) {
 		_ = w.resetTask(ctx, id)
 		_ = w.writeComment(ctx, id,
 			fmt.Sprintf("Agent %s timeout/crash. Task reassigned.", agent.cfg.ID))
+		_ = writeEvent(ctx, w.store, id, "reset", "orchestrator",
+			map[string]string{"status": "in_progress"},
+			map[string]string{"status": "open"},
+		)
 	}
 }
 
@@ -203,6 +207,10 @@ WHERE status = 'in_progress'
 		slog.Warn("watchdog: task timeout exceeded, resetting to open", "task_id", id, "timeout_secs", w.taskTimeoutSecs)
 		_ = w.resetTask(ctx, id)
 		_ = w.writeComment(ctx, id, "Task timeout exceeded. Task reassigned.")
+		_ = writeEvent(ctx, w.store, id, "reset", "orchestrator",
+			map[string]string{"status": "in_progress"},
+			map[string]string{"status": "open"},
+		)
 	}
 }
 

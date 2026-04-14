@@ -21,6 +21,7 @@ var (
 	WHERE id = ? AND status = 'open'`)
 	qResetTaskOrc    = regexp.QuoteMeta(`UPDATE issues SET status = 'open', assignee = NULL, started_at = NULL WHERE id = ?`)
 	qWriteCommentOrc = `INSERT INTO issue_comments`
+	qWriteEventOrc   = `INSERT INTO events`
 )
 
 func newOrcMock(t *testing.T) (dolt.Store, sqlmock.Sqlmock) {
@@ -45,10 +46,11 @@ func TestOrchestrator_ClaimFirst_SuccessPath(t *testing.T) {
 	}))
 	t.Cleanup(agent.Close)
 
-	// Expect claim UPDATE then no reset (success path).
+	// Expect claim UPDATE then event INSERT (success path — no reset).
 	mock.ExpectExec(qClaimTask).
 		WithArgs("agent-1", "task-1").
 		WillReturnResult(sqlmock.NewResult(1, 1)) // 1 row affected → claimed
+	mock.ExpectExec(qWriteEventOrc).WillReturnResult(sqlmock.NewResult(1, 1))
 
 	pool := NewAgentPool([]AgentConfig{makeAgentConfig("agent-1", agent.URL, 3)})
 	cfg := &Config{
@@ -157,6 +159,7 @@ func TestOrchestrator_ClaimFirst_DispatchFailResetsTask(t *testing.T) {
 	mock.ExpectExec(qClaimTask).
 		WithArgs("agent-1", "task-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qWriteEventOrc).WillReturnResult(sqlmock.NewResult(1, 1)) // claim event
 	mock.ExpectExec(qResetTaskOrc).
 		WithArgs("task-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))

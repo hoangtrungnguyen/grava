@@ -16,12 +16,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// qResetTask / qFetchAssigned / qInsertComment are partial SQL anchors used
-// by sqlmock (prefix-match via regexp.QuoteMeta on leading tokens).
+// qResetTask / qFetchAssigned / qInsertComment / qInsertEvent are partial SQL
+// anchors used by sqlmock (prefix-match via regexp.QuoteMeta on leading tokens).
 var (
 	qFetchAssigned = regexp.QuoteMeta(`SELECT id FROM issues WHERE status = 'in_progress' AND assignee = ?`)
 	qResetTask     = regexp.QuoteMeta(`UPDATE issues SET status = 'open', assignee = NULL, started_at = NULL WHERE id = ?`)
 	qInsertComment = regexp.QuoteMeta(`INSERT INTO issue_comments (issue_id, message, actor) VALUES`)
+	qInsertEvent   = regexp.QuoteMeta(`INSERT INTO events`)
 	qTaskTimeout   = regexp.QuoteMeta(`SELECT id FROM issues`)
 )
 
@@ -68,14 +69,16 @@ func TestWatchdog_HealthyAgentResetsFailureCounter(t *testing.T) {
 func TestWatchdog_AgentDeclaredDeadAfterMaxFailures(t *testing.T) {
 	store, mock := newWatchdogMock(t)
 
-	// Expect DB calls for the dead agent: query tasks + reset + comment per task.
+	// Expect DB calls for the dead agent: query tasks + reset + comment + event per task.
 	mock.ExpectQuery(qFetchAssigned).
 		WithArgs("agent-dead").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("task-1").AddRow("task-2"))
 	mock.ExpectExec(qResetTask).WithArgs("task-1").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(qInsertComment).WithArgs("task-1", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qInsertEvent).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(qResetTask).WithArgs("task-2").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(qInsertComment).WithArgs("task-2", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qInsertEvent).WillReturnResult(sqlmock.NewResult(1, 1))
 
 	pool := NewAgentPool([]AgentConfig{
 		// Non-listening port — every ping will fail.
@@ -107,6 +110,7 @@ func TestWatchdog_TaskTimeoutResetsToOpen(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("timed-out-task"))
 	mock.ExpectExec(qResetTask).WithArgs("timed-out-task").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(qInsertComment).WithArgs("timed-out-task", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qInsertEvent).WillReturnResult(sqlmock.NewResult(1, 1))
 
 	pool := NewAgentPool([]AgentConfig{makeAgentConfig("agent-1", "http://localhost", 3)})
 	wd := NewWatchdog(pool, store, 10, 30)
@@ -169,6 +173,7 @@ func TestWatchdog_DeadAgentCommentContainsAgentID(t *testing.T) {
 	mock.ExpectExec(qInsertComment).
 		WithArgs("task-x", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qInsertEvent).WillReturnResult(sqlmock.NewResult(1, 1))
 
 	pool := NewAgentPool([]AgentConfig{
 		makeAgentConfig("agent-42", "http://127.0.0.1:19999", 3),

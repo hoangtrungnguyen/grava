@@ -126,6 +126,13 @@ func (o *Orchestrator) sink(task DispatchableTask) {
 			return
 		}
 		slog.Info("orchestrator: task claimed", "task_id", task.ID, "agent", agent.cfg.ID)
+		if evtErr := writeEvent(dispatchCtx, o.store, task.ID, "claim", "orchestrator",
+			map[string]string{"status": "open"},
+			map[string]string{"status": "in_progress", "assignee": agent.cfg.ID},
+		); evtErr != nil {
+			slog.Warn("orchestrator: failed to write claim event",
+				"task_id", task.ID, "error", evtErr)
+		}
 
 		// Dispatch after claim. On failure, reset the task to open so the
 		// Poller can retry it. Pool.Dispatch handles slot release on error.
