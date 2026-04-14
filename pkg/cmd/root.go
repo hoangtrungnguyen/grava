@@ -67,6 +67,12 @@ leveraging the power of a version-controlled database.`,
 			cmd.Name() == "install" {
 			return nil
 		}
+		// Hook dispatch commands connect to DB themselves with graceful
+		// failure handling so that a missing Dolt server does not block
+		// git operations (post-merge, post-checkout).
+		if cmd.Parent() != nil && cmd.Parent().Name() == "hook" {
+			return nil
+		}
 
 		// If Store is already injected (e.g. tests), use it
 		if Store != nil {

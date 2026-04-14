@@ -368,6 +368,38 @@ func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite,
 	return result, nil
 }
 
+// SyncIssuesFile opens the JSONL file at path and upserts all records into
+// store (overwrite=true). It is used by git hook handlers to sync after a
+// merge or checkout that changed issues.jsonl.
+func SyncIssuesFile(ctx context.Context, store dolt.Store, path string) (ImportResult, error) {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return ImportResult{}, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close() //nolint:errcheck
+	return importIssues(ctx, store, f, true, false)
+}
+
+// ValidateJSONL reads all lines from r and verifies each is parseable as an
+// ExportItem. Returns the first parse error encountered. Used by pre-commit
+// to reject malformed issues.jsonl before a commit lands.
+func ValidateJSONL(r io.Reader) error {
+	scanner := bufio.NewScanner(r)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var item ExportItem
+		if err := json.Unmarshal(line, &item); err != nil {
+			return fmt.Errorf("line %d: %w", lineNum, err)
+		}
+	}
+	return scanner.Err()
+}
+
 func newImportCmd(d *cmddeps.Deps) *cobra.Command {
 	var (
 		importFile         string
