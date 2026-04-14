@@ -165,7 +165,45 @@ func TestComputeSyncStatus_DoltUnavailableDoesNotBlockFileCheck(t *testing.T) {
 	assert.Equal(t, -1, r.DoltUncommitted)
 }
 
+func TestComputeSyncStatus_DoltAvailableFalseWhenQueryFails(t *testing.T) {
+	cleanup := setupSyncStatusRepo(t, `{"type":"issue","data":{"id":"1","title":"T"}}`+"\n")
+	defer cleanup()
+
+	writeLastImportHash("oldhash") // ensure we don't early-exit as never_imported
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	// dolt_status query fails (e.g., non-Dolt backend).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
+		WillReturnError(assert.AnError)
+
+	origConnect := connectDBFn
+	connectDBFn = func() (dolt.Store, error) { return dolt.NewClientFromDB(db), nil }
+	defer func() { connectDBFn = origConnect }()
+
+	r := computeSyncStatus("issues.jsonl")
+	// DoltAvailable must be false when the query itself fails.
+	assert.False(t, r.DoltAvailable, "DoltAvailable should be false when dolt_status query fails")
+	assert.Equal(t, -1, r.DoltUncommitted)
+}
+
 // --- CLI integration tests ---
+
+func TestSyncStatusCmd_NeverImportedExitsZero(t *testing.T) {
+	cleanup := setupSyncStatusRepo(t, `{"type":"issue","data":{"id":"1","title":"T"}}`+"\n")
+	defer cleanup()
+	// No stored hash.
+
+	origConnect := connectDBFn
+	connectDBFn = func() (dolt.Store, error) { return nil, assert.AnError }
+	defer func() { connectDBFn = origConnect }()
+
+	rootCmd.SetArgs([]string{"sync-status"})
+	err := rootCmd.Execute()
+	assert.NoError(t, err, "never_imported should exit 0 — it is informational, not an error")
+}
 
 func TestSyncStatusCmd_OutputsHumanReadable(t *testing.T) {
 	cleanup := setupSyncStatusRepo(t, `{"type":"issue","data":{"id":"1","title":"T"}}`+"\n")

@@ -31,8 +31,8 @@ Checks performed:
       that would be overwritten by the next hook sync.
 
 Exit codes:
-  0 — in sync or no file
-  1 — file changed, Dolt dirty, or both`,
+  0 — in_sync, no_file, or never_imported (informational, not errors)
+  1 — file_changed, dolt_dirty, or file_changed_and_dolt_dirty`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		issuesPath := resolveIssuesFilePath()
 		result := computeSyncStatus(issuesPath)
@@ -47,8 +47,9 @@ Exit codes:
 			printSyncStatus(cmd, result, issuesPath)
 		}
 
-		// Non-zero exit when out of sync so CI/scripts can detect divergence.
-		if result.Status != "in_sync" && result.Status != "no_file" {
+		// Non-zero exit when diverged so CI/scripts can detect problems.
+		// never_imported and no_file are informational — not error states.
+		if result.Status != "in_sync" && result.Status != "no_file" && result.Status != "never_imported" {
 			return fmt.Errorf("sync status: %s", result.Status)
 		}
 		return nil
@@ -81,9 +82,11 @@ func computeSyncStatus(issuesPath string) SyncStatusResult {
 	}
 
 	// Check C: Dolt uncommitted changes.
+	// DoltAvailable is only set true when both the connection AND the
+	// dolt_status query succeed; this keeps the struct in a consistent state
+	// (no "available but count unknown" sentinel).
 	store, err := connectDBFn()
 	if err == nil {
-		r.DoltAvailable = true
 		defer store.Close() //nolint:errcheck
 		rows, queryErr := store.Query("SELECT COUNT(*) FROM dolt_status")
 		if queryErr == nil {
@@ -92,6 +95,7 @@ func computeSyncStatus(issuesPath string) SyncStatusResult {
 			if rows.Next() {
 				_ = rows.Scan(&count)
 			}
+			r.DoltAvailable = true
 			r.DoltUncommitted = count
 		}
 	}
