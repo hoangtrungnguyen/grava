@@ -143,6 +143,31 @@ func TestHasMergeAttr_IgnoresPartialMatch(t *testing.T) {
 	assert.False(t, ok, "commented-out line should not count as present")
 }
 
+func TestHasMergeAttr_LeadingSpaceNotMatched(t *testing.T) {
+	dir, cleanup := tempGitRepo(t)
+	defer cleanup()
+
+	// Git does not strip leading spaces, so an indented line is not equivalent.
+	indented := "  " + gitattributes.MergeAttrLine
+	require.NoError(t, os.WriteFile(attrPath(dir), []byte(indented+"\n"), 0644))
+
+	ok, err := gitattributes.HasMergeAttr(dir)
+	require.NoError(t, err)
+	assert.False(t, ok, "leading-space variant should not count as present")
+}
+
+func TestHasMergeAttr_TrailingWhitespaceIgnored(t *testing.T) {
+	dir, cleanup := tempGitRepo(t)
+	defer cleanup()
+
+	withTrailing := gitattributes.MergeAttrLine + "   \r"
+	require.NoError(t, os.WriteFile(attrPath(dir), []byte(withTrailing+"\n"), 0644))
+
+	ok, err := gitattributes.HasMergeAttr(dir)
+	require.NoError(t, err)
+	assert.True(t, ok, "trailing whitespace/CR should be ignored")
+}
+
 func TestRepoRoot(t *testing.T) {
 	_, cleanup := tempGitRepo(t)
 	defer cleanup()
