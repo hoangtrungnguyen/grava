@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -154,12 +155,23 @@ func writeConflicts(path string, entries []merge.ConflictEntry) error {
 	return os.WriteFile(path, b, 0644) //nolint:gosec
 }
 
+// resolveIssuesFilePath returns the absolute path to issues.jsonl by asking
+// git for the repository root. Falls back to "issues.jsonl" relative to CWD
+// when not inside a git repo (e.g. tests).
+func resolveIssuesFilePath() string {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "issues.jsonl"
+	}
+	return filepath.Join(strings.TrimSpace(string(out)), "issues.jsonl")
+}
+
 // applyConflictResolution patches issues.jsonl by replacing the conflicted
 // field with the chosen winner value and removing the _conflict marker.
 func applyConflictResolution(target *merge.ConflictEntry, winner json.RawMessage) error {
-	const issuesFile = "issues.jsonl"
+	issuesFile := resolveIssuesFilePath()
 
-	b, err := os.ReadFile(issuesFile)
+	b, err := os.ReadFile(issuesFile) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", issuesFile, err)
 	}

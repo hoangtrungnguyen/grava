@@ -2,6 +2,7 @@ package merge
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -138,6 +139,80 @@ func TestProcessMerge_DeterministicAcrossRuns(t *testing.T) {
 			assert.Equal(t, first, merged, "ProcessMerge output must be identical on run %d", i+1)
 		}
 	}
+}
+
+// --- ExtractConflicts ---
+
+func TestExtractConflicts_Empty(t *testing.T) {
+	entries, err := ExtractConflicts("", time.Now())
+	assert.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+func TestExtractConflicts_FieldLevelConflict(t *testing.T) {
+	merged := `{"id":"issue-1","status":"open","title":{"_conflict":true,"local":"X","remote":"Y"}}` + "\n"
+	entries, err := ExtractConflicts(merged, time.Now())
+	assert.NoError(t, err)
+	assert.Len(t, entries, 1)
+	assert.Equal(t, "issue-1", entries[0].IssueID)
+	assert.Equal(t, "title", entries[0].Field)
+	assert.Equal(t, `"X"`, string(entries[0].Local))
+	assert.Equal(t, `"Y"`, string(entries[0].Remote))
+	assert.NotEmpty(t, entries[0].ID)
+}
+
+func TestExtractConflicts_MultipleFields(t *testing.T) {
+	// Two conflicted fields on the same issue — both extracted.
+	merged := `{"id":"issue-2","a":{"_conflict":true,"local":"A1","remote":"A2"},"b":{"_conflict":true,"local":"B1","remote":"B2"}}` + "\n"
+	entries, err := ExtractConflicts(merged, time.Now())
+	assert.NoError(t, err)
+	assert.Len(t, entries, 2)
+	// Output is sorted by field name.
+	assert.Equal(t, "a", entries[0].Field)
+	assert.Equal(t, "b", entries[1].Field)
+}
+
+func TestExtractConflicts_IssueLevelDeleteConflict(t *testing.T) {
+	// Top-level _conflict:true — whole-issue conflict.
+	merged := `{"_conflict":true,"id":"issue-3","local":null,"remote":{"id":"issue-3","title":"changed"}}` + "\n"
+	entries, err := ExtractConflicts(merged, time.Now())
+	assert.NoError(t, err)
+	assert.Len(t, entries, 1)
+	assert.Equal(t, "issue-3", entries[0].IssueID)
+	assert.Equal(t, "", entries[0].Field) // empty field = whole-issue
+	assert.Equal(t, "null", string(entries[0].Local))
+}
+
+func TestExtractConflicts_MixedIssues(t *testing.T) {
+	// One clean issue and one with a field conflict — only the conflict is returned.
+	merged := `{"id":"issue-1","title":"clean"}` + "\n" +
+		`{"id":"issue-2","title":{"_conflict":true,"local":"X","remote":"Y"}}` + "\n"
+	entries, err := ExtractConflicts(merged, time.Now())
+	assert.NoError(t, err)
+	assert.Len(t, entries, 1)
+	assert.Equal(t, "issue-2", entries[0].IssueID)
+}
+
+func TestExtractConflicts_SortedByIssueIDThenField(t *testing.T) {
+	// Conflicts across multiple issues — output sorted by issue_id then field.
+	merged := `{"id":"issue-b","z":{"_conflict":true,"local":1,"remote":2}}` + "\n" +
+		`{"id":"issue-a","z":{"_conflict":true,"local":3,"remote":4},"a":{"_conflict":true,"local":5,"remote":6}}` + "\n"
+	entries, err := ExtractConflicts(merged, time.Now())
+	assert.NoError(t, err)
+	assert.Len(t, entries, 3)
+	assert.Equal(t, "issue-a", entries[0].IssueID)
+	assert.Equal(t, "a", entries[0].Field)
+	assert.Equal(t, "issue-a", entries[1].IssueID)
+	assert.Equal(t, "z", entries[1].Field)
+	assert.Equal(t, "issue-b", entries[2].IssueID)
+}
+
+func TestExtractConflicts_IDIsDeterministic(t *testing.T) {
+	// The conflict ID must be stable: same issue+field always yields same ID.
+	merged := `{"id":"issue-1","title":{"_conflict":true,"local":"X","remote":"Y"}}` + "\n"
+	e1, _ := ExtractConflicts(merged, time.Now())
+	e2, _ := ExtractConflicts(merged, time.Now())
+	assert.Equal(t, e1[0].ID, e2[0].ID)
 }
 
 // TestMarshalSorted verifies the internal helper directly.
