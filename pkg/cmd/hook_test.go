@@ -154,7 +154,8 @@ func TestSyncFromFile_DBUnavailableExitsZero(t *testing.T) {
 	defer hookRunCmd.SetErr(nil)
 
 	// Override db_url to an unreachable address.
-	t.Setenv("GRAVA_DB_URL", "root@tcp(127.0.0.1:19999)/grava?parseTime=true")
+	// viper.AutomaticEnv maps key "db_url" → env var "DB_URL" (no prefix configured).
+	t.Setenv("DB_URL", "root@tcp(127.0.0.1:19999)/grava?parseTime=true")
 
 	// syncFromFile should warn but return nil.
 	err := syncFromFile(hookRunCmd, "test")

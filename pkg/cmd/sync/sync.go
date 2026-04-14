@@ -383,8 +383,12 @@ func SyncIssuesFile(ctx context.Context, store dolt.Store, path string) (ImportR
 // ValidateJSONL reads all lines from r and verifies each is parseable as an
 // ExportItem. Returns the first parse error encountered. Used by pre-commit
 // to reject malformed issues.jsonl before a commit lands.
+// Note: validates structural JSON/ExportItem parsing only; semantic field
+// constraints (required 'id', valid status values, etc.) are not checked.
 func ValidateJSONL(r io.Reader) error {
 	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 10*1024*1024) // match importIssues buffer size
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++

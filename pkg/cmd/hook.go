@@ -49,10 +49,15 @@ Supported hooks:
 	},
 }
 
-// tryConnectDB attempts to connect to the Dolt database using the resolved DB URL.
-// Returns a nil Store and a non-nil error when the database is unreachable.
+// tryConnectDB attempts to connect to the Dolt database using the same
+// resolution chain as PersistentPreRunE: --db-url flag → viper (config/env)
+// → hardcoded default. Hook commands skip PersistentPreRunE so they must
+// replicate this chain themselves.
 func tryConnectDB() (dolt.Store, error) {
-	url := viper.GetString("db_url")
+	url := dbURL // set by --db-url flag during cobra flag parsing
+	if url == "" {
+		url = viper.GetString("db_url")
+	}
 	if url == "" {
 		url = "root@tcp(127.0.0.1:3306)/grava?parseTime=true"
 	}
