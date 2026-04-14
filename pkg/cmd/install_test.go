@@ -3,7 +3,6 @@ package cmd
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -99,7 +98,8 @@ func TestRegisterMergeDriver(t *testing.T) {
 	dir, cleanup := initTempGitRepo(t)
 	defer cleanup()
 
-	err := registerMergeDriver(installCmd)
+	var buf strings.Builder
+	err := registerMergeDriver(&buf, &buf)
 	assert.NoError(t, err)
 
 	assert.Equal(t, "Grava JSONL Merge Driver",
@@ -123,12 +123,11 @@ func TestInstallCmd_OutputContainsSuccess(t *testing.T) {
 }
 
 func TestGitConfigHelpers(t *testing.T) {
-	dir, cleanup := initTempGitRepo(t)
+	_, cleanup := initTempGitRepo(t)
 	defer cleanup()
 
-	_ = dir
-
-	err := gitConfigSet("test.key", "test-value")
+	var buf strings.Builder
+	err := gitConfigSet("test.key", "test-value", &buf, &buf)
 	assert.NoError(t, err)
 
 	val, ok := gitConfigGet("test.key")
@@ -163,7 +162,3 @@ func TestInstallCmd_SharedFlagExists(t *testing.T) {
 	assert.Equal(t, "false", f.DefValue)
 }
 
-// helperFilePath returns an absolute path relative to the test dir.
-func helperFilePath(dir, rel string) string {
-	return filepath.Join(dir, rel)
-}

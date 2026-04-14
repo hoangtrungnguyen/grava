@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"os/exec"
 
 	"github.com/spf13/cobra"
@@ -11,8 +11,9 @@ import (
 // mergeDriverName is the git merge driver identifier used in .git/config and .gitattributes.
 const mergeDriverName = "grava"
 
-// mergeDriverCmd is the command string git uses to invoke the merge driver.
+// mergeDriverCmd is the driver command string stored in .git/config.
 // %O = ancestor, %A = current (result written here), %B = other.
+// Requires 'grava' on PATH at merge time; run 'which grava' to verify.
 const mergeDriverCmd = "grava merge-slot --ancestor %O --current %A --other %B"
 
 var installCmd = &cobra.Command{
@@ -24,10 +25,12 @@ merge driver for JSONL issue files.
 Registers the 'grava' merge driver in .git/config so that Git delegates
 JSONL file merging to 'grava merge-slot' instead of the default text merge.
 
-Run this once per repository (or once per worktree clone). Subsequent stories
-will extend this command to also configure .gitattributes and Git hooks.`,
+Run this once per repository (or once per worktree clone).
+
+Note: 'grava' must be on PATH at merge time. This command will be extended
+in future releases to also configure .gitattributes and deploy Git hooks.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := registerMergeDriver(cmd); err != nil {
+		if err := registerMergeDriver(cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 			return err
 		}
 
@@ -36,9 +39,8 @@ will extend this command to also configure .gitattributes and Git hooks.`,
 	},
 }
 
-// registerMergeDriver writes the grava merge driver configuration to .git/config
-// using the standard git-config command.
-func registerMergeDriver(cmd *cobra.Command) error {
+// registerMergeDriver writes the grava merge driver configuration to .git/config.
+func registerMergeDriver(stdout, stderr io.Writer) error {
 	configs := [][]string{
 		{"merge." + mergeDriverName + ".name", "Grava JSONL Merge Driver"},
 		{"merge." + mergeDriverName + ".driver", mergeDriverCmd},
@@ -46,8 +48,8 @@ func registerMergeDriver(cmd *cobra.Command) error {
 
 	for _, kv := range configs {
 		c := exec.Command("git", "config", kv[0], kv[1]) //nolint:gosec
-		c.Stdout = cmd.OutOrStdout()
-		c.Stderr = cmd.ErrOrStderr()
+		c.Stdout = stdout
+		c.Stderr = stderr
 		if err := c.Run(); err != nil {
 			return fmt.Errorf("failed to set git config %s: %w", kv[0], err)
 		}
@@ -81,10 +83,10 @@ func gitConfigGet(key string) (string, bool) {
 	return val, true
 }
 
-// gitConfigSet writes a git config value.
-func gitConfigSet(key, value string) error {
+// gitConfigSet writes a git config value, routing output to the provided writers.
+func gitConfigSet(key, value string, stdout, stderr io.Writer) error {
 	c := exec.Command("git", "config", key, value) //nolint:gosec
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
+	c.Stdout = stdout
+	c.Stderr = stderr
 	return c.Run()
 }
