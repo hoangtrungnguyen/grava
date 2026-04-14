@@ -125,9 +125,12 @@ leveraging the power of a version-controlled database.`,
 		gravelog.Logger.Debug().Str("command", cmd.Name()).Msg("Grava command completed")
 
 		if Store != nil {
-			// Record the command in cmd_audit_log before closing the connection.
-			argsBytes, _ := json.Marshal(os.Args[1:])
-			maintenance.RecordCommand(cmd.Context(), Store, cmd.CommandPath(), actor, string(argsBytes), 0)
+			// Record write commands in cmd_audit_log before closing the connection.
+			// Read-only commands are excluded — only state-mutating commands are audited.
+			if !isReadOnlyCommand(cmd.Name()) {
+				argsBytes, _ := json.Marshal(os.Args[1:])
+				maintenance.RecordCommand(cmd.Context(), Store, cmd.CommandPath(), actor, string(argsBytes), 0)
+			}
 
 			err := Store.Close()
 			Store = nil
@@ -184,6 +187,28 @@ func init() {
 	maintenance.AddCommands(rootCmd, deps)
 	synccmd.AddCommands(rootCmd, deps)
 	cmdreserve.AddCommands(rootCmd, deps)
+}
+
+// readOnlyCommands is the set of command names that do not mutate state and
+// should not be recorded in cmd_audit_log.
+var readOnlyCommands = map[string]bool{
+	"list":        true,
+	"show":        true,
+	"history":     true,
+	"ready":       true,
+	"blocked":     true,
+	"graph":       true,
+	"doctor":      true,
+	"stats":       true,
+	"search":      true,
+	"cmd_history": true,
+	"sync-status": true,
+	"version":     true,
+}
+
+// isReadOnlyCommand returns true when the command name is known to be read-only.
+func isReadOnlyCommand(name string) bool {
+	return readOnlyCommands[name]
 }
 
 // initConfig reads in config file and ENV variables if set.

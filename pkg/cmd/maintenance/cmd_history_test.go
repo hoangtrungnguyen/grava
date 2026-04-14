@@ -1,12 +1,15 @@
 package maintenance
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"regexp"
 	"testing"
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -132,4 +135,97 @@ func TestRecordCommand_SwallowsError(t *testing.T) {
 func TestGenerateCmdAuditID(t *testing.T) {
 	id := generateCmdAuditID()
 	assert.Regexp(t, `^cal-[0-9a-f]{6}$`, id)
+}
+
+// TestQueryCmdHistory_ArgsIsJSONArray verifies that the Args field is
+// deserialized as a JSON array (not a double-encoded string) in the output.
+func TestQueryCmdHistory_ArgsIsJSONArray(t *testing.T) {
+	store, mock := newMaintMock(t)
+	now := time.Now()
+
+	mock.ExpectQuery(qQueryCmdHistory).
+		WillReturnRows(historyColumns().
+			AddRow("cal-001122", "grava create", "agent-01", `["create","--title","foo"]`, 0, now))
+
+	entries, err := QueryCmdHistory(context.Background(), store, "", 50)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+
+	// Encode entry to JSON and verify args is an array, not a string.
+	b, err := json.Marshal(entries[0])
+	require.NoError(t, err)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(b, &decoded))
+
+	argsRaw, ok := decoded["args"]
+	require.True(t, ok, "args field must be present")
+	// args must decode as a []interface{}, not a string.
+	_, isArray := argsRaw.([]any)
+	assert.True(t, isArray, "args must be a JSON array, got %T: %v", argsRaw, argsRaw)
+
+	// Spot-check the values.
+	arr := argsRaw.([]any)
+	assert.Equal(t, "create", arr[0])
+	assert.Equal(t, "--title", arr[1])
+	assert.Equal(t, "foo", arr[2])
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestQueryCmdHistory_ArgsEmptyOmitted verifies that empty args are omitted from JSON.
+func TestQueryCmdHistory_ArgsEmptyOmitted(t *testing.T) {
+	store, mock := newMaintMock(t)
+	now := time.Now()
+
+	mock.ExpectQuery(qQueryCmdHistory).
+		WillReturnRows(historyColumns().
+			AddRow("cal-003344", "grava list", "agent-01", "", 0, now))
+
+	entries, err := QueryCmdHistory(context.Background(), store, "", 50)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+
+	b, err := json.Marshal(entries[0])
+	require.NoError(t, err)
+
+	// "args" should not appear when empty (omitempty).
+	assert.NotContains(t, string(b), `"args"`)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestCmdHistoryCmd_JSONOutput exercises the --json output path via bytes.Buffer,
+// specifically verifying that the args field serializes as a JSON array (not a string).
+func TestCmdHistoryCmd_JSONOutput(t *testing.T) {
+	store, mock := newMaintMock(t)
+	now := time.Now()
+
+	mock.ExpectQuery(qQueryCmdHistory).
+		WillReturnRows(historyColumns().
+			AddRow("cal-aabb99", "grava create", "agent-01", `["create","--title","x"]`, 0, now))
+
+	outputJSON := true
+	actor := "agent-01"
+	agentModel := ""
+	d := &cmddeps.Deps{Store: &store, OutputJSON: &outputJSON, Actor: &actor, AgentModel: &agentModel}
+	cmd := newCmdHistoryCmd(d)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, cmd.Execute())
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+
+	entries, ok := result["entries"].([]any)
+	require.True(t, ok, "entries must be a JSON array")
+	require.Len(t, entries, 1)
+
+	entry := entries[0].(map[string]any)
+	args, ok := entry["args"].([]any)
+	require.True(t, ok, "args must be a JSON array in output, not a string — got: %T %v", entry["args"], entry["args"])
+	assert.Equal(t, "create", args[0])
+
+	require.NoError(t, mock.ExpectationsWereMet())
 }

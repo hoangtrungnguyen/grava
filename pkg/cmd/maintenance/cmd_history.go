@@ -16,12 +16,12 @@ import (
 
 // CmdAuditEntry is a single row from cmd_audit_log.
 type CmdAuditEntry struct {
-	ID        string    `json:"id"`
-	Command   string    `json:"command"`
-	Actor     string    `json:"actor"`
-	ArgsJSON  string    `json:"args,omitempty"`
-	ExitCode  int       `json:"exit_code"`
-	CreatedAt time.Time `json:"timestamp"`
+	ID        string          `json:"id"`
+	Command   string          `json:"command"`
+	Actor     string          `json:"actor"`
+	Args      json.RawMessage `json:"args,omitempty"`
+	ExitCode  int             `json:"exit_code"`
+	CreatedAt time.Time       `json:"timestamp"`
 }
 
 // generateCmdAuditID returns a short ID like "cal-a1b2c3".
@@ -79,8 +79,12 @@ func QueryCmdHistory(ctx context.Context, store dolt.Store, actor string, limit 
 	var result []CmdAuditEntry
 	for rows.Next() {
 		var e CmdAuditEntry
-		if err := rows.Scan(&e.ID, &e.Command, &e.Actor, &e.ArgsJSON, &e.ExitCode, &e.CreatedAt); err != nil {
+		var argsStr string
+		if err := rows.Scan(&e.ID, &e.Command, &e.Actor, &argsStr, &e.ExitCode, &e.CreatedAt); err != nil {
 			return nil, fmt.Errorf("cmd_history: scan: %w", err)
+		}
+		if argsStr != "" {
+			e.Args = json.RawMessage(argsStr)
 		}
 		result = append(result, e)
 	}
@@ -103,8 +107,7 @@ Examples:
   grava cmd_history --actor agent-01
   grava cmd_history --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			entries, err := QueryCmdHistory(ctx, *d.Store, flagActor, flagLimit)
+			entries, err := QueryCmdHistory(cmd.Context(), *d.Store, flagActor, flagLimit)
 			if err != nil {
 				return err
 			}
