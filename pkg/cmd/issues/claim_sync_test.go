@@ -3,7 +3,6 @@ package issues
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -13,16 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// runWorktreeAdd runs git worktree add in dir to create worktreeDir on branch branchName.
-func runWorktreeAdd(t *testing.T, dir, worktreeDir, branchName string) {
-	t.Helper()
-	cmd := exec.Command("git", "worktree", "add", worktreeDir, "-b", branchName)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git worktree add: %v\n%s", err, out)
-	}
-}
 
 // TestClaimCmd_SyncsClaudeSettings verifies that after a successful claim and
 // worktree provisioning, .claude/settings.json from the main repo is copied
@@ -83,8 +72,8 @@ func TestClaimCmd_SyncsClaudeSettings(t *testing.T) {
 
 // TestClaimCmd_SyncsClaudeSettings_AbsentSource verifies that claim succeeds
 // even when the main repo has no .claude/settings.json (non-fatal, AC5).
-//
-// This test is deliberately failing until grava-4136.2 is implemented.
+// This variant is expected to pass now; the primary TestClaimCmd_SyncsClaudeSettings
+// is the deliberately-failing TDD test (passes after grava-4136.2 wires the call).
 func TestClaimCmd_SyncsClaudeSettings_AbsentSource(t *testing.T) {
 	mainRepo := t.TempDir()
 	setupGitRepo(t, mainRepo) // defined in close_test.go (same package)

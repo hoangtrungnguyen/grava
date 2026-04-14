@@ -74,8 +74,8 @@ func TestInitCmd_WorktreeSyncsSettings(t *testing.T) {
 
 // TestInitCmd_WorktreeSyncsSettings_AbsentSource verifies that init succeeds
 // in a worktree even when the main repo has no .claude/settings.json.
-//
-// This test is deliberately failing until grava-4136.3 is implemented.
+// This variant is expected to pass now; the primary TestInitCmd_WorktreeSyncsSettings
+// is the deliberately-failing TDD test (passes after grava-4136.3 wires the call).
 func TestInitCmd_WorktreeSyncsSettings_AbsentSource(t *testing.T) {
 	mainRepo := t.TempDir()
 	initGitRepo(t, mainRepo)
@@ -96,4 +96,6 @@ func TestInitCmd_WorktreeSyncsSettings_AbsentSource(t *testing.T) {
 	initCmd.SetOut(buf)
 	err := initCmd.RunE(initCmd, []string{})
 	require.NoError(t, err, "init should succeed even when settings.json is absent")
+	// No settings.json should have been created from nothing
+	assert.NoFileExists(t, filepath.Join(worktreeDir, ".claude", "settings.json"))
 }
