@@ -73,6 +73,11 @@ leveraging the power of a version-controlled database.`,
 		if cmd.Parent() != nil && cmd.Parent().Name() == "hook" {
 			return nil
 		}
+		// Resolve subcommands operate only on .grava/conflicts.json and
+		// issues.jsonl; no database connection required.
+		if cmd.Parent() != nil && cmd.Parent().Name() == "resolve" {
+			return nil
+		}
 
 		// If Store is already injected (e.g. tests), use it
 		if Store != nil {

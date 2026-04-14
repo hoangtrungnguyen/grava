@@ -2,11 +2,13 @@ package merge
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ProcessMerge executes a 3-way merge on JSONL files.
@@ -117,7 +119,7 @@ func ProcessMerge(ancestor, current, other string) (string, bool, error) {
 
 	var sb strings.Builder
 	for _, item := range mergedList {
-		b, err := marshalSorted(item)
+		b, err := MarshalSorted(item)
 		if err != nil {
 			return "", false, err
 		}
@@ -128,10 +130,10 @@ func ProcessMerge(ancestor, current, other string) (string, bool, error) {
 	return sb.String(), hasAnyConflict, nil
 }
 
-// marshalSorted encodes v as JSON with map keys sorted alphabetically at every
+// MarshalSorted encodes v as JSON with map keys sorted alphabetically at every
 // level. This makes the output byte-for-byte stable across runs, ensuring that
 // the same logical merge always produces the same git object hash.
-func marshalSorted(v interface{}) ([]byte, error) {
+func MarshalSorted(v interface{}) ([]byte, error) {
 	switch val := v.(type) {
 	case map[string]interface{}:
 		keys := make([]string, 0, len(val))
@@ -152,7 +154,7 @@ func marshalSorted(v interface{}) ([]byte, error) {
 			}
 			buf.Write(keyBytes)
 			buf.WriteByte(':')
-			valBytes, err := marshalSorted(val[k])
+			valBytes, err := MarshalSorted(val[k])
 			if err != nil {
 				return nil, err
 			}
@@ -168,7 +170,7 @@ func marshalSorted(v interface{}) ([]byte, error) {
 			if i > 0 {
 				buf.WriteByte(',')
 			}
-			b, err := marshalSorted(elem)
+			b, err := MarshalSorted(elem)
 			if err != nil {
 				return nil, err
 			}
@@ -273,4 +275,94 @@ func mergeObjects(ancestor, current, other map[string]interface{}) (map[string]i
 	}
 
 	return result, hasConflict
+}
+
+// ConflictEntry describes one unresolvable collision found during a merge.
+type ConflictEntry struct {
+	// ID is a short hash derived from issue_id + field for deduplication.
+	ID         string          `json:"id"`
+	IssueID    string          `json:"issue_id"`
+	Field      string          `json:"field"`      // empty string for whole-issue conflicts
+	Local      json.RawMessage `json:"local"`      // value on the current branch
+	Remote     json.RawMessage `json:"remote"`     // value on the other branch
+	DetectedAt time.Time       `json:"detected_at"`
+	Resolved   bool            `json:"resolved"`
+}
+
+// conflictID produces a short identifier for a conflict from its issue+field.
+func conflictID(issueID, field string) string {
+	h := sha1.New()
+	_, _ = fmt.Fprintf(h, "%s\x00%s", issueID, field)
+	return fmt.Sprintf("%x", h.Sum(nil))[:8]
+}
+
+// ExtractConflicts parses a merged JSONL string produced by ProcessMerge and
+// returns one ConflictEntry per unresolvable collision. It detects two
+// patterns left by mergeObjects:
+//
+//  1. Field-level conflict: the field value is an object with "_conflict":true.
+//  2. Issue-level delete conflict: the top-level issue object has "_conflict":true.
+func ExtractConflicts(mergedJSONL string, detectedAt time.Time) ([]ConflictEntry, error) {
+	var entries []ConflictEntry
+
+	for _, line := range strings.Split(strings.TrimSpace(mergedJSONL), "\n") {
+		if line == "" {
+			continue
+		}
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			return nil, fmt.Errorf("failed to parse merged line: %w", err)
+		}
+
+		issueID, _ := obj["id"].(string)
+
+		// Check for issue-level delete conflict.
+		if topConflict, ok := obj["_conflict"].(bool); ok && topConflict {
+			local, _ := json.Marshal(obj["local"])
+			remote, _ := json.Marshal(obj["remote"])
+			entries = append(entries, ConflictEntry{
+				ID:         conflictID(issueID, ""),
+				IssueID:    issueID,
+				Field:      "",
+				Local:      json.RawMessage(local),
+				Remote:     json.RawMessage(remote),
+				DetectedAt: detectedAt,
+			})
+			continue
+		}
+
+		// Check each field for a field-level conflict marker.
+		for field, val := range obj {
+			if field == "id" {
+				continue
+			}
+			valMap, ok := val.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if isConflict, _ := valMap["_conflict"].(bool); !isConflict {
+				continue
+			}
+			local, _ := json.Marshal(valMap["local"])
+			remote, _ := json.Marshal(valMap["remote"])
+			entries = append(entries, ConflictEntry{
+				ID:         conflictID(issueID, field),
+				IssueID:    issueID,
+				Field:      field,
+				Local:      json.RawMessage(local),
+				Remote:     json.RawMessage(remote),
+				DetectedAt: detectedAt,
+			})
+		}
+	}
+
+	// Sort by issue_id then field for deterministic output.
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IssueID != entries[j].IssueID {
+			return entries[i].IssueID < entries[j].IssueID
+		}
+		return entries[i].Field < entries[j].Field
+	})
+
+	return entries, nil
 }

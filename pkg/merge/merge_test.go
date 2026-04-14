@@ -146,7 +146,7 @@ func TestMarshalSorted_NestedMaps(t *testing.T) {
 		"z": map[string]interface{}{"b": 2, "a": 1},
 		"a": "first",
 	}
-	b, err := marshalSorted(input)
+	b, err := MarshalSorted(input)
 	assert.NoError(t, err)
 	// Outer keys sorted: a, z. Inner keys sorted: a, b.
 	assert.Equal(t, `{"a":"first","z":{"a":1,"b":2}}`, string(b))

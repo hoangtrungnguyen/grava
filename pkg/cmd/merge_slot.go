@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/grava"
 	"github.com/hoangtrungnguyen/grava/pkg/merge"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +63,20 @@ Exit code 1 signals git that conflicts remain.`,
 		}
 
 		if hasConflict {
+			// Extract conflict entries and write them to .grava/conflicts.json
+			// so that 'grava resolve list' can display them. Best-effort: if
+			// the .grava directory is not found, skip writing and continue.
+			if entries, err := merge.ExtractConflicts(merged, time.Now().UTC()); err == nil && len(entries) > 0 {
+				if gravaDir, err := grava.ResolveGravaDir(); err == nil {
+					conflictsPath := filepath.Join(gravaDir, "conflicts.json")
+					if b, err := json.MarshalIndent(entries, "", "  "); err == nil {
+						_ = os.WriteFile(conflictsPath, b, 0644) //nolint:gosec
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+							"⚠️  %d conflict(s) written to %s\n", len(entries), conflictsPath)
+						_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "   Run 'grava resolve list' to view and resolve them.")
+					}
+				}
+			}
 			// Non-zero exit tells git that conflicts remain
 			conflictExitFn(1)
 		}
