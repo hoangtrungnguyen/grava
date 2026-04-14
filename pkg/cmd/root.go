@@ -206,7 +206,6 @@ var readOnlyCommands = map[string]bool{
 	"cmd_history": true,
 	"sync-status": true,
 	"version":     true,
-	"run":         true, // sandbox run — creates/deletes ephemeral test data
 }
 
 // isReadOnlyCommand returns true when the command name is known to be read-only.

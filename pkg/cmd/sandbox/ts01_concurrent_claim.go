@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 
 	issuesapi "github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
+	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 )
 
 const ts01ID = "TS-01"
@@ -49,11 +51,7 @@ func runTS01(ctx context.Context, store dolt.Store) Result {
 	}()
 
 	// Spawn concurrency goroutines, each claiming the same issue.
-	type outcome struct {
-		agentID string
-		err     error
-	}
-	results := make([]outcome, concurrency)
+	errs := make([]error, concurrency)
 	var wg sync.WaitGroup
 	var successCount int64
 
@@ -66,7 +64,7 @@ func runTS01(ctx context.Context, store dolt.Store) Result {
 			claimCtx, cancel := context.WithTimeout(ctx, timeoutSec*time.Second)
 			defer cancel()
 			_, cerr := issuesapi.ClaimIssue(claimCtx, store, issueID, agent, "")
-			results[i] = outcome{agentID: agent, err: cerr}
+			errs[i] = cerr
 			if cerr == nil {
 				atomic.AddInt64(&successCount, 1)
 			}
@@ -89,14 +87,30 @@ func runTS01(ctx context.Context, store dolt.Store) Result {
 
 	// Verify 9 failures have deterministic error codes (not nil, not panics).
 	failCount := 0
-	for _, r := range results {
-		if r.err != nil {
+	for _, e := range errs {
+		if e != nil {
 			failCount++
 		}
 	}
 	if failCount != concurrency-1 {
 		return fail(ts01ID,
 			fmt.Sprintf("expected %d failures, got %d", concurrency-1, failCount),
+			details...)
+	}
+	// Verify all failures have machine-readable error codes (not generic errors).
+	indeterminate := 0
+	for _, e := range errs {
+		if e == nil {
+			continue
+		}
+		var gerr *gravaerrors.GravaError
+		if !errors.As(e, &gerr) {
+			indeterminate++
+		}
+	}
+	if indeterminate > 0 {
+		return fail(ts01ID,
+			fmt.Sprintf("%d failing claim(s) returned non-deterministic errors (not GravaError)", indeterminate),
 			details...)
 	}
 	details = append(details, fmt.Sprintf("%d claims failed with deterministic errors", failCount))

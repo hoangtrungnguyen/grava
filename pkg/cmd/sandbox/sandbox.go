@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -38,7 +37,7 @@ Examples:
 		Use:   "run",
 		Short: "Execute one or more sandbox scenarios",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
+			ctx := cmd.Context()
 			store := *d.Store
 			outputJSON := *d.OutputJSON
 
