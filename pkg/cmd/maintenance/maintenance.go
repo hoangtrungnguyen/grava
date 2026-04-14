@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/hoangtrungnguyen/grava/pkg/validation"
 	"github.com/spf13/cobra"
 )
@@ -151,17 +152,29 @@ func (c doctorCheck) icon() string {
 }
 
 func newDoctorCmd(d *cmddeps.Deps) *cobra.Command {
-	return &cobra.Command{
+	var (
+		flagFix    bool
+		flagDryRun bool
+	)
+
+	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Diagnose and report system health",
-		Long: `Doctor runs a series of read-only checks against the Grava database
-and reports the health of each component.`,
+		Long: `Doctor runs diagnostic checks against the Grava database and reports
+the health of each component.
+
+With --fix, doctor also repairs detected issues (e.g., releases expired file leases).
+With --dry-run, doctor shows what --fix would change without executing any writes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			store := *d.Store
+			outputJSON := *d.OutputJSON
+
 			var checks []doctorCheck
 			hasFailure := false
 
 			var dbVersion string
-			err := (*d.Store).QueryRow("SELECT VERSION()").Scan(&dbVersion)
+			err := store.QueryRow("SELECT VERSION()").Scan(&dbVersion)
 			if err != nil {
 				checks = append(checks, doctorCheck{"DB connectivity", "FAIL",
 					fmt.Sprintf("cannot query database: %v", err)})
@@ -173,7 +186,7 @@ and reports the health of each component.`,
 
 			for _, table := range []string{"issues", "dependencies", "deletions", "child_counters"} {
 				var count int
-				err := (*d.Store).QueryRow(
+				err := store.QueryRow(
 					"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
 					table,
 				).Scan(&count)
@@ -189,7 +202,7 @@ and reports the health of each component.`,
 			}
 
 			var orphanCount int
-			err = (*d.Store).QueryRow(`
+			err = store.QueryRow(`
 			SELECT COUNT(*) FROM dependencies d
 			WHERE NOT EXISTS (SELECT 1 FROM issues i WHERE i.id = d.from_id)
 			   OR NOT EXISTS (SELECT 1 FROM issues i WHERE i.id = d.to_id)
@@ -203,7 +216,7 @@ and reports the health of each component.`,
 			}
 
 			var untitledCount int
-			err = (*d.Store).QueryRow(`SELECT COUNT(*) FROM issues WHERE title IS NULL OR title = ''`).Scan(&untitledCount)
+			err = store.QueryRow(`SELECT COUNT(*) FROM issues WHERE title IS NULL OR title = ''`).Scan(&untitledCount)
 			if err != nil {
 				checks = append(checks, doctorCheck{"Untitled issues", "WARN", fmt.Sprintf("could not check: %v", err)})
 			} else if untitledCount > 0 {
@@ -213,7 +226,7 @@ and reports the health of each component.`,
 			}
 
 			var wispCount int
-			err = (*d.Store).QueryRow(`SELECT COUNT(*) FROM issues WHERE ephemeral = 1`).Scan(&wispCount)
+			err = store.QueryRow(`SELECT COUNT(*) FROM issues WHERE ephemeral = 1`).Scan(&wispCount)
 			if err != nil {
 				checks = append(checks, doctorCheck{"Wisp count", "WARN", fmt.Sprintf("could not check: %v", err)})
 			} else {
@@ -226,7 +239,53 @@ and reports the health of each component.`,
 				checks = append(checks, doctorCheck{"Wisp count", status, detail})
 			}
 
-			if *d.OutputJSON {
+			// Check #12: expired file reservations (FR-ECS-1c).
+			expiredLeases, expiredCheckErr := queryExpiredLeases(ctx, store)
+			if expiredCheckErr != nil {
+				checks = append(checks, doctorCheck{"Expired file leases", "WARN",
+					fmt.Sprintf("could not check: %v", expiredCheckErr)})
+			} else if len(expiredLeases) > 0 {
+				detail := fmt.Sprintf("%d expired lease(s) not yet released", len(expiredLeases))
+				if flagDryRun {
+					detail += " (--dry-run: would release)"
+				} else if !flagFix {
+					detail += " — run `grava doctor --fix` to auto-release"
+				}
+				checks = append(checks, doctorCheck{"Expired file leases", "WARN", detail})
+			} else {
+				checks = append(checks, doctorCheck{"Expired file leases", "PASS", "none found"})
+			}
+
+			// --fix: release expired leases (skip in --dry-run mode).
+			if flagFix && !flagDryRun && expiredCheckErr == nil && len(expiredLeases) > 0 {
+				released, fixErr := releaseExpiredLeases(ctx, store, expiredLeases)
+				if fixErr != nil {
+					if outputJSON {
+						b, _ := json.Marshal(map[string]any{
+							"check":       "expired_file_reservations",
+							"status":      "error",
+							"action_taken": fmt.Sprintf("error during release: %v", fixErr),
+						})
+						fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+					} else {
+						cmd.Printf("❌ Failed to release expired leases: %v\n", fixErr)
+					}
+					return fixErr
+				}
+				if outputJSON {
+					b, _ := json.Marshal(map[string]any{
+						"check":       "expired_file_reservations",
+						"status":      "fixed",
+						"action_taken": fmt.Sprintf("released %d expired lease(s)", released),
+					})
+					fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+					return nil
+				}
+				cmd.Printf("🔧 Released %d expired lease(s).\n", released)
+				return nil
+			}
+
+			if outputJSON {
 				resp := map[string]any{"status": "healthy", "checks": checks}
 				if hasFailure {
 					resp["status"] = "unhealthy"
@@ -255,6 +314,49 @@ and reports the health of each component.`,
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&flagFix, "fix", false, "Auto-repair detected issues (e.g., release expired file leases)")
+	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false, "Show what --fix would change without executing any writes")
+	return cmd
+}
+
+// queryExpiredLeases returns IDs of file_reservations rows where expires_ts < NOW() and released_ts IS NULL.
+func queryExpiredLeases(ctx context.Context, store dolt.Store) ([]string, error) {
+	rows, err := store.QueryContext(ctx,
+		`SELECT id FROM file_reservations WHERE expires_ts < NOW() AND released_ts IS NULL`)
+	if err != nil {
+		return nil, fmt.Errorf("query expired leases: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan expired lease id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// releaseExpiredLeases sets released_ts=NOW() for each given reservation ID.
+// Returns the number of rows updated.
+func releaseExpiredLeases(ctx context.Context, store dolt.Store, ids []string) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	released := 0
+	for _, id := range ids {
+		result, err := store.ExecContext(ctx,
+			`UPDATE file_reservations SET released_ts = NOW() WHERE id = ? AND released_ts IS NULL`, id)
+		if err != nil {
+			return released, fmt.Errorf("release lease %s: %w", id, err)
+		}
+		n, _ := result.RowsAffected()
+		released += int(n)
+	}
+	return released, nil
 }
 
 
