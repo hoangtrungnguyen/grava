@@ -39,11 +39,20 @@ func DefaultDriverConfig() DriverConfig {
 	}
 }
 
-// RegisterMergeDriver writes the grava merge driver configuration to .git/config.
-// Idempotent: calling it multiple times is safe and produces the same result.
-// Returns (true, nil) when already up-to-date, (false, nil) on fresh write.
+// RegisterMergeDriver writes the grava merge driver configuration to the local
+// .git/config. Idempotent: safe to call multiple times.
+//
+// The idempotency check reads from the local config only (--local), so a
+// matching entry in ~/.gitconfig does not suppress the local write.
+//
+// Returns (true, nil) when the local config is already up-to-date.
+// Returns (false, nil) on a fresh or updated write.
+//
+// Partial-write risk: Set(keyName) and Set(keyDriver) are separate git-config
+// calls. If the second fails, the config is left with name set but driver
+// missing. The next successful run will detect the mismatch and re-write both.
 func RegisterMergeDriver(cfg DriverConfig, stdout, stderr io.Writer) (alreadySet bool, err error) {
-	current, ok := Get()
+	current, ok := GetLocal()
 	if ok && current.Name == cfg.Name && current.Driver == cfg.Driver {
 		return true, nil
 	}
@@ -59,10 +68,12 @@ func RegisterMergeDriver(cfg DriverConfig, stdout, stderr io.Writer) (alreadySet
 	return false, nil
 }
 
-// IsRegistered reports whether the grava merge driver is configured in .git/config
-// with values matching DefaultDriverConfig.
+// IsRegistered reports whether the local .git/config has the grava merge driver
+// configured with values matching DefaultDriverConfig.
+//
+// Uses --local so a global ~/.gitconfig entry does not satisfy the check.
 func IsRegistered() bool {
-	current, ok := Get()
+	current, ok := GetLocal()
 	if !ok {
 		return false
 	}
@@ -70,12 +81,26 @@ func IsRegistered() bool {
 	return current.Name == def.Name && current.Driver == def.Driver
 }
 
-// Get reads the current grava merge driver config from .git/config.
-// Returns (zero, false) if neither key is set.
+// GetLocal reads the grava merge driver config from the local .git/config only.
+// Returns (zero, false) if either key is missing from the local config.
+func GetLocal() (DriverConfig, bool) {
+	name, hasName := GetLocalValue(keyName)
+	driver, hasDriver := GetLocalValue(keyDriver)
+	if !hasName || !hasDriver {
+		return DriverConfig{}, false
+	}
+	return DriverConfig{Name: name, Driver: driver}, true
+}
+
+// Get reads the grava merge driver config from the effective config chain
+// (local + global + system). Returns (zero, false) if either key is absent.
+//
+// Use GetLocal when checking whether the local repo is configured; use Get
+// when you want the value that git itself would use.
 func Get() (DriverConfig, bool) {
 	name, hasName := GetValue(keyName)
 	driver, hasDriver := GetValue(keyDriver)
-	if !hasName && !hasDriver {
+	if !hasName || !hasDriver {
 		return DriverConfig{}, false
 	}
 	return DriverConfig{Name: name, Driver: driver}, true
@@ -89,8 +114,19 @@ func Set(key, value string, stdout, stderr io.Writer) error {
 	return c.Run()
 }
 
-// GetValue reads a single git config value from the effective config chain.
-// Returns ("", false) if the key is not set or git is unavailable.
+// GetLocalValue reads a git config value from the local .git/config only.
+// Returns ("", false) if the key is not set locally or git is unavailable.
+func GetLocalValue(key string) (string, bool) {
+	c := exec.Command("git", "config", "--local", "--get", key) //nolint:gosec
+	out, err := c.Output()
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimRight(string(out), "\n"), true
+}
+
+// GetValue reads a git config value from the effective config chain
+// (local + global + system). Returns ("", false) if the key is not set.
 func GetValue(key string) (string, bool) {
 	c := exec.Command("git", "config", "--get", key) //nolint:gosec
 	out, err := c.Output()

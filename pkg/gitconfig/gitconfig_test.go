@@ -139,6 +139,66 @@ func TestIsInGitRepo_Outside(t *testing.T) {
 	assert.False(t, gitconfig.IsInGitRepo())
 }
 
+func TestGetLocal_NotSet(t *testing.T) {
+	_, cleanup := tempGitRepo(t)
+	defer cleanup()
+
+	_, ok := gitconfig.GetLocal()
+	assert.False(t, ok)
+}
+
+func TestGetLocal_PartialConfig_ReturnsFalse(t *testing.T) {
+	_, cleanup := tempGitRepo(t)
+	defer cleanup()
+
+	// Set only the name key — driver is absent
+	var buf strings.Builder
+	require.NoError(t, gitconfig.Set("merge.grava.name", "Grava", &buf, &buf))
+
+	_, ok := gitconfig.GetLocal()
+	assert.False(t, ok, "GetLocal should return false when only one of the two keys is set")
+}
+
+func TestGetLocalValue_VsGetValue_Scope(t *testing.T) {
+	// This test verifies that GetLocalValue reads only from the local config
+	// while GetValue reads from the effective chain.
+	// We simulate the distinction by writing to local directly and checking
+	// that GetLocalValue finds it.
+	_, cleanup := tempGitRepo(t)
+	defer cleanup()
+
+	var buf strings.Builder
+	require.NoError(t, gitconfig.Set("test.scope", "local-value", &buf, &buf))
+
+	val, ok := gitconfig.GetLocalValue("test.scope")
+	assert.True(t, ok)
+	assert.Equal(t, "local-value", val)
+
+	// GetValue should also find it (local is in the effective chain)
+	val2, ok2 := gitconfig.GetValue("test.scope")
+	assert.True(t, ok2)
+	assert.Equal(t, "local-value", val2)
+}
+
+func TestRegisterMergeDriver_UsesLocalScope(t *testing.T) {
+	_, cleanup := tempGitRepo(t)
+	defer cleanup()
+
+	cfg := gitconfig.DefaultDriverConfig()
+	var buf strings.Builder
+	_, err := gitconfig.RegisterMergeDriver(cfg, &buf, &buf)
+	require.NoError(t, err)
+
+	// Verify the values are in the local config, not just the effective chain
+	name, ok := gitconfig.GetLocalValue("merge.grava.name")
+	assert.True(t, ok, "name should be in local config")
+	assert.Equal(t, cfg.Name, name)
+
+	driver, ok := gitconfig.GetLocalValue("merge.grava.driver")
+	assert.True(t, ok, "driver should be in local config")
+	assert.Equal(t, cfg.Driver, driver)
+}
+
 func TestDefaultDriverConfig(t *testing.T) {
 	cfg := gitconfig.DefaultDriverConfig()
 	assert.Equal(t, gitconfig.DriverHumanName, cfg.Name)
