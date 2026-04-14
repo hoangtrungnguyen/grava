@@ -13,10 +13,11 @@ import (
 
 // Agent tracks runtime state for a single registered agent.
 type Agent struct {
-	cfg         AgentConfig
-	client      *http.Client
-	activeTasks int
-	available   bool
+	cfg                 AgentConfig
+	client              *http.Client
+	activeTasks         int
+	available           bool
+	consecutiveFailures int // incremented by Watchdog on /health miss, reset on success
 }
 
 // AgentPool manages a pool of agents, routing tasks to the least-loaded one.
