@@ -814,7 +814,7 @@ func newSearchCmd(d *cmddeps.Deps) *cobra.Command {
 			}
 			defer rows.Close() //nolint:errcheck
 
-			var results []IssueListItem
+			results := []IssueListItem{}
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			if !*d.OutputJSON {
 				_, _ = fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")

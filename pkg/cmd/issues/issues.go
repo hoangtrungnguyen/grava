@@ -479,7 +479,7 @@ You can filter by status or type, and sort by various criteria.`,
 			}
 			defer rows.Close() //nolint:errcheck
 
-			var results []IssueListItem
+			results := []IssueListItem{}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			if !*d.OutputJSON {
@@ -510,6 +510,9 @@ You can filter by status or type, and sort by various criteria.`,
 					_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
 						id, title, iType, priority, status, createdAt.Format("2006-01-02"))
 				}
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("row iteration error: %w", err)
 			}
 
 			if *d.OutputJSON {
