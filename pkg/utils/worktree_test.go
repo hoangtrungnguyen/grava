@@ -667,6 +667,98 @@ func TestRemoveWorktreeOnly(t *testing.T) {
 	}
 }
 
+// TestSyncClaudeSettings verifies settings.json is copied from main repo to worktree.
+func TestSyncClaudeSettings(t *testing.T) {
+	mainRepo := t.TempDir()
+	worktree := t.TempDir()
+
+	t.Run("copies settings when source exists", func(t *testing.T) {
+		srcDir := filepath.Join(mainRepo, ".claude")
+		if err := os.MkdirAll(srcDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		content := `{"enabledPlugins":{}}`
+		if err := os.WriteFile(filepath.Join(srcDir, "settings.json"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := SyncClaudeSettings(mainRepo, worktree); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		got, err := os.ReadFile(filepath.Join(worktree, ".claude", "settings.json"))
+		if err != nil {
+			t.Fatalf("destination not written: %v", err)
+		}
+		if string(got) != content {
+			t.Errorf("content mismatch: got %q want %q", got, content)
+		}
+	})
+
+	t.Run("idempotent on re-run", func(t *testing.T) {
+		if err := SyncClaudeSettings(mainRepo, worktree); err != nil {
+			t.Fatalf("second call failed: %v", err)
+		}
+	})
+
+	t.Run("graceful when source absent", func(t *testing.T) {
+		emptyRepo := t.TempDir()
+		if err := SyncClaudeSettings(emptyRepo, worktree); err != nil {
+			t.Fatalf("should return nil when source missing, got: %v", err)
+		}
+	})
+}
+
+// TestConfigureGitUser verifies git user config is propagated into the worktree.
+func TestConfigureGitUser(t *testing.T) {
+	// Create a real git repo for mainRepo so git config --local works
+	mainRepo := t.TempDir()
+	for _, cmd := range [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@example.com"},
+		{"git", "config", "user.name", "Test User"},
+	} {
+		if err := runCmd(mainRepo, cmd[0], cmd[1:]...); err != nil {
+			t.Fatalf("setup %v: %v", cmd, err)
+		}
+	}
+
+	// Create a real git worktree dir
+	worktreeDir := t.TempDir()
+	if err := runCmd(worktreeDir, "git", "init"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("sets git identity in worktree", func(t *testing.T) {
+		if err := ConfigureGitUser(mainRepo, worktreeDir); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		name, err := gitConfigGet(worktreeDir, "user.name")
+		if err != nil || name != "Test User" {
+			t.Errorf("user.name: got %q err %v", name, err)
+		}
+		email, err := gitConfigGet(worktreeDir, "user.email")
+		if err != nil || email != "test@example.com" {
+			t.Errorf("user.email: got %q err %v", email, err)
+		}
+	})
+
+	t.Run("graceful when main repo has no identity", func(t *testing.T) {
+		emptyRepo := t.TempDir()
+		if err := runCmd(emptyRepo, "git", "init"); err != nil {
+			t.Fatal(err)
+		}
+		emptyWorktree := t.TempDir()
+		if err := runCmd(emptyWorktree, "git", "init"); err != nil {
+			t.Fatal(err)
+		}
+		if err := ConfigureGitUser(emptyRepo, emptyWorktree); err != nil {
+			t.Fatalf("should return nil when identity absent, got: %v", err)
+		}
+	})
+}
+
 // TestIsInsideClaudeWorktree verifies Claude worktree environment detection.
 func TestIsInsideClaudeWorktree(t *testing.T) {
 	tmpdir := t.TempDir()

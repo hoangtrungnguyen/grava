@@ -324,3 +324,84 @@ func RemoveWorktreeOnly(cwd, issueID string) error {
 func IsInsideClaudeWorktree(cwd string) bool {
 	return strings.Contains(filepath.ToSlash(cwd), ".claude/worktrees/")
 }
+
+// SyncClaudeSettings copies .claude/settings.json from the main repo into the worktree.
+// Returns nil (not an error) when the source file does not exist.
+// Idempotent: skips the write if destination already has identical content.
+func SyncClaudeSettings(mainRepoDir, worktreeDir string) error {
+	src := filepath.Join(mainRepoDir, ".claude", "settings.json")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to read source settings: %w", err)
+	}
+
+	destDir := filepath.Join(worktreeDir, ".claude")
+	dest := filepath.Join(destDir, "settings.json")
+
+	// Idempotent: skip if destination already has identical content
+	if existing, err := os.ReadFile(dest); err == nil && string(existing) == string(data) {
+		return nil
+	}
+
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .claude dir in worktree: %w", err)
+	}
+	if err := os.WriteFile(dest, data, 0644); err != nil {
+		return fmt.Errorf("failed to write settings.json to worktree: %w", err)
+	}
+	return nil
+}
+
+// ConfigureGitUser reads user.name and user.email from the main repo's git config
+// and writes them as worktree-local git config in worktreeDir.
+// Returns nil (not an error) when either value is absent in the main repo config.
+func ConfigureGitUser(mainRepoDir, worktreeDir string) error {
+	name, nameErr := gitConfigGet(mainRepoDir, "user.name")
+	email, emailErr := gitConfigGet(mainRepoDir, "user.email")
+
+	if nameErr != nil && emailErr != nil {
+		// Neither value present — nothing to configure
+		return nil
+	}
+
+	if name != "" {
+		if err := gitConfigSet(worktreeDir, "user.name", name); err != nil {
+			return fmt.Errorf("failed to set git user.name in worktree: %w", err)
+		}
+	}
+	if email != "" {
+		if err := gitConfigSet(worktreeDir, "user.email", email); err != nil {
+			return fmt.Errorf("failed to set git user.email in worktree: %w", err)
+		}
+	}
+	return nil
+}
+
+// gitConfigGet reads a single git config value from the repo at dir.
+// Returns ("", nil) when the key is not set.
+func gitConfigGet(dir, key string) (string, error) {
+	cmd := exec.Command("git", "config", "--local", key)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		// Exit code 1 means key not set — treat as absent, not an error
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return "", nil
+		}
+		return "", fmt.Errorf("git config get %s: %w", key, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// gitConfigSet writes a single git config value in the repo at dir (--local scope).
+func gitConfigSet(dir, key, value string) error {
+	cmd := exec.Command("git", "config", "--local", key, value)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git config set %s: %w\n%s", key, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
