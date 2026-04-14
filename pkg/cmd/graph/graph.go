@@ -212,14 +212,6 @@ func removeDependency(cmd *cobra.Command, d *cmddeps.Deps, fromID, toID string) 
 				return nil
 			}
 
-			err = (*d.Store).LogEventTx(cmd.Context(), tx, fromID, dolt.EventDependencyRemove, *d.Actor, *d.AgentModel, map[string]interface{}{
-				"to_id": toID,
-				"type":  depType,
-			}, nil)
-			if err != nil {
-				return err
-			}
-
 			if err := (*d.Store).LogEventTx(cmd.Context(), tx, fromID, dolt.EventDependencyRemove, *d.Actor, *d.AgentModel, map[string]interface{}{
 				"to_id": toID,
 				"type":  depType,
