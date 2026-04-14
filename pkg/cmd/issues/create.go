@@ -48,6 +48,11 @@ var priorityToString = map[int]string{
 	4: "backlog",
 }
 
+// CreateIssue is the exported entry point for creating an issue (used by sandbox scenarios).
+func CreateIssue(ctx context.Context, store dolt.Store, params CreateParams) (CreateResult, error) {
+	return createIssue(ctx, store, params)
+}
+
 // createIssue inserts a new issue into the database.
 // It validates all inputs, generates a unique ID, and wraps the mutation in WithAuditedTx.
 // All user-facing errors are returned as *gravaerrors.GravaError.

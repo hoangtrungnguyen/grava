@@ -12,6 +12,7 @@ import (
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/maintenance"
 	cmdreserve "github.com/hoangtrungnguyen/grava/pkg/cmd/reserve"
+	cmdsandbox "github.com/hoangtrungnguyen/grava/pkg/cmd/sandbox"
 	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
@@ -187,6 +188,7 @@ func init() {
 	maintenance.AddCommands(rootCmd, deps)
 	synccmd.AddCommands(rootCmd, deps)
 	cmdreserve.AddCommands(rootCmd, deps)
+	cmdsandbox.AddCommands(rootCmd, deps)
 }
 
 // readOnlyCommands is the set of command names that do not mutate state and
@@ -204,6 +206,7 @@ var readOnlyCommands = map[string]bool{
 	"cmd_history": true,
 	"sync-status": true,
 	"version":     true,
+	"run":         true, // sandbox run — creates/deletes ephemeral test data
 }
 
 // isReadOnlyCommand returns true when the command name is known to be read-only.

@@ -23,6 +23,12 @@ type ClaimResult struct {
 	Actor   string `json:"actor"`
 }
 
+// ClaimIssue is the exported entry point for claiming an issue (used by sandbox scenarios).
+// See claimIssue for implementation details.
+func ClaimIssue(ctx context.Context, store dolt.Store, issueID, actor, model string) (ClaimResult, error) {
+	return claimIssue(ctx, store, issueID, actor, model)
+}
+
 // claimIssue atomically claims an issue by setting its status to in_progress.
 // Uses WithAuditedTx for atomic write + audit log.
 // Retries on serialization failure (DB_COMMIT_FAILED) to ensure clean error codes in races.
