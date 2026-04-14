@@ -10,6 +10,92 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// --- Safety check helpers ---
+
+func TestHashFile_ComputesSHA256(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "hash-*.txt")
+	require.NoError(t, err)
+	_, err = f.WriteString("hello grava")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	h, err := hashFile(f.Name())
+	require.NoError(t, err)
+	assert.Len(t, h, 64, "SHA-256 hex digest must be 64 characters")
+}
+
+func TestHashFile_SameContentSameHash(t *testing.T) {
+	dir := t.TempDir()
+	writeFile := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(p, []byte(content), 0644))
+		return p
+	}
+	a := writeFile("a.txt", "same content")
+	b := writeFile("b.txt", "same content")
+
+	ha, err := hashFile(a)
+	require.NoError(t, err)
+	hb, err := hashFile(b)
+	require.NoError(t, err)
+	assert.Equal(t, ha, hb)
+}
+
+func TestHashFile_DifferentContentDifferentHash(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.txt")
+	b := filepath.Join(dir, "b.txt")
+	require.NoError(t, os.WriteFile(a, []byte("content A"), 0644))
+	require.NoError(t, os.WriteFile(b, []byte("content B"), 0644))
+
+	ha, _ := hashFile(a)
+	hb, _ := hashFile(b)
+	assert.NotEqual(t, ha, hb)
+}
+
+func TestReadWriteLastImportHash(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	// No .grava dir yet — returns empty string (not found)
+	assert.Equal(t, "", readLastImportHash())
+
+	// Create .grava and write a hash
+	require.NoError(t, os.MkdirAll(".grava", 0755))
+	writeLastImportHash("abc123def456")
+
+	// Should round-trip
+	assert.Equal(t, "abc123def456", readLastImportHash())
+}
+
+// TestSyncFromFile_SkipsWhenHashUnchanged verifies that syncFromFile returns
+// early (without attempting a DB connection) when issues.jsonl hash matches the
+// stored hash from the last import.
+func TestSyncFromFile_SkipsWhenHashUnchanged(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	content := `{"type":"issue","data":{"id":"abc","title":"T"}}` + "\n"
+	require.NoError(t, os.WriteFile("issues.jsonl", []byte(content), 0644))
+	require.NoError(t, os.MkdirAll(".grava", 0755))
+
+	// Pre-store the hash of the current file so Check A fires.
+	h, err := hashFile("issues.jsonl")
+	require.NoError(t, err)
+	writeLastImportHash(h)
+
+	// Point DB to an unreachable port — if the skip works, we never connect.
+	t.Setenv("DB_URL", "root@tcp(127.0.0.1:19999)/grava?parseTime=true")
+
+	var outBuf strings.Builder
+	hookRunCmd.SetOut(&outBuf)
+	defer hookRunCmd.SetOut(nil)
+
+	err = syncFromFile(hookRunCmd, "merge")
+	assert.NoError(t, err)
+	assert.Contains(t, outBuf.String(), "unchanged since last sync")
+}
+
 // --- hookRunCmd tests ---
 
 func TestHookRunCmd_UnknownHookExitsZero(t *testing.T) {

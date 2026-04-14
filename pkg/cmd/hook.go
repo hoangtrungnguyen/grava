@@ -2,13 +2,17 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
+	"github.com/hoangtrungnguyen/grava/pkg/grava"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -87,12 +91,101 @@ func issuesChangedInCheckout(prev, next string) bool {
 	return strings.TrimSpace(string(out)) != ""
 }
 
-// syncFromFile connects to the DB, imports issues.jsonl (upsert), and reports
-// the result. On DB connection failure it prints a warning and returns nil so
-// the Git operation is never blocked.
+// hashFile returns the SHA-256 hex digest of the file at path.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+// importHashPath resolves the path to .grava/last_import_hash.
+func importHashPath() (string, error) {
+	gravaDir, err := grava.ResolveGravaDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(gravaDir, "last_import_hash"), nil
+}
+
+// readLastImportHash returns the hash stored after the last successful sync,
+// or "" when no hash has been recorded yet.
+func readLastImportHash() string {
+	path, err := importHashPath()
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(path) //nolint:gosec
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// writeLastImportHash persists hash to .grava/last_import_hash after a
+// successful sync. Errors are silently ignored: a missing hash file only means
+// the next hook invocation will recheck Dolt status instead of short-circuiting.
+func writeLastImportHash(hash string) {
+	path, err := importHashPath()
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, []byte(hash+"\n"), 0644) //nolint:gosec
+}
+
+// hasDoltUncommittedChanges returns true when dolt_status reports any
+// staged or unstaged rows — i.e., there are working-set changes that an
+// import --overwrite would silently discard.
+//
+// If dolt_status is not queryable (non-Dolt backend, test DB), the function
+// returns false so hook execution is never blocked unnecessarily.
+func hasDoltUncommittedChanges(store dolt.Store) (bool, error) {
+	rows, err := store.Query("SELECT COUNT(*) FROM dolt_status")
+	if err != nil {
+		// dolt_status is a Dolt-only system table; treat as clean on error.
+		return false, nil //nolint:nilerr
+	}
+	defer rows.Close() //nolint:errcheck
+	var count int
+	if rows.Next() {
+		if err := rows.Scan(&count); err != nil {
+			return false, err
+		}
+	}
+	return count > 0, nil
+}
+
+// syncFromFile connects to the DB, runs the A+C safety checks, imports
+// issues.jsonl (upsert), and updates the stored content hash.
+//
+// Safety checks:
+//
+//	A — Content Hash: if the current issues.jsonl hash matches the hash stored
+//	    from the last sync, the file content is unchanged and the sync is
+//	    skipped to avoid redundant work.
+//	C — Dolt Commit Tracking: if Dolt has uncommitted working-set changes,
+//	    the sync is skipped to prevent silently overwriting them.
+//
+// On DB connection failure the function prints a warning and returns nil so
+// Git operations are never blocked.
 func syncFromFile(cmd *cobra.Command, trigger string) error {
-	if _, err := os.Stat("issues.jsonl"); os.IsNotExist(err) {
+	issuesPath := resolveIssuesFilePath()
+	if _, err := os.Stat(issuesPath); os.IsNotExist(err) {
 		return nil // no file — nothing to sync
+	}
+
+	// Check A: skip if we already imported this exact file content.
+	currentHash, hashErr := hashFile(issuesPath)
+	if hashErr == nil && currentHash == readLastImportHash() {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+			"grava hook: issues.jsonl unchanged since last sync, skipping (%s)\n", trigger)
+		return nil
 	}
 
 	store, err := tryConnectDB()
@@ -103,11 +196,25 @@ func syncFromFile(cmd *cobra.Command, trigger string) error {
 	}
 	defer store.Close() //nolint:errcheck
 
-	result, err := synccmd.SyncIssuesFile(context.Background(), store, "issues.jsonl")
+	// Check C: skip if Dolt has uncommitted changes that would be overwritten.
+	if hasChanges, _ := hasDoltUncommittedChanges(store); hasChanges {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+			"grava hook: skipping sync after %s — Dolt has uncommitted changes that would be overwritten.\n"+
+				"  Commit first: 'grava commit -m <msg>', then re-run: 'grava hook run %s'\n",
+			trigger, trigger)
+		return nil
+	}
+
+	result, err := synccmd.SyncIssuesFile(context.Background(), store, issuesPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 			"grava hook: sync failed after %s: %v\n", trigger, err)
 		return nil
+	}
+
+	// Persist the hash so subsequent hook calls with the same content are skipped.
+	if hashErr == nil {
+		writeLastImportHash(currentHash)
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
