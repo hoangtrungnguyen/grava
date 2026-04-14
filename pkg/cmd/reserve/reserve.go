@@ -5,17 +5,21 @@ package reserve
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha1" //nolint:gosec // sha1 used for filename derivation, not cryptographic security
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
+	"github.com/hoangtrungnguyen/grava/pkg/grava"
 	"github.com/spf13/cobra"
 )
 
@@ -192,6 +196,61 @@ func ReleaseReservation(ctx context.Context, store dolt.Store, reservationID str
 	return nil
 }
 
+// artifactDir returns the path to the .grava/file_reservations/ directory.
+func artifactDir(gravaDir string) string {
+	return filepath.Join(gravaDir, "file_reservations")
+}
+
+// artifactPath returns the full path of the JSON artifact for a given path_pattern.
+// Filename is the hex-encoded SHA-1 of path_pattern (collision-free for all practical
+// path strings; SHA-1 is used only for deterministic filename derivation, not security).
+func artifactPath(gravaDir, pathPattern string) string {
+	h := sha1.Sum([]byte(pathPattern)) //nolint:gosec
+	return filepath.Join(artifactDir(gravaDir), fmt.Sprintf("%x.json", h))
+}
+
+// WriteReservationArtifact writes or overwrites the JSON artifact for r under gravaDir.
+// Creates the file_reservations/ directory if it does not exist.
+func WriteReservationArtifact(gravaDir string, r Reservation) error {
+	dir := artifactDir(gravaDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("reserve artifact: mkdir %s: %w", dir, err)
+	}
+	b, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return fmt.Errorf("reserve artifact: marshal: %w", err)
+	}
+	path := artifactPath(gravaDir, r.PathPattern)
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		return fmt.Errorf("reserve artifact: write %s: %w", path, err)
+	}
+	return nil
+}
+
+// GetReservation fetches a single reservation by ID (including released rows).
+func GetReservation(ctx context.Context, store dolt.Store, reservationID string) (*Reservation, error) {
+	const q = `SELECT id, project_id, agent_id, path_pattern, exclusive, COALESCE(reason,''),
+		created_ts, expires_ts, released_ts
+		FROM file_reservations WHERE id = ?`
+	row := store.QueryRowContext(ctx, q, reservationID)
+	var r Reservation
+	var releasedTS sql.NullTime
+	if err := row.Scan(
+		&r.ID, &r.ProjectID, &r.AgentID, &r.PathPattern,
+		&r.Exclusive, &r.Reason, &r.CreatedTS, &r.ExpiresTS, &releasedTS,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, gravaerrors.New("RESERVATION_NOT_FOUND",
+				fmt.Sprintf("reservation %s not found", reservationID), nil)
+		}
+		return nil, fmt.Errorf("get reservation: scan: %w", err)
+	}
+	if releasedTS.Valid {
+		r.ReleasedTS = &releasedTS.Time
+	}
+	return &r, nil
+}
+
 // AddCommands registers the reserve command tree on the root command.
 func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	var (
@@ -212,10 +271,13 @@ Examples:
   grava reserve --list
   grava reserve --release res-a1b2c3`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
+			ctx := cmd.Context()
 			store := *d.Store
 			agent := *d.Actor
 			outputJSON := *d.OutputJSON
+
+			// Resolve .grava/ directory for artifact writes (best-effort; non-fatal if missing).
+			gravaDir, _ := grava.ResolveGravaDir()
 
 			// --list
 			if flagList {
@@ -251,8 +313,19 @@ Examples:
 
 			// --release <id>
 			if flagRelease != "" {
+				// Fetch reservation before releasing so we have path_pattern for artifact update.
+				existing, fetchErr := GetReservation(ctx, store, flagRelease)
+				if fetchErr != nil {
+					return fetchErr
+				}
 				if err := ReleaseReservation(ctx, store, flagRelease); err != nil {
 					return err
+				}
+				// Update the artifact to record released_ts (best-effort; non-fatal).
+				if gravaDir != "" && existing != nil {
+					now := time.Now().UTC()
+					existing.ReleasedTS = &now
+					_ = WriteReservationArtifact(gravaDir, *existing) //nolint:errcheck
 				}
 				if outputJSON {
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{
@@ -279,6 +352,10 @@ Examples:
 			result, err := DeclareReservation(ctx, store, p)
 			if err != nil {
 				return err
+			}
+			// Write Git-tracked artifact (best-effort; non-fatal if .grava/ is unavailable).
+			if gravaDir != "" {
+				_ = WriteReservationArtifact(gravaDir, result.Reservation) //nolint:errcheck
 			}
 			if outputJSON {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)

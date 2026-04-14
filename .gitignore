@@ -33,6 +33,13 @@ go.work.sum
 
 # Grava local database and config
 .grava.yaml
+# Exclude Dolt DB, binaries, and logs inside .grava/ — NOT .grava/file_reservations/
+# (FR-ECS-1d: reservation audit artifacts in file_reservations/ are Git-tracked)
+.grava/bin/
+.grava/dolt/
+.grava/*.log
+.grava/schema_version
+.grava/conflicts.json
 
 # Binaries
 /grava
