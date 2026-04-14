@@ -8,31 +8,49 @@ package merge_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// buildGravaBinary compiles the grava binary into a temp directory and returns
-// its path. Results are not cached — each test gets a fresh binary.
-func buildGravaBinary(t *testing.T) string {
+var (
+	gravaBinOnce sync.Once
+	gravaBinPath string
+	gravaBinErr  error
+)
+
+// sharedGravaBinary returns the path to a grava binary compiled once per test
+// process. Subsequent callers reuse the same binary.
+func sharedGravaBinary(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "grava")
-	out, err := exec.Command("go", "build", "-o", bin,
-		"github.com/hoangtrungnguyen/grava/cmd/grava").CombinedOutput()
-	require.NoError(t, err, "go build failed:\n%s", string(out))
-	return bin
+	gravaBinOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "grava-test-bin-*")
+		if err != nil {
+			gravaBinErr = err
+			return
+		}
+		gravaBinPath = filepath.Join(dir, "grava")
+		out, err := exec.Command("go", "build", "-o", gravaBinPath,
+			"github.com/hoangtrungnguyen/grava/cmd/grava").CombinedOutput()
+		if err != nil {
+			gravaBinErr = fmt.Errorf("go build failed:\n%s", string(out))
+		}
+	})
+	require.NoError(t, gravaBinErr)
+	return gravaBinPath
 }
 
 // initMergeDriverRepo creates a git repo configured with the grava merge driver
-// pointing to the given binary path. Returns the repo dir and a cleanup func.
-func initMergeDriverRepo(t *testing.T, gravaBin string) (string, func()) {
+// pointing to the given binary path. Returns the repo dir.
+// The caller is responsible for os.Chdir if needed.
+func initMergeDriverRepo(t *testing.T, gravaBin string) string {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -42,6 +60,9 @@ func initMergeDriverRepo(t *testing.T, gravaBin string) (string, func()) {
 		{"git", "init", dir},
 		{"git", "-C", dir, "config", "user.email", "test@test.com"},
 		{"git", "-C", dir, "config", "user.name", "Test"},
+		// Pin default branch to "master" so tests are portable across systems
+		// where init.defaultBranch may be set to "main".
+		{"git", "-C", dir, "config", "init.defaultBranch", "master"},
 		{"git", "-C", dir, "config", "merge.grava.name", "Grava Schema-Aware Merge"},
 		{"git", "-C", dir, "config", "merge.grava.driver", driverCmd},
 	} {
@@ -53,11 +74,7 @@ func initMergeDriverRepo(t *testing.T, gravaBin string) (string, func()) {
 	attrPath := filepath.Join(dir, ".gitattributes")
 	require.NoError(t, os.WriteFile(attrPath, []byte("issues.jsonl merge=grava\n"), 0644))
 
-	orig, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-
-	return dir, func() { _ = os.Chdir(orig) }
+	return dir
 }
 
 // gitRun runs a git command in dir and requires no error.
@@ -102,9 +119,8 @@ func readIssues(t *testing.T, path string) []map[string]interface{} {
 // modify different fields of the same issue, git merge produces a clean result
 // containing both changes — no manual resolution needed.
 func TestMergeDriver_NonConflictingFieldChanges(t *testing.T) {
-	gravaBin := buildGravaBinary(t)
-	dir, cleanup := initMergeDriverRepo(t, gravaBin)
-	defer cleanup()
+	gravaBin := sharedGravaBinary(t)
+	dir := initMergeDriverRepo(t, gravaBin)
 
 	issuePath := filepath.Join(dir, "issues.jsonl")
 
@@ -116,19 +132,17 @@ func TestMergeDriver_NonConflictingFieldChanges(t *testing.T) {
 
 	// Branch A: change title only.
 	gitRun(t, dir, "checkout", "-b", "feat/a")
-	branchA := []map[string]string{{"id": "abc123", "title": "Updated Title", "status": "open"}}
-	writeIssues(t, issuePath, branchA)
+	writeIssues(t, issuePath, []map[string]string{{"id": "abc123", "title": "Updated Title", "status": "open"}})
 	gitRun(t, dir, "add", "issues.jsonl")
 	gitRun(t, dir, "commit", "-m", "feat/a: update title")
 
-	// Main: change status only.
-	gitRun(t, dir, "checkout", "master")
-	main := []map[string]string{{"id": "abc123", "title": "Original", "status": "in_progress"}}
-	writeIssues(t, issuePath, main)
+	// Return to default branch and change status only.
+	gitRun(t, dir, "checkout", "-")
+	writeIssues(t, issuePath, []map[string]string{{"id": "abc123", "title": "Original", "status": "in_progress"}})
 	gitRun(t, dir, "add", "issues.jsonl")
 	gitRun(t, dir, "commit", "-m", "main: update status")
 
-	// Merge feat/a into main — should succeed without conflicts.
+	// Merge feat/a — should succeed without conflicts.
 	out, err := exec.Command("git", "-C", dir, "merge", "--no-edit", "feat/a").CombinedOutput()
 	require.NoError(t, err, "git merge should succeed with no conflicts:\n%s", string(out))
 
@@ -141,9 +155,8 @@ func TestMergeDriver_NonConflictingFieldChanges(t *testing.T) {
 // TestMergeDriver_AddedOnBothSides verifies that when each branch adds a
 // different issue (no shared ID), both issues appear in the merged result.
 func TestMergeDriver_AddedOnBothSides(t *testing.T) {
-	gravaBin := buildGravaBinary(t)
-	dir, cleanup := initMergeDriverRepo(t, gravaBin)
-	defer cleanup()
+	gravaBin := sharedGravaBinary(t)
+	dir := initMergeDriverRepo(t, gravaBin)
 
 	issuePath := filepath.Join(dir, "issues.jsonl")
 
@@ -158,13 +171,13 @@ func TestMergeDriver_AddedOnBothSides(t *testing.T) {
 	gitRun(t, dir, "add", "issues.jsonl")
 	gitRun(t, dir, "commit", "-m", "add issue-1")
 
-	// Main: add issue-2.
-	gitRun(t, dir, "checkout", "master")
+	// Return to default branch and add issue-2.
+	gitRun(t, dir, "checkout", "-")
 	writeIssues(t, issuePath, []map[string]string{{"id": "issue-2", "title": "Second"}})
 	gitRun(t, dir, "add", "issues.jsonl")
 	gitRun(t, dir, "commit", "-m", "add issue-2")
 
-	// Merge feat/a into main.
+	// Merge feat/a into default branch.
 	out, err := exec.Command("git", "-C", dir, "merge", "--no-edit", "feat/a").CombinedOutput()
 	require.NoError(t, err, "git merge should succeed:\n%s", string(out))
 
@@ -182,9 +195,8 @@ func TestMergeDriver_AddedOnBothSides(t *testing.T) {
 // TestMergeDriver_SameFieldConflict verifies that when both branches modify
 // the same field of the same issue, git merge exits non-zero (conflict).
 func TestMergeDriver_SameFieldConflict(t *testing.T) {
-	gravaBin := buildGravaBinary(t)
-	dir, cleanup := initMergeDriverRepo(t, gravaBin)
-	defer cleanup()
+	gravaBin := sharedGravaBinary(t)
+	dir := initMergeDriverRepo(t, gravaBin)
 
 	issuePath := filepath.Join(dir, "issues.jsonl")
 
@@ -199,8 +211,8 @@ func TestMergeDriver_SameFieldConflict(t *testing.T) {
 	gitRun(t, dir, "add", "issues.jsonl")
 	gitRun(t, dir, "commit", "-m", "feat/a: set paused")
 
-	// Main: set status=in_progress (conflicting).
-	gitRun(t, dir, "checkout", "master")
+	// Return to default branch and set status=in_progress (conflicting).
+	gitRun(t, dir, "checkout", "-")
 	writeIssues(t, issuePath, []map[string]string{{"id": "abc123", "status": "in_progress"}})
 	gitRun(t, dir, "add", "issues.jsonl")
 	gitRun(t, dir, "commit", "-m", "main: set in_progress")
@@ -214,7 +226,7 @@ func TestMergeDriver_SameFieldConflict(t *testing.T) {
 // TestMergeDriver_IdempotentInstall verifies that running grava install twice
 // in a git repo produces the same configuration and exit 0 both times.
 func TestMergeDriver_IdempotentInstall(t *testing.T) {
-	gravaBin := buildGravaBinary(t)
+	gravaBin := sharedGravaBinary(t)
 	dir := t.TempDir()
 	for _, args := range [][]string{
 		{"git", "init", dir},
@@ -224,6 +236,8 @@ func TestMergeDriver_IdempotentInstall(t *testing.T) {
 		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
 		require.NoError(t, err, "git setup: %s", string(out))
 	}
+
+	// grava install uses git rev-parse --show-toplevel, so run it from within the repo.
 	orig, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(dir))
