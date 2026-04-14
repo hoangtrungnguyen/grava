@@ -348,20 +348,14 @@ func TestOrchestrator_E2E_ConcurrentClaim(t *testing.T) {
 		waitAllClosed(t, store, taskIDs, 25*time.Second),
 		"all 15 tasks should reach closed status with 3 concurrent orchestrators")
 
-	// Assert liveness (all tasks closed) and at-most-once dispatch.
-	// Note: the orchestrator uses dispatch-then-claim ordering. The Poller
-	// filters on status='open', but there is a short window between sink()
-	// picking up a task and claimTask() setting it to 'in_progress'. Two
-	// orchestrators polling concurrently could both see the same task as
-	// 'open' and both dispatch it (count == 2). The atomic claimTask guard
-	// (AND status='open') prevents double in_progress state, but cannot
-	// prevent double HTTP dispatch. We assert at-most-once here; strictly
-	// exactly-once would require claim-before-dispatch ordering.
+	// Assert exactly-once dispatch. Claim-first ordering (grava-757a) ensures
+	// the DB claim (AND status='open') happens before the HTTP dispatch, so
+	// no two orchestrators can ever dispatch the same task concurrently.
 	mu.Lock()
 	defer mu.Unlock()
 	for _, id := range taskIDs {
 		count := dispatchCount[id]
-		assert.LessOrEqual(t, count, 1,
-			"task %s dispatched %d times; at-most-once expected", id, count)
+		assert.Equal(t, 1, count,
+			"task %s should be dispatched exactly once, got %d", id, count)
 	}
 }

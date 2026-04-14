@@ -86,8 +86,10 @@ func (o *Orchestrator) Run(ctx context.Context) {
 }
 
 // sink is the TaskSink callback invoked by the Poller for each discovered task.
-// It picks an agent, dispatches the task asynchronously, and marks the task
-// in_progress on success.
+// It picks an agent, claims the task atomically in the DB (claim-first), then
+// dispatches to the agent. If dispatch fails after claim, the task is reset to
+// open so the Poller can retry it. This ordering eliminates the race where two
+// concurrent pollers could both dispatch the same task before either claims it.
 func (o *Orchestrator) sink(task DispatchableTask) {
 	o.mu.Lock()
 	dispatchCtx := o.dispatchCtx
@@ -107,37 +109,67 @@ func (o *Orchestrator) sink(task DispatchableTask) {
 	go func() {
 		defer o.wg.Done()
 
+		// Claim first: atomically transition task to in_progress.
+		// If another orchestrator claimed it (0 rows affected), release the
+		// reserved slot and skip — the task is not ours.
+		claimed, err := o.claimTask(dispatchCtx, task.ID, agent.cfg.ID)
+		if err != nil {
+			o.pool.releaseSlot(agent, false)
+			slog.Error("orchestrator: failed to claim task",
+				"task_id", task.ID, "agent", agent.cfg.ID, "error", err)
+			return
+		}
+		if !claimed {
+			o.pool.releaseSlot(agent, false)
+			slog.Debug("orchestrator: task claimed by another orchestrator, skipping",
+				"task_id", task.ID)
+			return
+		}
+		slog.Info("orchestrator: task claimed", "task_id", task.ID, "agent", agent.cfg.ID)
+
+		// Dispatch after claim. On failure, reset the task to open so the
+		// Poller can retry it. Pool.Dispatch handles slot release on error.
 		if err := o.pool.Dispatch(dispatchCtx, agent, task); err != nil {
-			// Dispatch failed (network error or non-2xx). Pool already handled
-			// slot release and agent availability. Task stays open for retry.
+			if resetErr := o.resetTask(dispatchCtx, task.ID); resetErr != nil {
+				slog.Error("orchestrator: failed to reset task after dispatch failure",
+					"task_id", task.ID, "error", resetErr)
+			}
 			if o.statusSrv != nil {
 				o.statusSrv.IncrFailed()
 			}
 			return
 		}
-		// Mark task in_progress so the Poller does not re-dispatch it.
-		// Uses AND status='open' guard to prevent overwriting a concurrent close.
-		if err := o.claimTask(dispatchCtx, task.ID, agent.cfg.ID); err != nil {
-			slog.Error("orchestrator: failed to claim task after dispatch",
-				"task_id", task.ID, "agent", agent.cfg.ID, "error", err)
-		} else {
-			slog.Info("orchestrator: task claimed", "task_id", task.ID, "agent", agent.cfg.ID)
-			if o.statusSrv != nil {
-				o.statusSrv.IncrDispatched()
-			}
+		if o.statusSrv != nil {
+			o.statusSrv.IncrDispatched()
 		}
 	}()
 }
 
-// claimTask atomically transitions a task from open to in_progress in the DB,
-// recording which agent was assigned and when work started.
-func (o *Orchestrator) claimTask(ctx context.Context, taskID, agentID string) error {
+// claimTask atomically transitions a task from open to in_progress in the DB.
+// Returns (true, nil) if the task was claimed, (false, nil) if another
+// orchestrator already claimed it (0 rows affected), or (false, err) on error.
+func (o *Orchestrator) claimTask(ctx context.Context, taskID, agentID string) (bool, error) {
 	const q = `UPDATE issues
 	SET status = 'in_progress', assignee = ?, started_at = NOW()
 	WHERE id = ? AND status = 'open'`
-	_, err := o.store.ExecContext(ctx, q, agentID, taskID)
+	result, err := o.store.ExecContext(ctx, q, agentID, taskID)
 	if err != nil {
-		return fmt.Errorf("orchestrator: claim task %s: %w", taskID, err)
+		return false, fmt.Errorf("orchestrator: claim task %s: %w", taskID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("orchestrator: claim task %s rows affected: %w", taskID, err)
+	}
+	return n > 0, nil
+}
+
+// resetTask transitions a task from in_progress back to open, clearing the
+// assignee. Called when a dispatch fails after a successful claim.
+func (o *Orchestrator) resetTask(ctx context.Context, taskID string) error {
+	const q = `UPDATE issues SET status = 'open', assignee = NULL, started_at = NULL WHERE id = ?`
+	_, err := o.store.ExecContext(ctx, q, taskID)
+	if err != nil {
+		return fmt.Errorf("orchestrator: reset task %s: %w", taskID, err)
 	}
 	return nil
 }
