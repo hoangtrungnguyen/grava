@@ -113,3 +113,38 @@ func TestOrchestrateCmd_DefaultConfigPath(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read config")
 }
+
+func TestOrchestrateCmd_RelativeAgentsConfigPath(t *testing.T) {
+	// Verifies that a relative agents_config path is resolved relative to the
+	// config file's directory, not the CWD. This covers the review finding:
+	// users expect 'agents_config: agents.yaml' to resolve relative to the
+	// orchestrator config file (e.g. .grava/), not the project root.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "agents.yaml"), []byte(`
+agents:
+  - id: agent-1
+    endpoint: http://localhost:8001
+`), 0644))
+
+	cfgPath := filepath.Join(dir, "orchestrator.yaml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`
+poll_interval_secs: 1
+heartbeat_timeout_secs: 15
+task_timeout_secs: 30
+agents_config: agents.yaml
+`), 0644))
+
+	orchestrateConfigPath = cfgPath
+	outputJSON = false
+	t.Cleanup(func() { orchestrateConfigPath = ""; outputJSON = false })
+
+	buf := &bytes.Buffer{}
+	orchestrateCmd.SetOut(buf)
+	orchestrateCmd.SetErr(buf)
+
+	// CWD is different from dir — relative path must resolve against dir
+	t.Chdir(t.TempDir())
+	err := orchestrateCmd.RunE(orchestrateCmd, []string{})
+	require.NoError(t, err, "relative agents_config should resolve relative to config file dir")
+	assert.Contains(t, buf.String(), "agent-1")
+}

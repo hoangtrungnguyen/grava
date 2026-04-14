@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/hoangtrungnguyen/grava/pkg/orchestrator"
 	"github.com/spf13/cobra"
@@ -25,16 +26,25 @@ Example config (.grava/orchestrator.yaml):
   task_timeout_secs: 30
   agents_config: orchestrator-agents.yaml`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if orchestrateConfigPath == "" {
-			orchestrateConfigPath = ".grava/orchestrator.yaml"
+		cfgPath := orchestrateConfigPath
+		if cfgPath == "" {
+			cfgPath = ".grava/orchestrator.yaml"
 		}
 
-		cfg, err := orchestrator.LoadConfig(orchestrateConfigPath)
+		cfg, err := orchestrator.LoadConfig(cfgPath)
 		if err != nil {
 			return err
 		}
 
-		agents, err := orchestrator.LoadAgents(cfg.AgentsConfigPath)
+		// Resolve agents config path relative to the orchestrator config file
+		// directory so that a relative path like "agents.yaml" works when the
+		// config lives in .grava/ and the user runs grava from the project root.
+		agentsPath := cfg.AgentsConfigPath
+		if !filepath.IsAbs(agentsPath) {
+			agentsPath = filepath.Join(filepath.Dir(cfgPath), agentsPath)
+		}
+
+		agents, err := orchestrator.LoadAgents(agentsPath)
 		if err != nil {
 			return err
 		}
@@ -62,7 +72,7 @@ Example config (.grava/orchestrator.yaml):
 				"   Heartbeat timeout:   %ds\n"+
 				"   Task timeout:        %ds\n"+
 				"   Agents:              %d\n",
-			orchestrateConfigPath,
+			cfgPath,
 			cfg.PollIntervalSecs,
 			cfg.HeartbeatTimeoutSecs,
 			cfg.TaskTimeoutSecs,
