@@ -75,10 +75,14 @@ func TestWatchdog_AgentDeclaredDeadAfterMaxFailures(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("task-1").AddRow("task-2"))
 	mock.ExpectExec(qResetTask).WithArgs("task-1").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(qInsertComment).WithArgs("task-1", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(qInsertEvent).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qInsertEvent).
+		WithArgs("task-1", "reset", "orchestrator", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(qResetTask).WithArgs("task-2").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(qInsertComment).WithArgs("task-2", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(qInsertEvent).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qInsertEvent).
+		WithArgs("task-2", "reset", "orchestrator", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	pool := NewAgentPool([]AgentConfig{
 		// Non-listening port — every ping will fail.
@@ -110,7 +114,9 @@ func TestWatchdog_TaskTimeoutResetsToOpen(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("timed-out-task"))
 	mock.ExpectExec(qResetTask).WithArgs("timed-out-task").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(qInsertComment).WithArgs("timed-out-task", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(qInsertEvent).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qInsertEvent).
+		WithArgs("timed-out-task", "reset", "orchestrator", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	pool := NewAgentPool([]AgentConfig{makeAgentConfig("agent-1", "http://localhost", 3)})
 	wd := NewWatchdog(pool, store, 10, 30)
@@ -173,7 +179,9 @@ func TestWatchdog_DeadAgentCommentContainsAgentID(t *testing.T) {
 	mock.ExpectExec(qInsertComment).
 		WithArgs("task-x", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(qInsertEvent).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qInsertEvent).
+		WithArgs("task-x", "reset", "orchestrator", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	pool := NewAgentPool([]AgentConfig{
 		makeAgentConfig("agent-42", "http://127.0.0.1:19999", 3),

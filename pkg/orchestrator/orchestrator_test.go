@@ -50,7 +50,9 @@ func TestOrchestrator_ClaimFirst_SuccessPath(t *testing.T) {
 	mock.ExpectExec(qClaimTask).
 		WithArgs("agent-1", "task-1").
 		WillReturnResult(sqlmock.NewResult(1, 1)) // 1 row affected → claimed
-	mock.ExpectExec(qWriteEventOrc).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qWriteEventOrc).
+		WithArgs("task-1", "claim", "orchestrator", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	pool := NewAgentPool([]AgentConfig{makeAgentConfig("agent-1", agent.URL, 3)})
 	cfg := &Config{
@@ -159,7 +161,9 @@ func TestOrchestrator_ClaimFirst_DispatchFailResetsTask(t *testing.T) {
 	mock.ExpectExec(qClaimTask).
 		WithArgs("agent-1", "task-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(qWriteEventOrc).WillReturnResult(sqlmock.NewResult(1, 1)) // claim event
+	mock.ExpectExec(qWriteEventOrc).
+		WithArgs("task-1", "claim", "orchestrator", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1)) // claim event
 	mock.ExpectExec(qResetTaskOrc).
 		WithArgs("task-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
