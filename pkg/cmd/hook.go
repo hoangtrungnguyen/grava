@@ -53,6 +53,10 @@ Supported hooks:
 	},
 }
 
+// connectDBFn is the hook used by syncFromFile to obtain a Dolt store.
+// It is overridden in tests to inject a mock store without touching real Dolt.
+var connectDBFn = func() (dolt.Store, error) { return tryConnectDB() }
+
 // tryConnectDB attempts to connect to the Dolt database using the same
 // resolution chain as PersistentPreRunE: --db-url flag → viper (config/env)
 // → hardcoded default. Hook commands skip PersistentPreRunE so they must
@@ -136,29 +140,28 @@ func writeLastImportHash(hash string) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(path, []byte(hash+"\n"), 0644) //nolint:gosec
+	_ = os.WriteFile(path, []byte(hash), 0644) //nolint:gosec
 }
 
 // hasDoltUncommittedChanges returns true when dolt_status reports any
 // staged or unstaged rows — i.e., there are working-set changes that an
 // import --overwrite would silently discard.
 //
-// If dolt_status is not queryable (non-Dolt backend, test DB), the function
-// returns false so hook execution is never blocked unnecessarily.
-func hasDoltUncommittedChanges(store dolt.Store) (bool, error) {
+// All errors are treated as "no changes" (fail-open) so hook execution is
+// never blocked on non-Dolt backends or when dolt_status is unavailable.
+func hasDoltUncommittedChanges(store dolt.Store) bool {
 	rows, err := store.Query("SELECT COUNT(*) FROM dolt_status")
 	if err != nil {
-		// dolt_status is a Dolt-only system table; treat as clean on error.
-		return false, nil //nolint:nilerr
+		return false
 	}
 	defer rows.Close() //nolint:errcheck
 	var count int
 	if rows.Next() {
 		if err := rows.Scan(&count); err != nil {
-			return false, err
+			return false
 		}
 	}
-	return count > 0, nil
+	return count > 0
 }
 
 // syncFromFile connects to the DB, runs the A+C safety checks, imports
@@ -188,7 +191,7 @@ func syncFromFile(cmd *cobra.Command, trigger string) error {
 		return nil
 	}
 
-	store, err := tryConnectDB()
+	store, err := connectDBFn()
 	if err != nil {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 			"grava hook: DB unavailable (%s), skipping sync: %v\n", trigger, err)
@@ -197,7 +200,7 @@ func syncFromFile(cmd *cobra.Command, trigger string) error {
 	defer store.Close() //nolint:errcheck
 
 	// Check C: skip if Dolt has uncommitted changes that would be overwritten.
-	if hasChanges, _ := hasDoltUncommittedChanges(store); hasChanges {
+	if hasDoltUncommittedChanges(store) {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 			"grava hook: skipping sync after %s — Dolt has uncommitted changes that would be overwritten.\n"+
 				"  Commit first: 'grava commit -m <msg>', then re-run: 'grava hook run %s'\n",

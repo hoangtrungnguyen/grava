@@ -3,9 +3,12 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,6 +69,81 @@ func TestReadWriteLastImportHash(t *testing.T) {
 
 	// Should round-trip
 	assert.Equal(t, "abc123def456", readLastImportHash())
+}
+
+// --- hasDoltUncommittedChanges (Check C) ---
+
+func TestHasDoltUncommittedChanges_ReturnsTrueWhenRowsExist(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(3))
+
+	store := dolt.NewClientFromDB(db)
+	assert.True(t, hasDoltUncommittedChanges(store))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestHasDoltUncommittedChanges_ReturnsFalseWhenNoRows(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+	store := dolt.NewClientFromDB(db)
+	assert.False(t, hasDoltUncommittedChanges(store))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestHasDoltUncommittedChanges_ReturnsFalseOnQueryError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
+		WillReturnError(assert.AnError)
+
+	store := dolt.NewClientFromDB(db)
+	// Non-Dolt backend — treat as no changes (fail-open).
+	assert.False(t, hasDoltUncommittedChanges(store))
+}
+
+// TestSyncFromFile_SkipsWhenDoltHasUncommittedChanges verifies that syncFromFile
+// skips the import and writes a warning to stderr when Check C fires.
+func TestSyncFromFile_SkipsWhenDoltHasUncommittedChanges(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	content := `{"type":"issue","data":{"id":"abc","title":"T"}}` + "\n"
+	require.NoError(t, os.WriteFile("issues.jsonl", []byte(content), 0644))
+	require.NoError(t, os.MkdirAll(".grava", 0755))
+	// No stored hash so Check A does not fire.
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	// dolt_status returns 2 rows — uncommitted changes present.
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(2))
+
+	// Override connectDBFn to return the mock store without a real Dolt instance.
+	origConnect := connectDBFn
+	connectDBFn = func() (dolt.Store, error) { return dolt.NewClientFromDB(db), nil }
+	t.Cleanup(func() { connectDBFn = origConnect })
+
+	var errBuf strings.Builder
+	hookRunCmd.SetErr(&errBuf)
+	defer hookRunCmd.SetErr(nil)
+
+	err = syncFromFile(hookRunCmd, "merge")
+	assert.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "uncommitted changes")
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // TestSyncFromFile_SkipsWhenHashUnchanged verifies that syncFromFile returns
