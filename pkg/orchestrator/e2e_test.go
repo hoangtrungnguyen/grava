@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -236,5 +237,128 @@ func TestOrchestrator_GracefulShutdown_NoDataCorruption(t *testing.T) {
 		require.NoError(t, row.Scan(&status))
 		assert.NotEqual(t, "in_progress", status,
 			"task %s must not be stuck in_progress after shutdown", id)
+	}
+}
+
+// TestOrchestrator_E2E_3Agents_100Tasks verifies that 3 agents fully drain a
+// 100-task queue with zero data corruption (all tasks reach 'closed').
+func TestOrchestrator_E2E_3Agents_100Tasks(t *testing.T) {
+	store := openTestDB(t)
+
+	prefix := fmt.Sprintf("e2e3a-%d", time.Now().UnixNano()%9999999)
+	taskIDs := createTestTasks(t, store, prefix, 100)
+	t.Cleanup(func() { cleanupTasks(t, store, prefix) })
+
+	agent1 := agentServer(t, store)
+	agent2 := agentServer(t, store)
+	agent3 := agentServer(t, store)
+
+	pool := NewAgentPool([]AgentConfig{
+		{ID: "a1", Endpoint: agent1.URL, MaxConcurrentTasks: 40, TimeoutSecs: 10},
+		{ID: "a2", Endpoint: agent2.URL, MaxConcurrentTasks: 40, TimeoutSecs: 10},
+		{ID: "a3", Endpoint: agent3.URL, MaxConcurrentTasks: 40, TimeoutSecs: 10},
+	})
+	cfg := &Config{
+		PollIntervalSecs:     1,
+		HeartbeatTimeoutSecs: 5,
+		TaskTimeoutSecs:      60,
+		AgentsConfigPath:     "n/a",
+	}
+	orc := NewOrchestrator(store, pool, cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	go orc.Run(ctx)
+
+	require.True(t,
+		waitAllClosed(t, store, taskIDs, 80*time.Second),
+		"all 100 tasks should reach closed status within 80s")
+
+	// Verify zero data corruption: every task must be 'closed', none stuck.
+	for _, id := range taskIDs {
+		row := store.QueryRowContext(context.Background(),
+			`SELECT status FROM issues WHERE id = ?`, id)
+		var status string
+		require.NoError(t, row.Scan(&status))
+		assert.Equal(t, "closed", status,
+			"task %s must be closed after full drain, got %s", id, status)
+	}
+}
+
+// TestOrchestrator_E2E_ConcurrentClaim verifies that 3 parallel orchestrators
+// sharing the same DB do not produce double-claims: each task is dispatched at
+// most once and all tasks eventually reach 'closed'.
+func TestOrchestrator_E2E_ConcurrentClaim(t *testing.T) {
+	store := openTestDB(t)
+
+	prefix := fmt.Sprintf("e2ecc-%d", time.Now().UnixNano()%9999999)
+	taskIDs := createTestTasks(t, store, prefix, 15)
+	t.Cleanup(func() { cleanupTasks(t, store, prefix) })
+
+	// trackingSrv records how many times each task ID is dispatched, then
+	// marks the task closed. Using context.Background() so DB writes complete
+	// even if the HTTP connection resets during shutdown.
+	var mu sync.Mutex
+	dispatchCount := make(map[string]int)
+
+	trackingSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/task" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		dispatchCount[req.ID]++
+		mu.Unlock()
+
+		_, _ = store.ExecContext(context.Background(),
+			`UPDATE issues SET status='closed', stopped_at=NOW() WHERE id=?`, req.ID)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(trackingSrv.Close)
+
+	cfg := &Config{
+		PollIntervalSecs:     1,
+		HeartbeatTimeoutSecs: 5,
+		TaskTimeoutSecs:      30,
+		AgentsConfigPath:     "n/a",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Spawn 3 independent orchestrators, each with its own agent slot pointing
+	// to the same tracking server.
+	for i := 0; i < 3; i++ {
+		agentID := fmt.Sprintf("orc%d-agent", i)
+		pool := NewAgentPool([]AgentConfig{
+			{ID: agentID, Endpoint: trackingSrv.URL, MaxConcurrentTasks: 5, TimeoutSecs: 5},
+		})
+		orc := NewOrchestrator(store, pool, cfg)
+		go orc.Run(ctx)
+	}
+
+	require.True(t,
+		waitAllClosed(t, store, taskIDs, 25*time.Second),
+		"all 15 tasks should reach closed status with 3 concurrent orchestrators")
+
+	// Assert liveness (all tasks closed) and single-claim correctness.
+	// The atomic claimTask (AND status='open') prevents any task from being
+	// marked in_progress by more than one orchestrator simultaneously.
+	mu.Lock()
+	defer mu.Unlock()
+	for _, id := range taskIDs {
+		count := dispatchCount[id]
+		// Dispatch count should be exactly 1: the claim guard prevents the Poller
+		// from re-queuing a task once it is in_progress or closed.
+		assert.Equal(t, 1, count,
+			"task %s should be dispatched exactly once, got %d dispatches", id, count)
 	}
 }
