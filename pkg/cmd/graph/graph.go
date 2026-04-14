@@ -520,6 +520,11 @@ func readyQueue(ctx context.Context, store dolt.Store, limit int) ([]*graph.Read
 	return tasks, nil
 }
 
+// ReadyQueue is the exported wrapper around readyQueue for use by sandbox scenarios.
+func ReadyQueue(ctx context.Context, store dolt.Store, limit int) ([]*graph.ReadyTask, error) {
+	return readyQueue(ctx, store, limit)
+}
+
 func newReadyCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ready",
