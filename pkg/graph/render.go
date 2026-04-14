@@ -31,9 +31,42 @@ type EdgeJSON struct {
 
 // RenderOptions controls rendering behavior
 type RenderOptions struct {
-	Format    string // "ascii", "dot", "json"
-	RootID    string // If set, render only subgraph from this node
-	ExcludeFn func(*Node) bool // Optional filter function
+	Format string // "ascii", "dot", "json"
+	RootID string // If set, render only subgraph from this node
+}
+
+// collectNodesToShow returns the set of nodes to include in the render.
+// When opts.RootID is set, only nodes reachable from that root are included.
+// Otherwise all non-archived nodes are included.
+func (g *AdjacencyDAG) collectNodesToShow(opts RenderOptions) map[string]*Node {
+	nodesToShow := make(map[string]*Node)
+	if opts.RootID != "" {
+		for _, nodeID := range g.getReachableNodes(opts.RootID) {
+			if node, err := g.GetNode(nodeID); err == nil {
+				nodesToShow[nodeID] = node
+			}
+		}
+	} else {
+		for _, node := range g.GetAllNodes() {
+			if node.Status != StatusArchived {
+				nodesToShow[node.ID] = node
+			}
+		}
+	}
+	return nodesToShow
+}
+
+// collectEdgesToShow returns edges whose both endpoints are in nodesToShow.
+func collectEdgesToShow(allEdges []*Edge, nodesToShow map[string]*Node) []*Edge {
+	var edges []*Edge
+	for _, edge := range allEdges {
+		if _, fromOK := nodesToShow[edge.FromID]; fromOK {
+			if _, toOK := nodesToShow[edge.ToID]; toOK {
+				edges = append(edges, edge)
+			}
+		}
+	}
+	return edges
 }
 
 // Render renders the graph in the specified format
@@ -59,48 +92,8 @@ func (g *AdjacencyDAG) Render(opts RenderOptions) (string, error) {
 func (g *AdjacencyDAG) RenderASCII(opts RenderOptions) (string, error) {
 	var sb strings.Builder
 
-	allNodes := g.GetAllNodes()
-	allEdges := g.GetAllEdges()
-
-	// Filter nodes based on opts
-	nodesToShow := make(map[string]*Node)
-	edgesToShow := make([]*Edge, 0)
-
-	if opts.RootID != "" {
-		// Subgraph: only show nodes reachable from root
-		reachable := g.getReachableNodes(opts.RootID)
-		for _, nodeID := range reachable {
-			if node, err := g.GetNode(nodeID); err == nil {
-				if opts.ExcludeFn == nil || !opts.ExcludeFn(node) {
-					nodesToShow[nodeID] = node
-				}
-			}
-		}
-		// Include root node itself
-		if root, err := g.GetNode(opts.RootID); err == nil {
-			if opts.ExcludeFn == nil || !opts.ExcludeFn(root) {
-				nodesToShow[opts.RootID] = root
-			}
-		}
-	} else {
-		// Full graph: include all non-archived nodes
-		for _, node := range allNodes {
-			if node.Status != StatusArchived {
-				if opts.ExcludeFn == nil || !opts.ExcludeFn(node) {
-					nodesToShow[node.ID] = node
-				}
-			}
-		}
-	}
-
-	// Collect edges between shown nodes
-	for _, edge := range allEdges {
-		if _, fromOK := nodesToShow[edge.FromID]; fromOK {
-			if _, toOK := nodesToShow[edge.ToID]; toOK {
-				edgesToShow = append(edgesToShow, edge)
-			}
-		}
-	}
+	nodesToShow := g.collectNodesToShow(opts)
+	edgesToShow := collectEdgesToShow(g.GetAllEdges(), nodesToShow)
 
 	// Simple edge list format
 	sb.WriteString("Dependency Graph\n")
@@ -174,53 +167,23 @@ func (g *AdjacencyDAG) RenderASCII(opts RenderOptions) (string, error) {
 func (g *AdjacencyDAG) RenderDOT(opts RenderOptions) (string, error) {
 	var sb strings.Builder
 
-	allNodes := g.GetAllNodes()
-	allEdges := g.GetAllEdges()
-
-	// Filter nodes
-	nodesToShow := make(map[string]*Node)
-
-	if opts.RootID != "" {
-		reachable := g.getReachableNodes(opts.RootID)
-		for _, nodeID := range reachable {
-			if node, err := g.GetNode(nodeID); err == nil {
-				if opts.ExcludeFn == nil || !opts.ExcludeFn(node) {
-					nodesToShow[nodeID] = node
-				}
-			}
-		}
-		if root, err := g.GetNode(opts.RootID); err == nil {
-			if opts.ExcludeFn == nil || !opts.ExcludeFn(root) {
-				nodesToShow[opts.RootID] = root
-			}
-		}
-	} else {
-		for _, node := range allNodes {
-			if node.Status != StatusArchived {
-				if opts.ExcludeFn == nil || !opts.ExcludeFn(node) {
-					nodesToShow[node.ID] = node
-				}
-			}
-		}
-	}
-
-	// Collect edges between shown nodes
-	edgesToShow := make([]*Edge, 0)
-	for _, edge := range allEdges {
-		if _, fromOK := nodesToShow[edge.FromID]; fromOK {
-			if _, toOK := nodesToShow[edge.ToID]; toOK {
-				edgesToShow = append(edgesToShow, edge)
-			}
-		}
-	}
+	nodesToShow := g.collectNodesToShow(opts)
+	edgesToShow := collectEdgesToShow(g.GetAllEdges(), nodesToShow)
 
 	// Write DOT format
 	sb.WriteString("digraph G {\n")
 	sb.WriteString("  rankdir=LR;\n")
 	sb.WriteString("  node [shape=box, style=rounded];\n\n")
 
-	// Write nodes
-	for _, node := range nodesToShow {
+	// Write nodes in deterministic order
+	nodeIDs := make([]string, 0, len(nodesToShow))
+	for id := range nodesToShow {
+		nodeIDs = append(nodeIDs, id)
+	}
+	sort.Strings(nodeIDs)
+
+	for _, id := range nodeIDs {
+		node := nodesToShow[id]
 		color := "white"
 		switch node.Status {
 		case StatusClosed:
@@ -254,45 +217,8 @@ func (g *AdjacencyDAG) RenderDOT(opts RenderOptions) (string, error) {
 
 // RenderJSON returns a JSON representation of the graph
 func (g *AdjacencyDAG) RenderJSON(opts RenderOptions) (string, error) {
-	allNodes := g.GetAllNodes()
-	allEdges := g.GetAllEdges()
-
-	// Filter nodes
-	nodesToShow := make(map[string]*Node)
-
-	if opts.RootID != "" {
-		reachable := g.getReachableNodes(opts.RootID)
-		for _, nodeID := range reachable {
-			if node, err := g.GetNode(nodeID); err == nil {
-				if opts.ExcludeFn == nil || !opts.ExcludeFn(node) {
-					nodesToShow[nodeID] = node
-				}
-			}
-		}
-		if root, err := g.GetNode(opts.RootID); err == nil {
-			if opts.ExcludeFn == nil || !opts.ExcludeFn(root) {
-				nodesToShow[opts.RootID] = root
-			}
-		}
-	} else {
-		for _, node := range allNodes {
-			if node.Status != StatusArchived {
-				if opts.ExcludeFn == nil || !opts.ExcludeFn(node) {
-					nodesToShow[node.ID] = node
-				}
-			}
-		}
-	}
-
-	// Collect edges between shown nodes
-	edgesToShow := make([]*Edge, 0)
-	for _, edge := range allEdges {
-		if _, fromOK := nodesToShow[edge.FromID]; fromOK {
-			if _, toOK := nodesToShow[edge.ToID]; toOK {
-				edgesToShow = append(edgesToShow, edge)
-			}
-		}
-	}
+	nodesToShow := g.collectNodesToShow(opts)
+	edgesToShow := collectEdgesToShow(g.GetAllEdges(), nodesToShow)
 
 	// Build JSON structure
 	nodeArray := make([]NodeJSON, 0, len(nodesToShow))

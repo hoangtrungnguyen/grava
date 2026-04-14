@@ -176,7 +176,8 @@ func TestGraphVisualizeCmd_RootFlag(t *testing.T) {
 }
 
 func TestGraphVisualizeCmd_InvalidFormat(t *testing.T) {
-	db, mock, err := sqlmock.New()
+	// Format validation fires before LoadGraphFromDB — no DB connection needed.
+	db, _, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -185,11 +186,6 @@ func TestGraphVisualizeCmd_InvalidFormat(t *testing.T) {
 	actor := "test"
 	model := ""
 	deps := &cmddeps.Deps{Store: &s, Actor: &actor, AgentModel: &model, OutputJSON: &outputJSON}
-
-	mock.ExpectQuery(qVisualizeLoadIssues).
-		WillReturnRows(sqlmock.NewRows(issueCols()))
-	mock.ExpectQuery(qVisualizeLoadDeps).
-		WillReturnRows(sqlmock.NewRows(depCols()))
 
 	buf := &bytes.Buffer{}
 	cmd := &cobra.Command{}
