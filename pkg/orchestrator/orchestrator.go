@@ -43,12 +43,18 @@ func NewOrchestrator(store dolt.Store, pool *AgentPool, cfg *Config) *Orchestrat
 // SIGTERM), the poller and watchdog stop; Run blocks until all in-flight
 // dispatches complete before returning (graceful drain).
 func (o *Orchestrator) Run(ctx context.Context) {
-	dispatchCtx, cancelDispatch := context.WithCancel(context.Background())
+	// dispatchCtx allows in-flight goroutines to finish after polling stops.
+	// A 30s drain timeout ensures Run() is not blocked forever by a hung agent.
+	drainTimeout := time.Duration(o.cfg.TaskTimeoutSecs) * time.Second
+	if drainTimeout <= 0 {
+		drainTimeout = 30 * time.Second
+	}
+	dispatchCtx, cancelDispatch := context.WithTimeout(context.Background(), drainTimeout)
 	o.mu.Lock()
 	o.dispatchCtx = dispatchCtx
 	o.mu.Unlock()
 	defer func() {
-		o.wg.Wait()   // drain in-flight dispatches
+		o.wg.Wait()   // drain in-flight dispatches (bounded by drainTimeout)
 		cancelDispatch()
 	}()
 

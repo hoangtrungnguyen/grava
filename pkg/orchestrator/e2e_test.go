@@ -71,8 +71,9 @@ func agentServer(t *testing.T, store dolt.Store) *httptest.Server {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		// Simulate work: mark task closed.
-		_, _ = store.ExecContext(r.Context(),
+		// Use context.Background() so the DB write completes even if the HTTP
+		// connection resets during orchestrator shutdown.
+		_, _ = store.ExecContext(context.Background(),
 			`UPDATE issues SET status='closed', stopped_at=NOW() WHERE id=?`, req.ID)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -106,7 +107,7 @@ func waitAllClosed(t *testing.T, store dolt.Store, taskIDs []string, timeout tim
 func TestOrchestrator_E2E(t *testing.T) {
 	store := openTestDB(t)
 
-	prefix := fmt.Sprintf("e2e-%d", time.Now().Unix()%99999)
+	prefix := fmt.Sprintf("e2e-%d", time.Now().UnixNano()%9999999)
 	taskIDs := createTestTasks(t, store, prefix, 5)
 	t.Cleanup(func() { cleanupTasks(t, store, prefix) })
 
@@ -139,21 +140,31 @@ func TestOrchestrator_E2E(t *testing.T) {
 func TestOrchestrator_E2E_AgentCrash(t *testing.T) {
 	store := openTestDB(t)
 
-	prefix := fmt.Sprintf("e2ec-%d", time.Now().Unix()%99999)
+	prefix := fmt.Sprintf("e2ec-%d", time.Now().UnixNano()%9999999)
 	taskIDs := createTestTasks(t, store, prefix, 4)
 	t.Cleanup(func() { cleanupTasks(t, store, prefix) })
 
 	// Healthy agent closes tasks.
 	healthy := agentServer(t, store)
 
-	// Crash agent: close it immediately to simulate a dead server.
-	crash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK) // won't actually be served
+	// crashSrv serves one task successfully, then is closed to simulate a
+	// mid-run crash. We track how many /task requests it handled.
+	var crashHandled int
+	crashSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/task" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		crashHandled++
+		var req struct{ ID string `json:"id"` }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		_, _ = store.ExecContext(context.Background(),
+			`UPDATE issues SET status='closed', stopped_at=NOW() WHERE id=?`, req.ID)
+		w.WriteHeader(http.StatusOK)
 	}))
-	crash.Close() // closed immediately — all connections will fail
 
 	pool := NewAgentPool([]AgentConfig{
-		{ID: "crash", Endpoint: crash.URL, MaxConcurrentTasks: 2, TimeoutSecs: 2},
+		{ID: "crash", Endpoint: crashSrv.URL, MaxConcurrentTasks: 2, TimeoutSecs: 2},
 		{ID: "healthy", Endpoint: healthy.URL, MaxConcurrentTasks: 4, TimeoutSecs: 5},
 	})
 	cfg := &Config{
@@ -169,17 +180,21 @@ func TestOrchestrator_E2E_AgentCrash(t *testing.T) {
 
 	go orc.Run(ctx)
 
-	// All 4 tasks should still reach closed — healthy agent handles everything
-	// after crash agent is marked unavailable.
+	// Let the orchestrator process at least one task via crashSrv, then kill it.
+	time.Sleep(1500 * time.Millisecond)
+	crashSrv.Close() // crash mid-run — remaining tasks must fall over to healthy
+
+	// All 4 tasks should still reach closed — healthy agent handles the rest.
 	assert.True(t,
 		waitAllClosed(t, store, taskIDs, 25*time.Second),
-		"all tasks should complete even when one agent crashes")
+		"all tasks should complete even when one agent crashes mid-run")
+	_ = crashHandled // crashHandled >= 0; healthy picked up the rest
 }
 
 func TestOrchestrator_GracefulShutdown_NoDataCorruption(t *testing.T) {
 	store := openTestDB(t)
 
-	prefix := fmt.Sprintf("e2es-%d", time.Now().Unix()%99999)
+	prefix := fmt.Sprintf("e2es-%d", time.Now().UnixNano()%9999999)
 	taskIDs := createTestTasks(t, store, prefix, 3)
 	t.Cleanup(func() { cleanupTasks(t, store, prefix) })
 

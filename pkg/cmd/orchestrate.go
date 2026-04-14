@@ -108,6 +108,7 @@ Example config (.grava/orchestrator.yaml):
 		defer cancel()
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		defer signal.Stop(sigCh)
 		go func() {
 			select {
 			case <-sigCh:
