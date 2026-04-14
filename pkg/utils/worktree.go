@@ -22,9 +22,6 @@ func IsWorktree(cwd string) bool {
 	return !info.IsDir()
 }
 
-// ComputeRedirectPath computes the relative path from a worktree to the main repo's .grava directory.
-// Walks up from cwd until it finds a directory with .git as a directory (main repo).
-// Returns the relative path like "../../.grava" or an error if main repo not found.
 // FindMainRepo walks up the directory tree from cwd until it finds a directory
 // whose .git entry is a directory (not a file), which indicates a main repository
 // (as opposed to a worktree). Returns the absolute path of the main repo root.
@@ -45,6 +42,9 @@ func FindMainRepo(cwd string) (string, error) {
 	return "", fmt.Errorf("main repository not found within 20 parent directories")
 }
 
+// ComputeRedirectPath computes the relative path from a worktree to the main
+// repo's .grava directory (e.g. "../../.grava"). Returns an error if the main
+// repo cannot be found by walking up from cwd.
 func ComputeRedirectPath(cwd string) (string, error) {
 	mainRepo, err := FindMainRepo(cwd)
 	if err != nil {

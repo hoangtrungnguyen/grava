@@ -48,6 +48,8 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 				if configErr := utils.ConfigureGitUser(mainRepo, cwd); configErr != nil {
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  git user config failed: %v\n", configErr)
 				}
+			} else {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not locate main repo for settings sync: %v\n", findErr)
 			}
 
 			if !outputJSON {
