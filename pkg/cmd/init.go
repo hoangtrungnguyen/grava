@@ -39,6 +39,17 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			if err != nil {
 				return fmt.Errorf("failed to initialize worktree: %w", err)
 			}
+
+			// Sync Claude settings and git user config from main repo — non-fatal.
+			if mainRepo, findErr := utils.FindMainRepo(cwd); findErr == nil {
+				if syncErr := utils.SyncClaudeSettings(mainRepo, cwd); syncErr != nil {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Claude settings sync failed: %v\n", syncErr)
+				}
+				if configErr := utils.ConfigureGitUser(mainRepo, cwd); configErr != nil {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  git user config failed: %v\n", configErr)
+				}
+			}
+
 			if !outputJSON {
 				if created {
 					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Worktree initialized. Redirect to main repo .grava created.")

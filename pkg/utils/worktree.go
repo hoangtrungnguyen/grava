@@ -25,37 +25,36 @@ func IsWorktree(cwd string) bool {
 // ComputeRedirectPath computes the relative path from a worktree to the main repo's .grava directory.
 // Walks up from cwd until it finds a directory with .git as a directory (main repo).
 // Returns the relative path like "../../.grava" or an error if main repo not found.
-func ComputeRedirectPath(cwd string) (string, error) {
+// FindMainRepo walks up the directory tree from cwd until it finds a directory
+// whose .git entry is a directory (not a file), which indicates a main repository
+// (as opposed to a worktree). Returns the absolute path of the main repo root.
+func FindMainRepo(cwd string) (string, error) {
 	current := cwd
-	worktreeDepth := 0
-
-	// Walk up until we find a main repo (.git is a directory)
-	for {
+	for depth := 0; depth <= 20; depth++ {
 		gitPath := filepath.Join(current, ".git")
 		info, err := os.Stat(gitPath)
 		if err == nil && info.IsDir() {
-			// Found main repo — compute relative path back
-			relPath, err := filepath.Rel(cwd, filepath.Join(current, ".grava"))
-			if err != nil {
-				return "", fmt.Errorf("failed to compute relative path: %w", err)
-			}
-			return relPath, nil
+			return current, nil
 		}
-
-		// Move up one level
 		parent := filepath.Dir(current)
 		if parent == current {
-			// Reached filesystem root without finding main repo
 			return "", fmt.Errorf("main repository not found: walked up to filesystem root")
 		}
 		current = parent
-		worktreeDepth++
-
-		// Safety: prevent infinite loops
-		if worktreeDepth > 20 {
-			return "", fmt.Errorf("main repository not found within 20 parent directories")
-		}
 	}
+	return "", fmt.Errorf("main repository not found within 20 parent directories")
+}
+
+func ComputeRedirectPath(cwd string) (string, error) {
+	mainRepo, err := FindMainRepo(cwd)
+	if err != nil {
+		return "", err
+	}
+	relPath, err := filepath.Rel(cwd, filepath.Join(mainRepo, ".grava"))
+	if err != nil {
+		return "", fmt.Errorf("failed to compute relative path: %w", err)
+	}
+	return relPath, nil
 }
 
 // WriteRedirectFile creates or updates .grava/redirect in a worktree.
