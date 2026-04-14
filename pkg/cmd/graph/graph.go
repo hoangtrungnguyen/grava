@@ -606,7 +606,15 @@ func newBlockedCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "blocked [issue-id]",
 		Short: "Show blockers for an issue, or all blocked tasks if no ID given",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Show what is blocking work.
+
+Without an argument: lists all open tasks that have upstream blockers or
+unmet gate conditions across the workspace. The --depth flag controls how
+many levels of transitive blockers are resolved in this global view.
+
+With an issue ID: lists the direct blockers for that specific issue
+(id, title, status, assignee). The --depth flag has no effect in this mode.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Per-issue blocker query
 			if len(args) == 1 {
@@ -657,6 +665,9 @@ func showBlockersForIssue(cmd *cobra.Command, d *cmddeps.Deps, issueID string) e
 			return fmt.Errorf("failed to scan blocker: %w", err)
 		}
 		blockers = append(blockers, b)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate blockers: %w", err)
 	}
 
 	if *d.OutputJSON {
@@ -737,12 +748,12 @@ func showAllBlockedTasks(cmd *cobra.Command, d *cmddeps.Deps) error {
 
 	if *d.OutputJSON {
 		b, _ := json.MarshalIndent(blockedResults, "", "  ")
-		fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		return nil
 	}
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tTitle\tBlocked By\tGate") //nolint:errcheck
+	_, _ = fmt.Fprintln(w, "ID\tTitle\tBlocked By\tGate")
 
 	for _, info := range blockedResults {
 		blockerStr := "-"
@@ -760,12 +771,12 @@ func showAllBlockedTasks(cmd *cobra.Command, d *cmddeps.Deps) error {
 		if len(title) > 40 {
 			title = title[:37] + "..."
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", info.ID, title, blockerStr, gateStr) //nolint:errcheck
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", info.ID, title, blockerStr, gateStr)
 	}
 	w.Flush() //nolint:errcheck
 
 	if len(blockedResults) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No blocked tasks found.") //nolint:errcheck
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No blocked tasks found.")
 	}
 	return nil
 }

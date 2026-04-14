@@ -345,6 +345,34 @@ func TestBlockedCmd_PerIssue_NoBlockers(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestBlockedCmd_PerIssue_NoBlockers_Tabular(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	var s dolt.Store = dolt.NewClientFromDB(db)
+	outputJSON := false
+	actor := "test"
+	model := ""
+	deps := &cmddeps.Deps{Store: &s, Actor: &actor, AgentModel: &model, OutputJSON: &outputJSON}
+
+	mock.ExpectQuery(qIssueExists).
+		WithArgs("task-A").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(qBlockersForIssue).
+		WithArgs("task-A", "task-A").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "assignee"}))
+
+	buf := &bytes.Buffer{}
+	cmd := newBlockedCmd(deps)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"task-A"})
+	err = cmd.ExecuteContext(context.Background())
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "No blockers for task-A")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestBlockedCmd_PerIssue_NotFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
