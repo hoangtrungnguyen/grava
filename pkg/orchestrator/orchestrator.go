@@ -13,10 +13,11 @@ import (
 // Orchestrator wires together the Poller, AgentPool, and Watchdog into a
 // running dispatch loop. Create with NewOrchestrator and call Run.
 type Orchestrator struct {
-	store    dolt.Store
-	pool     *AgentPool
-	watchdog *Watchdog
-	cfg      *Config
+	store     dolt.Store
+	pool      *AgentPool
+	watchdog  *Watchdog
+	cfg       *Config
+	statusSrv *StatusServer // optional; nil means no status tracking
 
 	// wg tracks in-flight async dispatches so Run() can drain them on shutdown.
 	wg sync.WaitGroup
@@ -37,6 +38,14 @@ func NewOrchestrator(store dolt.Store, pool *AgentPool, cfg *Config) *Orchestrat
 		watchdog: wd,
 		cfg:      cfg,
 	}
+}
+
+// WithStatusServer attaches a StatusServer to the Orchestrator so that
+// dispatch and failure events increment the server's counters. Returns the
+// Orchestrator for method chaining.
+func (o *Orchestrator) WithStatusServer(srv *StatusServer) *Orchestrator {
+	o.statusSrv = srv
+	return o
 }
 
 // Run starts the orchestrator loop. It polls for open tasks, dispatches them
@@ -101,6 +110,9 @@ func (o *Orchestrator) sink(task DispatchableTask) {
 		if err := o.pool.Dispatch(dispatchCtx, agent, task); err != nil {
 			// Dispatch failed (network error or non-2xx). Pool already handled
 			// slot release and agent availability. Task stays open for retry.
+			if o.statusSrv != nil {
+				o.statusSrv.IncrFailed()
+			}
 			return
 		}
 		// Mark task in_progress so the Poller does not re-dispatch it.
@@ -110,6 +122,9 @@ func (o *Orchestrator) sink(task DispatchableTask) {
 				"task_id", task.ID, "agent", agent.cfg.ID, "error", err)
 		} else {
 			slog.Info("orchestrator: task claimed", "task_id", task.ID, "agent", agent.cfg.ID)
+			if o.statusSrv != nil {
+				o.statusSrv.IncrDispatched()
+			}
 		}
 	}()
 }

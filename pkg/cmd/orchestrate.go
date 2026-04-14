@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/orchestrator"
 	"github.com/spf13/cobra"
@@ -118,7 +120,22 @@ Environment variables:
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator ready. Starting poll loop...")
 
 		pool := orchestrator.NewAgentPool(agents)
-		orc := orchestrator.NewOrchestrator(Store, pool, cfg)
+		statusSrv := orchestrator.NewStatusServer(pool)
+		orc := orchestrator.NewOrchestrator(Store, pool, cfg).WithStatusServer(statusSrv)
+
+		// Start the /status HTTP endpoint.
+		statusAddr := fmt.Sprintf(":%d", cfg.StatusPort)
+		httpSrv := &http.Server{
+			Addr:        statusAddr,
+			Handler:     statusSrv.Handler(),
+			ReadTimeout: 5 * time.Second,
+		}
+		go func() {
+			slog.Info("orchestrator: status endpoint listening", "addr", statusAddr)
+			if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("orchestrator: status server error", "error", err)
+			}
+		}()
 
 		// Cancel context on SIGTERM / SIGINT for graceful shutdown.
 		cmdCtx := cmd.Context()
@@ -140,6 +157,12 @@ Environment variables:
 		}()
 
 		orc.Run(ctx)
+
+		// Shut down the status HTTP server after the orchestrator exits.
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = httpSrv.Shutdown(shutCtx)
+
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Orchestrator exited cleanly.")
 		return nil
 	},

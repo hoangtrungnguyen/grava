@@ -185,10 +185,11 @@ func (p *AgentPool) Stats() []AgentStat {
 	stats := make([]AgentStat, len(p.agents))
 	for i, a := range p.agents {
 		stats[i] = AgentStat{
-			ID:          a.cfg.ID,
-			Endpoint:    a.cfg.Endpoint,
-			ActiveTasks: a.activeTasks,
-			Available:   a.available,
+			ID:                  a.cfg.ID,
+			Endpoint:            a.cfg.Endpoint,
+			ActiveTasks:         a.activeTasks,
+			Available:           a.available,
+			ConsecutiveFailures: a.consecutiveFailures,
 		}
 	}
 	return stats
@@ -196,8 +197,9 @@ func (p *AgentPool) Stats() []AgentStat {
 
 // AgentStat is a point-in-time snapshot of a single agent's state.
 type AgentStat struct {
-	ID          string
-	Endpoint    string
-	ActiveTasks int
-	Available   bool
+	ID                  string
+	Endpoint            string
+	ActiveTasks         int
+	Available           bool
+	ConsecutiveFailures int
 }

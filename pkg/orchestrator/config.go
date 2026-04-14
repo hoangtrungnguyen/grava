@@ -23,6 +23,10 @@ type Config struct {
 
 	// AgentsConfigPath is the path to the agents YAML file.
 	AgentsConfigPath string `yaml:"agents_config"`
+
+	// StatusPort is the TCP port for the /status HTTP endpoint.
+	// 0 disables the endpoint. Defaults to 9090.
+	StatusPort int `yaml:"status_port"`
 }
 
 // AgentsFile is the top-level structure of the agents YAML.
@@ -52,6 +56,9 @@ func (c *Config) Validate() error {
 	}
 	if c.TaskTimeoutSecs <= 0 {
 		c.TaskTimeoutSecs = 30
+	}
+	if c.StatusPort == 0 {
+		c.StatusPort = 9090
 	}
 	return nil
 }
