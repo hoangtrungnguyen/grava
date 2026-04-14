@@ -133,6 +133,12 @@ func (o *Orchestrator) sink(task DispatchableTask) {
 			if resetErr := o.resetTask(dispatchCtx, task.ID); resetErr != nil {
 				slog.Error("orchestrator: failed to reset task after dispatch failure",
 					"task_id", task.ID, "error", resetErr)
+			} else {
+				msg := fmt.Sprintf("dispatch failed (agent %s): %v — task reset to open for retry", agent.cfg.ID, err)
+				if commentErr := o.writeComment(dispatchCtx, task.ID, msg); commentErr != nil {
+					slog.Warn("orchestrator: failed to write dispatch-failure comment",
+						"task_id", task.ID, "error", commentErr)
+				}
 			}
 			if o.statusSrv != nil {
 				o.statusSrv.IncrFailed()
@@ -170,6 +176,16 @@ func (o *Orchestrator) resetTask(ctx context.Context, taskID string) error {
 	_, err := o.store.ExecContext(ctx, q, taskID)
 	if err != nil {
 		return fmt.Errorf("orchestrator: reset task %s: %w", taskID, err)
+	}
+	return nil
+}
+
+// writeComment inserts a comment on the given issue.
+func (o *Orchestrator) writeComment(ctx context.Context, issueID, message string) error {
+	const q = `INSERT INTO issue_comments (issue_id, message, actor) VALUES (?, ?, 'orchestrator')`
+	_, err := o.store.ExecContext(ctx, q, issueID, message)
+	if err != nil {
+		return fmt.Errorf("orchestrator: write comment %s: %w", issueID, err)
 	}
 	return nil
 }

@@ -19,7 +19,8 @@ var (
 	qClaimTask = regexp.QuoteMeta(`UPDATE issues
 	SET status = 'in_progress', assignee = ?, started_at = NOW()
 	WHERE id = ? AND status = 'open'`)
-	qResetTaskOrc = regexp.QuoteMeta(`UPDATE issues SET status = 'open', assignee = NULL, started_at = NULL WHERE id = ?`)
+	qResetTaskOrc    = regexp.QuoteMeta(`UPDATE issues SET status = 'open', assignee = NULL, started_at = NULL WHERE id = ?`)
+	qWriteCommentOrc = `INSERT INTO issue_comments`
 )
 
 func newOrcMock(t *testing.T) (dolt.Store, sqlmock.Sqlmock) {
@@ -158,6 +159,8 @@ func TestOrchestrator_ClaimFirst_DispatchFailResetsTask(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(qResetTaskOrc).
 		WithArgs("task-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(qWriteCommentOrc).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Use a dead endpoint to force dispatch failure.
