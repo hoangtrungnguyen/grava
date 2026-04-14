@@ -25,7 +25,7 @@ type Config struct {
 	AgentsConfigPath string `yaml:"agents_config"`
 
 	// StatusPort is the TCP port for the /status HTTP endpoint.
-	// 0 disables the endpoint. Defaults to 9090.
+	// -1 disables the endpoint. 0 or unset defaults to 9090.
 	StatusPort int `yaml:"status_port"`
 }
 
@@ -58,8 +58,9 @@ func (c *Config) Validate() error {
 		c.TaskTimeoutSecs = 30
 	}
 	if c.StatusPort == 0 {
-		c.StatusPort = 9090
+		c.StatusPort = 9090 // default
 	}
+	// -1 is the sentinel for "disabled"; leave it as-is so orchestrate.go can check.
 	return nil
 }
 

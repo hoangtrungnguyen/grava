@@ -80,10 +80,9 @@ func (s *StatusServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// degraded if: no agents registered, any agent unavailable, or all unavailable.
 	status := "ok"
-	if availableCount == 0 {
-		status = "degraded"
-	} else if availableCount < len(stats) {
+	if len(stats) == 0 || availableCount < len(stats) {
 		status = "degraded"
 	}
 
