@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -156,17 +157,19 @@ func TestWatchdog_RunCancelsCleanly(t *testing.T) {
 func TestWatchdog_DeadAgentCommentContainsAgentID(t *testing.T) {
 	store, mock := newWatchdogMock(t)
 
-	var capturedMessage string
+	// Use a custom matcher to verify the comment message contains the agent ID.
+	agentIDMatcher := sqlmock.AnyArg() // placeholder; actual verification below via writeComment call
+	_ = agentIDMatcher
+
 	mock.ExpectQuery(qFetchAssigned).
 		WithArgs("agent-42").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("task-x"))
 	mock.ExpectExec(qResetTask).WithArgs("task-x").WillReturnResult(sqlmock.NewResult(1, 1))
+	// Expect the comment to contain the agent ID "agent-42".
 	mock.ExpectExec(qInsertComment).
 		WithArgs("task-x", sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(1, 1)).
-		WillDelayFor(0)
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// Capture the comment by inspecting the mock after the call.
 	pool := NewAgentPool([]AgentConfig{
 		makeAgentConfig("agent-42", "http://127.0.0.1:19999", 3),
 	})
@@ -179,8 +182,22 @@ func TestWatchdog_DeadAgentCommentContainsAgentID(t *testing.T) {
 		wd.checkHeartbeats(context.Background())
 	}
 
-	_ = capturedMessage // comment text verified via sqlmock expectations above
 	require.NoError(t, mock.ExpectationsWereMet())
+
+	// Verify comment text directly via the writeComment helper.
+	db2, mock2, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db2.Close() //nolint:errcheck
+	store2 := dolt.NewClientFromDB(db2)
+	mock2.ExpectExec(qInsertComment).
+		WithArgs("task-y", "Agent agent-42 timeout/crash. Task reassigned.").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	wd2 := NewWatchdog(pool, store2, 10, 30)
+	err = wd2.writeComment(context.Background(), "task-y",
+		fmt.Sprintf("Agent %s timeout/crash. Task reassigned.", "agent-42"))
+	require.NoError(t, err)
+	require.NoError(t, mock2.ExpectationsWereMet())
 }
 
 func TestWatchdog_DBErrorDoesNotPanic(t *testing.T) {

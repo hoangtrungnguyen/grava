@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -19,7 +20,6 @@ type Watchdog struct {
 	heartbeatSecs   int
 	taskTimeoutSecs int
 	maxFailures     int // consecutive /health misses before agent declared DEAD
-	client          *http.Client
 }
 
 // NewWatchdog creates a Watchdog. heartbeatSecs controls the polling interval;
@@ -37,7 +37,6 @@ func NewWatchdog(pool *AgentPool, store dolt.Store, heartbeatSecs, taskTimeoutSe
 		heartbeatSecs:   heartbeatSecs,
 		taskTimeoutSecs: taskTimeoutSecs,
 		maxFailures:     defaultMaxConsecutiveFailures,
-		client:          &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
@@ -78,9 +77,15 @@ func (w *Watchdog) checkHeartbeats(ctx context.Context) {
 			w.pool.mu.Lock()
 			agent.consecutiveFailures++
 			failures := agent.consecutiveFailures
+			alreadyDead := agent.dead
 			w.pool.mu.Unlock()
 
-			if failures >= w.maxFailures {
+			// Only fire markAgentDead on the exact tick that crosses the threshold,
+			// not on every subsequent tick while the agent remains unresponsive.
+			if failures == w.maxFailures && !alreadyDead {
+				w.pool.mu.Lock()
+				agent.dead = true
+				w.pool.mu.Unlock()
 				w.markAgentDead(ctx, agent)
 			}
 		} else {
@@ -88,22 +93,26 @@ func (w *Watchdog) checkHeartbeats(ctx context.Context) {
 			w.pool.mu.Lock()
 			agent.consecutiveFailures = 0
 			agent.available = true
+			agent.dead = false
 			w.pool.mu.Unlock()
 		}
 	}
 }
 
-// ping issues a GET request to the agent's /health endpoint.
+// ping issues a GET request to the agent's /health endpoint using the agent's
+// own HTTP client (so per-agent timeout is honoured).
 func (w *Watchdog) ping(ctx context.Context, agent *Agent) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agent.cfg.Endpoint+"/health", nil)
 	if err != nil {
 		return err
 	}
-	resp, err := w.client.Do(req)
+	resp, err := agent.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck
+	// Drain to enable HTTP keep-alive connection reuse.
+	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("watchdog: agent %s /health returned %d", agent.cfg.ID, resp.StatusCode)
 	}

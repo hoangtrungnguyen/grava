@@ -17,7 +17,8 @@ type Agent struct {
 	client              *http.Client
 	activeTasks         int
 	available           bool
-	consecutiveFailures int // incremented by Watchdog on /health miss, reset on success
+	consecutiveFailures int  // incremented by Watchdog on /health miss, reset on success
+	dead                bool // true once consecutiveFailures first reaches maxFailures; prevents re-firing
 }
 
 // AgentPool manages a pool of agents, routing tasks to the least-loaded one.
