@@ -32,7 +32,8 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	root.AddCommand(newCompactCmd(d))
 	root.AddCommand(newDoctorCmd(d))
 	root.AddCommand(newClearCmd(d))
-	// history command moved to pkg/cmd/issues (Story 3.3: events-based audit trail)
+	root.AddCommand(newCmdHistoryCmd(d))
+	// issue-level history is in pkg/cmd/issues (Story 3.3: events-based audit trail)
 }
 
 func newCompactCmd(d *cmddeps.Deps) *cobra.Command {

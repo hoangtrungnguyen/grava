@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -124,6 +125,10 @@ leveraging the power of a version-controlled database.`,
 		gravelog.Logger.Debug().Str("command", cmd.Name()).Msg("Grava command completed")
 
 		if Store != nil {
+			// Record the command in cmd_audit_log before closing the connection.
+			argsBytes, _ := json.Marshal(os.Args[1:])
+			maintenance.RecordCommand(cmd.Context(), Store, cmd.CommandPath(), actor, string(argsBytes), 0)
+
 			err := Store.Close()
 			Store = nil
 			return err
