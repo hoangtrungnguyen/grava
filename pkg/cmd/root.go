@@ -10,6 +10,7 @@ import (
 	cmdgraph "github.com/hoangtrungnguyen/grava/pkg/cmd/graph"
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/maintenance"
+	cmdreserve "github.com/hoangtrungnguyen/grava/pkg/cmd/reserve"
 	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
@@ -177,6 +178,7 @@ func init() {
 	cmdgraph.AddCommands(rootCmd, deps)
 	maintenance.AddCommands(rootCmd, deps)
 	synccmd.AddCommands(rootCmd, deps)
+	cmdreserve.AddCommands(rootCmd, deps)
 }
 
 // initConfig reads in config file and ENV variables if set.

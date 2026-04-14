@@ -13,7 +13,7 @@ import (
 
 // SchemaVersion is the expected database schema version.
 // Must match the number of migration files in pkg/migrate/migrations/.
-const SchemaVersion = 8
+const SchemaVersion = 9
 
 // schemaVersionFile is the name of the version file inside the .grava/ directory.
 const schemaVersionFile = "schema_version"
