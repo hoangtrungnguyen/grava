@@ -106,6 +106,50 @@ func TestDeclareReservation_ExclusiveConflict(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestDeclareReservation_ConflictCheckDBError verifies that a DB error during
+// the conflict check is propagated — not silently treated as "no conflict".
+func TestDeclareReservation_ConflictCheckDBError(t *testing.T) {
+	store, mock := newMock(t)
+
+	mock.ExpectQuery(qCheckConflict).
+		WillReturnError(assert.AnError)
+
+	p := DeclareParams{
+		PathPattern: "src/cmd/issues/*.go",
+		AgentID:     "agent-01",
+		Exclusive:   true,
+		TTLMinutes:  30,
+	}
+	_, err := DeclareReservation(context.Background(), store, p)
+
+	require.Error(t, err, "DB error during conflict check must not be swallowed")
+	// Must NOT proceed to INSERT — no expectations left unfulfilled.
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDeclareReservation_InsertDBError verifies that an INSERT failure is propagated.
+func TestDeclareReservation_InsertDBError(t *testing.T) {
+	store, mock := newMock(t)
+
+	// No conflict.
+	mock.ExpectQuery(qCheckConflict).
+		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "expires_ts"}))
+	// INSERT fails.
+	mock.ExpectExec(qInsertReservation).
+		WillReturnError(assert.AnError)
+
+	p := DeclareParams{
+		PathPattern: "src/cmd/issues/*.go",
+		AgentID:     "agent-01",
+		Exclusive:   true,
+		TTLMinutes:  30,
+	}
+	_, err := DeclareReservation(context.Background(), store, p)
+
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 // TestDeclareReservation_MissingPathPattern verifies that missing path returns an error.
 func TestDeclareReservation_MissingPathPattern(t *testing.T) {
 	store, _ := newMock(t)

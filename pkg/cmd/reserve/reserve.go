@@ -6,7 +6,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -72,7 +74,7 @@ func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) 
 	if p.ProjectID == "" {
 		p.ProjectID = defaultProjectID
 	}
-	if p.TTLMinutes <= 0 {
+	if p.TTLMinutes < 1 {
 		p.TTLMinutes = defaultTTLMinutes
 	}
 
@@ -130,8 +132,10 @@ func findConflict(ctx context.Context, store dolt.Store, projectID, pathPattern,
 	var agentID string
 	var expiresTS time.Time
 	if err := row.Scan(&agentID, &expiresTS); err != nil {
-		// sql.ErrNoRows means no conflict.
-		return false, "", time.Time{}, nil
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, "", time.Time{}, nil
+		}
+		return false, "", time.Time{}, fmt.Errorf("findConflict scan: %w", err)
 	}
 	return true, agentID, expiresTS, nil
 }
@@ -168,7 +172,7 @@ func ListReservations(ctx context.Context, store dolt.Store, projectID string) (
 }
 
 // ReleaseReservation sets released_ts on the given reservation row.
-// Returns ISSUE_NOT_FOUND if the reservation ID does not exist or is already released/expired.
+// Returns RESERVATION_NOT_FOUND if the reservation ID does not exist or is already released.
 func ReleaseReservation(ctx context.Context, store dolt.Store, reservationID string) error {
 	const q = `UPDATE file_reservations
 		SET released_ts = NOW()
@@ -204,7 +208,7 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 		Long: `Declare an advisory lease on file paths before modifying them.
 
 Examples:
-  grava reserve 'src/cmd/issues/*.go' --ttl=30 --exclusive
+  grava reserve 'src/cmd/issues/*.go' --ttl=30 --exclusive  (--ttl is integer minutes, not a duration string)
   grava reserve --list
   grava reserve --release res-a1b2c3`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -220,6 +224,9 @@ Examples:
 					return err
 				}
 				if outputJSON {
+					if reservations == nil {
+						reservations = []Reservation{}
+					}
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
 						"reservations": reservations,
 					})
