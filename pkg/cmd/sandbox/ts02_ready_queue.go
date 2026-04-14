@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	issuesapi "github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
 	cmdgraph "github.com/hoangtrungnguyen/grava/pkg/cmd/graph"
+	issuesapi "github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/hoangtrungnguyen/grava/pkg/graph"
 )
@@ -24,15 +24,16 @@ func init() {
 }
 
 // runTS02 validates that under 30 concurrent ReadyQueue calls:
+//   - Each response is a valid non-empty slice.
 //   - No in_progress issue ever appears in any ready queue response.
 //   - All responses complete within 2 seconds (no deadlock / lock starvation).
 func runTS02(ctx context.Context, store dolt.Store) Result {
 	const (
-		totalIssues   = 50
-		openCount     = 20
-		swarmSize     = 30
-		timeoutSec    = 10
-		readyLimit    = 100
+		totalIssues = 100
+		openCount   = 30
+		swarmSize   = 30
+		timeoutSec  = 10
+		readyLimit  = 200
 	)
 
 	// --- Setup: seed test issues ---
@@ -40,7 +41,7 @@ func runTS02(ctx context.Context, store dolt.Store) Result {
 
 	defer func() {
 		// Cleanup all seeded issues regardless of test outcome.
-		ctx2, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx2, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		for _, id := range seededIDs {
 			_, _ = store.ExecContext(ctx2, "DELETE FROM issues WHERE id = ?", id)
@@ -65,6 +66,9 @@ func runTS02(ctx context.Context, store dolt.Store) Result {
 	}
 
 	// Seed in_progress issues (must NOT appear in ready queue).
+	// These represent the "remainder" of the 100 issues that are actively
+	// claimed and therefore unavailable; they mirror the AC's intent of
+	// non-ready issues, using in_progress as the representative status.
 	inProgressIDs := make([]string, 0, totalIssues-openCount)
 	for i := openCount; i < totalIssues; i++ {
 		created, err := issuesapi.CreateIssue(ctx, store, issuesapi.CreateParams{
@@ -77,7 +81,7 @@ func runTS02(ctx context.Context, store dolt.Store) Result {
 			return fail(ts02ID, fmt.Sprintf("setup: create in_progress issue %d: %v", i, err))
 		}
 		seededIDs = append(seededIDs, created.ID)
-		// Claim it so it becomes in_progress.
+		// Claim it so it transitions to in_progress.
 		_, err = issuesapi.ClaimIssue(ctx, store, created.ID, fmt.Sprintf("ts02-agent-%02d", i), "")
 		if err != nil {
 			return fail(ts02ID, fmt.Sprintf("setup: claim issue %s: %v", created.ID, err))
@@ -138,6 +142,20 @@ func runTS02(ctx context.Context, store dolt.Store) Result {
 			details...)
 	}
 	details = append(details, fmt.Sprintf("all %d ReadyQueue calls succeeded", swarmSize))
+
+	// --- Assert: each response is a valid non-empty slice ---
+	emptyCount := 0
+	for _, r := range results {
+		if len(r.tasks) == 0 {
+			emptyCount++
+		}
+	}
+	if emptyCount > 0 {
+		return fail(ts02ID,
+			fmt.Sprintf("%d/%d ReadyQueue responses were empty — open issues not visible in ready queue", emptyCount, swarmSize),
+			details...)
+	}
+	details = append(details, fmt.Sprintf("all %d responses contained ≥1 ready task", swarmSize))
 
 	// --- Assert: no in_progress issue appears in any ready queue response ---
 	contaminated := 0
