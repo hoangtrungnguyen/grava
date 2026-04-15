@@ -277,6 +277,273 @@ func mergeObjects(ancestor, current, other map[string]interface{}) (map[string]i
 	return result, hasConflict
 }
 
+// MergeResult holds the output of a ProcessMergeWithLWW operation.
+type MergeResult struct {
+	// Merged is the JSONL string to write back to %A.
+	Merged string
+	// ConflictRecords contains both delete-wins audit records and equal-timestamp
+	// (unresolvable) field conflicts.
+	ConflictRecords []ConflictEntry
+	// HasGitConflict is true when at least one field conflict could not be
+	// resolved by LWW (equal or missing updated_at), requiring git exit 1.
+	HasGitConflict bool
+}
+
+// ProcessMergeWithLWW executes a 3-way merge with Last-Write-Wins semantics.
+//
+//   - Field conflicts: uses updated_at from the issue object to pick the winner.
+//     If current.updated_at > other.updated_at → current wins (no conflict record).
+//     If other.updated_at > current.updated_at → other wins (no conflict record).
+//     If equal or missing → recorded in ConflictRecords, HasGitConflict=true.
+//
+//   - Delete-wins: when one branch deletes and the other modifies, the delete
+//     wins regardless of timestamps. The collision is recorded in ConflictRecords
+//     but does NOT set HasGitConflict (deletion is deterministic).
+func ProcessMergeWithLWW(ancestor, current, other string) (MergeResult, error) {
+	ancestorMap, err := parseJSONL(ancestor)
+	if err != nil {
+		return MergeResult{}, fmt.Errorf("failed to parse ancestor: %w", err)
+	}
+	currentMap, err := parseJSONL(current)
+	if err != nil {
+		return MergeResult{}, fmt.Errorf("failed to parse current: %w", err)
+	}
+	otherMap, err := parseJSONL(other)
+	if err != nil {
+		return MergeResult{}, fmt.Errorf("failed to parse other: %w", err)
+	}
+
+	var mergedList []map[string]interface{}
+	var conflictRecords []ConflictEntry
+	hasGitConflict := false
+	now := time.Now().UTC()
+
+	allIDs := make(map[string]bool)
+	for id := range ancestorMap {
+		allIDs[id] = true
+	}
+	for id := range currentMap {
+		allIDs[id] = true
+	}
+	for id := range otherMap {
+		allIDs[id] = true
+	}
+
+	var sortedIDs []string
+	for id := range allIDs {
+		sortedIDs = append(sortedIDs, id)
+	}
+	sort.Strings(sortedIDs)
+
+	for _, id := range sortedIDs {
+		a, hasA := ancestorMap[id]
+		c, hasC := currentMap[id]
+		o, hasO := otherMap[id]
+
+		if !hasA {
+			// New on one or both sides.
+			if hasC && hasO {
+				mergedItem, fieldConflicts, gitConflict := mergeObjectsLWW(nil, c, o, now)
+				mergedItem["id"] = id
+				mergedList = append(mergedList, mergedItem)
+				conflictRecords = append(conflictRecords, fieldConflicts...)
+				if gitConflict {
+					hasGitConflict = true
+				}
+			} else if hasC {
+				mergedList = append(mergedList, c)
+			} else if hasO {
+				mergedList = append(mergedList, o)
+			}
+			continue
+		}
+
+		// Issue existed in ancestor.
+		if !hasC && !hasO {
+			continue // deleted in both — clean remove
+		}
+
+		if !hasC && hasO {
+			// Current deleted, other kept.
+			if reflect.DeepEqual(a, o) {
+				continue // other unchanged — clean delete wins
+			}
+			// Delete-wins: other modified but current deleted — delete wins.
+			// Record for audit; NOT a git conflict.
+			remoteBytes, _ := json.Marshal(o)
+			conflictRecords = append(conflictRecords, ConflictEntry{
+				ID:         conflictID(id, ""),
+				IssueID:    id,
+				Field:      "",
+				Local:      json.RawMessage("null"),
+				Remote:     json.RawMessage(remoteBytes),
+				DetectedAt: now,
+			})
+			continue // issue deleted — not in merged output
+		}
+
+		if hasC && !hasO {
+			// Other deleted, current kept.
+			if reflect.DeepEqual(a, c) {
+				continue // current unchanged — clean delete wins
+			}
+			// Delete-wins: current modified but other deleted — delete wins.
+			localBytes, _ := json.Marshal(c)
+			conflictRecords = append(conflictRecords, ConflictEntry{
+				ID:         conflictID(id, ""),
+				IssueID:    id,
+				Field:      "",
+				Local:      json.RawMessage(localBytes),
+				Remote:     json.RawMessage("null"),
+				DetectedAt: now,
+			})
+			continue // issue deleted — not in merged output
+		}
+
+		// Both kept — merge fields.
+		mergedItem, fieldConflicts, gitConflict := mergeObjectsLWW(a, c, o, now)
+		mergedItem["id"] = id
+		mergedList = append(mergedList, mergedItem)
+		conflictRecords = append(conflictRecords, fieldConflicts...)
+		if gitConflict {
+			hasGitConflict = true
+		}
+	}
+
+	var sb strings.Builder
+	for _, item := range mergedList {
+		b, err := MarshalSorted(item)
+		if err != nil {
+			return MergeResult{}, err
+		}
+		sb.Write(b)
+		sb.WriteString("\n")
+	}
+
+	return MergeResult{
+		Merged:          sb.String(),
+		ConflictRecords: conflictRecords,
+		HasGitConflict:  hasGitConflict,
+	}, nil
+}
+
+// mergeObjectsLWW merges two issue objects using Last-Write-Wins semantics.
+// Returns the merged object, any ConflictEntry records, and whether a git conflict
+// (unresolvable equal-timestamp) was detected.
+func mergeObjectsLWW(ancestor, current, other map[string]interface{}, now time.Time) (map[string]interface{}, []ConflictEntry, bool) {
+	if ancestor == nil {
+		ancestor = make(map[string]interface{})
+	}
+	result := make(map[string]interface{})
+	var conflicts []ConflictEntry
+	hasGitConflict := false
+
+	// Extract issue-level updated_at for LWW tie-breaking.
+	cTime, cHasTime := extractUpdatedAt(current)
+	oTime, oHasTime := extractUpdatedAt(other)
+
+	issueID, _ := current["id"].(string)
+	if issueID == "" {
+		issueID, _ = other["id"].(string)
+	}
+
+	allKeys := make(map[string]bool)
+	for k := range ancestor {
+		allKeys[k] = true
+	}
+	for k := range current {
+		allKeys[k] = true
+	}
+	for k := range other {
+		allKeys[k] = true
+	}
+
+	for k := range allKeys {
+		if k == "id" {
+			continue
+		}
+
+		aVal, hasA := ancestor[k]
+		cVal, hasC := current[k]
+		oVal, hasO := other[k]
+
+		cChanged := hasC != hasA || !reflect.DeepEqual(aVal, cVal)
+		oChanged := hasO != hasA || !reflect.DeepEqual(aVal, oVal)
+
+		switch {
+		case !cChanged && !oChanged:
+			if hasA {
+				result[k] = aVal
+			}
+		case cChanged && !oChanged:
+			if hasC {
+				result[k] = cVal
+			}
+		case !cChanged && oChanged:
+			if hasO {
+				result[k] = oVal
+			}
+		case reflect.DeepEqual(cVal, oVal):
+			if hasC {
+				result[k] = cVal
+			}
+		default:
+			// Field modified by both sides — apply LWW using updated_at.
+			if cHasTime && oHasTime && !cTime.Equal(oTime) {
+				if cTime.After(oTime) {
+					if hasC {
+						result[k] = cVal
+					}
+				} else {
+					if hasO {
+						result[k] = oVal
+					}
+				}
+			} else {
+				// Equal or unknown timestamps — unresolvable conflict.
+				hasGitConflict = true
+				localBytes, _ := json.Marshal(cVal)
+				remoteBytes, _ := json.Marshal(oVal)
+				conflicts = append(conflicts, ConflictEntry{
+					ID:         conflictID(issueID, k),
+					IssueID:    issueID,
+					Field:      k,
+					Local:      json.RawMessage(localBytes),
+					Remote:     json.RawMessage(remoteBytes),
+					DetectedAt: now,
+				})
+				// Leave conflict marker in merged output for git to report.
+				result[k] = map[string]interface{}{
+					"_conflict": true,
+					"local":     cVal,
+					"remote":    oVal,
+				}
+			}
+		}
+	}
+
+	return result, conflicts, hasGitConflict
+}
+
+// extractUpdatedAt parses the updated_at field from a JSONL issue object.
+// Returns the parsed time and true if present and valid.
+func extractUpdatedAt(obj map[string]interface{}) (time.Time, bool) {
+	v, ok := obj["updated_at"]
+	if !ok {
+		return time.Time{}, false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
 // ConflictEntry describes one unresolvable collision found during a merge.
 type ConflictEntry struct {
 	// ID is a short hash derived from issue_id + field for deduplication.

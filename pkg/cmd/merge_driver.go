@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/grava"
 	"github.com/hoangtrungnguyen/grava/pkg/merge"
@@ -63,7 +62,7 @@ func mergeDriverRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("merge-driver: read other %s: %w", otherPath, err)
 	}
 
-	merged, hasConflict, err := merge.ProcessMerge(
+	result, err := merge.ProcessMergeWithLWW(
 		string(ancestorBytes),
 		string(currentBytes),
 		string(otherBytes),
@@ -74,31 +73,33 @@ func mergeDriverRunE(cmd *cobra.Command, args []string) error {
 
 	if mergeDriverDryRun {
 		// Dry-run: show merge plan on stdout, no file writes, no conflict exit.
-		fmt.Fprintln(cmd.OutOrStdout(), strings.TrimRight(merged, "\n"))
-		if hasConflict {
+		fmt.Fprintln(cmd.OutOrStdout(), strings.TrimRight(result.Merged, "\n"))
+		if result.HasGitConflict {
 			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "dry-run: conflicts detected (would exit 1 in live mode)")
 		}
 		return nil
 	}
 
 	// Write merged result back to the current (%A) file.
-	if err := os.WriteFile(currentPath, []byte(merged), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(currentPath, []byte(result.Merged), 0o644); err != nil { //nolint:gosec
 		return fmt.Errorf("merge-driver: write result to %s: %w", currentPath, err)
 	}
 
-	if hasConflict {
-		// Extract conflict entries and write them to .grava/conflicts.json (best-effort).
-		if entries, err := merge.ExtractConflicts(merged, time.Now().UTC()); err == nil && len(entries) > 0 {
-			if gravaDir, err := grava.ResolveGravaDir(); err == nil {
-				conflictsPath := filepath.Join(gravaDir, "conflicts.json")
-				if b, err := json.MarshalIndent(entries, "", "  "); err == nil {
-					_ = os.WriteFile(conflictsPath, b, 0o644) //nolint:gosec
-					_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-						"⚠️  %d conflict(s) written to %s\n", len(entries), conflictsPath)
-					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "   Run 'grava resolve list' to view and resolve them.")
-				}
+	// Write conflict records and emit Notifier alert (best-effort).
+	if len(result.ConflictRecords) > 0 {
+		if gravaDir, gravaErr := grava.ResolveGravaDir(); gravaErr == nil {
+			conflictsPath := filepath.Join(gravaDir, "conflicts.json")
+			if b, marshalErr := json.MarshalIndent(result.ConflictRecords, "", "  "); marshalErr == nil {
+				_ = os.WriteFile(conflictsPath, b, 0o644) //nolint:gosec
 			}
 		}
+		_ = Notifier.Send("merge-conflict",
+			fmt.Sprintf("%d conflict record(s) detected. Run 'grava resolve list' to view.", len(result.ConflictRecords)))
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+			"⚠️  %d conflict record(s) written. Run 'grava resolve list'.\n", len(result.ConflictRecords))
+	}
+
+	if result.HasGitConflict {
 		// Non-zero exit tells Git that conflicts remain.
 		conflictExitFn(1)
 	}
