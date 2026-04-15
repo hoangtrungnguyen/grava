@@ -321,11 +321,15 @@ Examples:
 				if err := ReleaseReservation(ctx, store, flagRelease); err != nil {
 					return err
 				}
-				// Update the artifact to record released_ts (best-effort; non-fatal).
+				// Update the artifact to reflect the actual released_ts written by the DB.
+				// Re-fetch after release so the artifact timestamp matches the DB's server-side NOW().
 				if gravaDir != "" && existing != nil {
-					now := time.Now().UTC()
-					existing.ReleasedTS = &now
-					_ = WriteReservationArtifact(gravaDir, *existing) //nolint:errcheck
+					if updated, refetchErr := GetReservation(ctx, store, flagRelease); refetchErr == nil {
+						existing = updated
+					}
+					if werr := WriteReservationArtifact(gravaDir, *existing); werr != nil {
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not write reservation artifact: %v\n", werr)
+					}
 				}
 				if outputJSON {
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{
@@ -355,7 +359,9 @@ Examples:
 			}
 			// Write Git-tracked artifact (best-effort; non-fatal if .grava/ is unavailable).
 			if gravaDir != "" {
-				_ = WriteReservationArtifact(gravaDir, result.Reservation) //nolint:errcheck
+				if werr := WriteReservationArtifact(gravaDir, result.Reservation); werr != nil {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not write reservation artifact: %v\n", werr)
+				}
 			}
 			if outputJSON {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)

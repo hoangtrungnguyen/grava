@@ -11,7 +11,10 @@ import (
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -198,4 +201,73 @@ func TestArtifact_IntegrationFlow(t *testing.T) {
 	info, err := os.Stat(filepath.Join(gravaDir, "file_reservations"))
 	require.NoError(t, err)
 	assert.True(t, info.IsDir())
+}
+
+// --- cmd-level test for --release artifact update ---
+
+// buildReleaseCmd creates a cobra command wired to the given store and gravaDir.
+func buildReleaseCmd(t *testing.T, store dolt.Store, gravaDir string) *cobra.Command {
+	t.Helper()
+	outputJSON := false
+	actor := "test-actor"
+	agentModel := ""
+	d := &cmddeps.Deps{Store: &store, OutputJSON: &outputJSON, Actor: &actor, AgentModel: &agentModel}
+	root := &cobra.Command{Use: "grava"}
+	AddCommands(root, d)
+	// Point GRAVA_DIR to our temp dir so ResolveGravaDir returns it.
+	t.Setenv("GRAVA_DIR", gravaDir)
+	return root
+}
+
+// reserveColumns returns the sqlmock column set for file_reservations SELECT.
+func reserveColumns() *sqlmock.Rows {
+	return sqlmock.NewRows([]string{
+		"id", "project_id", "agent_id", "path_pattern", "exclusive", "reason",
+		"created_ts", "expires_ts", "released_ts",
+	})
+}
+
+// TestReleaseCmd_WritesArtifactWithReleasedTS exercises the full --release RunE path:
+// GetReservation (pre-release) → ReleaseReservation UPDATE → GetReservation (re-fetch)
+// → WriteReservationArtifact. Verifies the artifact has released_ts set after the command.
+func TestReleaseCmd_WritesArtifactWithReleasedTS(t *testing.T) {
+	store, mock := newMock(t)
+	gravaDir := tmpGravaDir(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	exp := now.Add(30 * time.Minute)
+	releasedAt := now.Add(5 * time.Minute)
+	pathPattern := "src/cmd/reserve/*.go"
+
+	// Pre-release fetch: released_ts is NULL.
+	mock.ExpectQuery(qGetReservation).
+		WithArgs("res-cmd-test").
+		WillReturnRows(reserveColumns().
+			AddRow("res-cmd-test", "default", "agent-01", pathPattern, false, "", now, exp, nil))
+
+	// ReleaseReservation UPDATE.
+	mock.ExpectExec(qReleaseQuery).
+		WithArgs("res-cmd-test").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Re-fetch after release: released_ts is now set.
+	mock.ExpectQuery(qGetReservation).
+		WithArgs("res-cmd-test").
+		WillReturnRows(reserveColumns().
+			AddRow("res-cmd-test", "default", "agent-01", pathPattern, false, "", now, exp, releasedAt))
+
+	root := buildReleaseCmd(t, store, gravaDir)
+	root.SetArgs([]string{"reserve", "--release", "res-cmd-test"})
+	require.NoError(t, root.Execute())
+
+	// Artifact must exist with released_ts matching the re-fetched DB value.
+	b, err := os.ReadFile(artifactPath(gravaDir, pathPattern))
+	require.NoError(t, err)
+
+	var got Reservation
+	require.NoError(t, json.Unmarshal(b, &got))
+	require.NotNil(t, got.ReleasedTS, "released_ts must be set in artifact after --release")
+	assert.True(t, got.ReleasedTS.Equal(releasedAt), "artifact released_ts must match re-fetched DB value")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
