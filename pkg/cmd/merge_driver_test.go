@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hoangtrungnguyen/grava/pkg/notify/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -169,4 +170,29 @@ func TestMergeDriverCmd_NonExistentAncestor(t *testing.T) {
 	err := rootCmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "/nonexistent/ancestor.jsonl")
+}
+
+func TestMergeDriverCmd_ConflictEmitsNotifierAlert(t *testing.T) {
+	// Verify Notifier.Send is called with "merge-conflict" when conflicts are detected.
+	resetMergeDriverFlags(t)
+	mockN := &mock.MockNotifier{}
+	origNotifier := Notifier
+	Notifier = mockN
+	t.Cleanup(func() { Notifier = origNotifier })
+
+	ancestor := writeTempFile(t, `{"id":"1","title":"A"}`+"\n")
+	current := writeTempFile(t, `{"id":"1","title":"X"}`+"\n")
+	other := writeTempFile(t, `{"id":"1","title":"Y"}`+"\n")
+
+	origExit := conflictExitFn
+	t.Cleanup(func() { conflictExitFn = origExit })
+	conflictExitFn = func(code int) {}
+
+	rootCmd.SetArgs([]string{"merge-driver", ancestor, current, other})
+	err := rootCmd.Execute()
+	assert.NoError(t, err)
+
+	require.Len(t, mockN.Calls, 1, "Notifier.Send should be called once on conflict")
+	assert.Equal(t, "merge-conflict", mockN.Calls[0].Title)
+	assert.Contains(t, mockN.Calls[0].Body, "conflict record(s)")
 }

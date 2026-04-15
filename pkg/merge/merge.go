@@ -489,18 +489,41 @@ func mergeObjectsLWW(ancestor, current, other map[string]interface{}, now time.T
 			}
 		default:
 			// Field modified by both sides — apply LWW using updated_at.
-			if cHasTime && oHasTime && !cTime.Equal(oTime) {
-				if cTime.After(oTime) {
+			// One-sided timestamp: the side with a timestamp is treated as newer.
+			// Both present and unequal: the newer timestamp wins.
+			// Both equal or both absent: unresolvable conflict.
+			lwwResolved := false
+			if cHasTime || oHasTime {
+				if cHasTime && oHasTime {
+					// Both have timestamps — compare directly.
+					if !cTime.Equal(oTime) {
+						lwwResolved = true
+						if cTime.After(oTime) {
+							if hasC {
+								result[k] = cVal
+							}
+						} else {
+							if hasO {
+								result[k] = oVal
+							}
+						}
+					}
+				} else if cHasTime {
+					// Only current has timestamp — current wins (has evidence of recency).
+					lwwResolved = true
 					if hasC {
 						result[k] = cVal
 					}
 				} else {
+					// Only other has timestamp — other wins.
+					lwwResolved = true
 					if hasO {
 						result[k] = oVal
 					}
 				}
-			} else {
-				// Equal or unknown timestamps — unresolvable conflict.
+			}
+			if !lwwResolved {
+				// Equal or both-absent timestamps — unresolvable conflict.
 				hasGitConflict = true
 				localBytes, _ := json.Marshal(cVal)
 				remoteBytes, _ := json.Marshal(oVal)
@@ -536,7 +559,7 @@ func extractUpdatedAt(obj map[string]interface{}) (time.Time, bool) {
 	if !ok {
 		return time.Time{}, false
 	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02 15:04:05"} {
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05"} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t, true
 		}

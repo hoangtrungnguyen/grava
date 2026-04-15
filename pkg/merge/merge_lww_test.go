@@ -157,6 +157,34 @@ func TestProcessMergeWithLWW_AddedBothSides_DifferentIDs(t *testing.T) {
 	assert.Contains(t, res.Merged, `"id":"issue-2"`)
 }
 
+// TestProcessMergeWithLWW_OneSidedTimestamp_SideWithTimestampWins verifies that
+// when only one branch has an updated_at, that branch wins the field conflict.
+func TestProcessMergeWithLWW_OneSidedTimestamp_SideWithTimestampWins(t *testing.T) {
+	t.Run("only current has timestamp — current wins", func(t *testing.T) {
+		ancestor := `{"id":"1","title":"A"}`
+		current := `{"id":"1","title":"X","updated_at":"2026-01-01T12:00:00Z"}`
+		other := `{"id":"1","title":"Y"}` // no timestamp
+
+		res, err := ProcessMergeWithLWW(ancestor, current, other)
+		require.NoError(t, err)
+		assert.False(t, res.HasGitConflict, "one-sided timestamp: current wins")
+		assert.Empty(t, res.ConflictRecords)
+		assert.Contains(t, res.Merged, `"title":"X"`)
+	})
+
+	t.Run("only other has timestamp — other wins", func(t *testing.T) {
+		ancestor := `{"id":"1","title":"A"}`
+		current := `{"id":"1","title":"X"}` // no timestamp
+		other := `{"id":"1","title":"Y","updated_at":"2026-01-01T12:00:00Z"}`
+
+		res, err := ProcessMergeWithLWW(ancestor, current, other)
+		require.NoError(t, err)
+		assert.False(t, res.HasGitConflict, "one-sided timestamp: other wins")
+		assert.Empty(t, res.ConflictRecords)
+		assert.Contains(t, res.Merged, `"title":"Y"`)
+	})
+}
+
 // TestProcessMergeWithLWW_ConflictRecordHasDeterministicID verifies that the
 // conflict record ID is stable across calls with the same inputs.
 func TestProcessMergeWithLWW_ConflictRecordHasDeterministicID(t *testing.T) {
