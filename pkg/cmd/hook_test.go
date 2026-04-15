@@ -140,7 +140,7 @@ func TestSyncFromFile_SkipsWhenDoltHasUncommittedChanges(t *testing.T) {
 	hookRunCmd.SetErr(&errBuf)
 	defer hookRunCmd.SetErr(nil)
 
-	err = syncFromFile(hookRunCmd, "merge")
+	err = syncFromFile(hookRunCmd, "merge", false)
 	assert.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "uncommitted changes")
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -169,7 +169,7 @@ func TestSyncFromFile_SkipsWhenHashUnchanged(t *testing.T) {
 	hookRunCmd.SetOut(&outBuf)
 	defer hookRunCmd.SetOut(nil)
 
-	err = syncFromFile(hookRunCmd, "merge")
+	err = syncFromFile(hookRunCmd, "merge", false)
 	assert.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "unchanged since last sync")
 }
@@ -303,6 +303,57 @@ func TestHookRunCmd_IsRegistered(t *testing.T) {
 	assert.True(t, found, "run subcommand should be registered on hookCmd")
 }
 
+// --- dry-run mode ---
+
+func TestSyncFromFile_DryRun_PrintsCountWithoutDB(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	content := `{"id":"a","title":"T1"}` + "\n" +
+		`{"id":"b","title":"T2"}` + "\n" +
+		"\n" // blank line should not be counted
+	require.NoError(t, os.WriteFile("issues.jsonl", []byte(content), 0644))
+	require.NoError(t, os.MkdirAll(".grava", 0755))
+
+	var outBuf strings.Builder
+	hookRunCmd.SetOut(&outBuf)
+	defer hookRunCmd.SetOut(nil)
+
+	// dryRun=true — no DB connection attempted even with unreachable URL.
+	t.Setenv("DB_URL", "root@tcp(127.0.0.1:19999)/grava?parseTime=true")
+	err := syncFromFile(hookRunCmd, "merge", true)
+	assert.NoError(t, err)
+	assert.Contains(t, outBuf.String(), "dry-run")
+	assert.Contains(t, outBuf.String(), "2") // 2 non-blank lines
+}
+
+func TestSyncFromFile_DryRun_NoFileIsNoOp(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	// No issues.jsonl — dry-run should exit 0 silently
+	err := syncFromFile(hookRunCmd, "merge", true)
+	assert.NoError(t, err)
+}
+
+func TestHookRunCmd_PostMergeDryRun(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	require.NoError(t, os.WriteFile("issues.jsonl",
+		[]byte(`{"id":"x","title":"T"}`+"\n"), 0644))
+
+	var outBuf strings.Builder
+	hookRunCmd.SetOut(&outBuf)
+	defer hookRunCmd.SetOut(nil)
+
+	rootCmd.SetArgs([]string{"hook", "run", "post-merge", "--dry-run"})
+	// post-merge checks issuesChangedInMerge() — may be false in a fresh repo;
+	// that's fine, it means nothing is printed (no issues.jsonl in last commit).
+	// We just verify the command exits 0.
+	assert.NoError(t, rootCmd.Execute())
+}
+
 // --- syncFromFile gracefully handles missing DB ---
 
 func TestSyncFromFile_DBUnavailableExitsZero(t *testing.T) {
@@ -322,7 +373,7 @@ func TestSyncFromFile_DBUnavailableExitsZero(t *testing.T) {
 	t.Setenv("DB_URL", "root@tcp(127.0.0.1:19999)/grava?parseTime=true")
 
 	// syncFromFile should warn but return nil.
-	err := syncFromFile(hookRunCmd, "test")
+	err := syncFromFile(hookRunCmd, "test", false)
 	assert.NoError(t, err, "syncFromFile should exit 0 when DB is unreachable")
 	assert.Contains(t, errBuf.String(), "DB unavailable")
 }

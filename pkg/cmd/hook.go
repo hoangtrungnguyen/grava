@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -23,6 +24,10 @@ var hookCmd = &cobra.Command{
 	Long:  `Parent command for Git hook handlers. Used by grava-managed hook shims.`,
 }
 
+// hookDryRun is bound to the --dry-run flag on hookRunCmd.
+// When true, sync handlers print what would be imported without touching the DB.
+var hookDryRun bool
+
 var hookRunCmd = &cobra.Command{
 	Use:   "run <hook-name> [args...]",
 	Short: "Run a named Git hook handler",
@@ -33,16 +38,18 @@ Supported hooks:
   post-merge      Sync Dolt if issues.jsonl changed during the merge
   post-checkout   Sync Dolt if issues.jsonl changed on the new branch
   pre-commit      Validate issues.jsonl format before allowing the commit
-  prepare-commit-msg  No-op placeholder`,
+  prepare-commit-msg  No-op placeholder
+
+Use --dry-run to preview what would be synced without touching the database.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hookName := args[0]
 		hookArgs := args[1:]
 		switch hookName {
 		case "post-merge":
-			return runPostMerge(cmd)
+			return runPostMerge(cmd, hookDryRun)
 		case "post-checkout":
-			return runPostCheckout(cmd, hookArgs)
+			return runPostCheckout(cmd, hookArgs, hookDryRun)
 		case "pre-commit":
 			return runPreCommit(cmd)
 		case "prepare-commit-msg":
@@ -164,10 +171,32 @@ func hasDoltUncommittedChanges(store dolt.Store) bool {
 	return count > 0
 }
 
+// countNonEmptyLines counts the non-blank lines in a file.
+// Used by dry-run mode to report how many issues would be synced.
+func countNonEmptyLines(path string) (int, error) {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close() //nolint:errcheck
+
+	var n int
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if strings.TrimSpace(scanner.Text()) != "" {
+			n++
+		}
+	}
+	return n, scanner.Err()
+}
+
 // syncFromFile connects to the DB, runs the A+C safety checks, imports
 // issues.jsonl (upsert), and updates the stored content hash.
 //
-// Safety checks:
+// When dryRun is true the function counts and prints what would be synced
+// without connecting to the database or modifying any state.
+//
+// Safety checks (live mode only):
 //
 //	A — Content Hash: if the current issues.jsonl hash matches the hash stored
 //	    from the last sync, the file content is unchanged and the sync is
@@ -177,10 +206,23 @@ func hasDoltUncommittedChanges(store dolt.Store) bool {
 //
 // On DB connection failure the function prints a warning and returns nil so
 // Git operations are never blocked.
-func syncFromFile(cmd *cobra.Command, trigger string) error {
+func syncFromFile(cmd *cobra.Command, trigger string, dryRun bool) error {
 	issuesPath := resolveIssuesFilePath()
 	if _, err := os.Stat(issuesPath); os.IsNotExist(err) {
 		return nil // no file — nothing to sync
+	}
+
+	if dryRun {
+		count, err := countNonEmptyLines(issuesPath)
+		if err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+				"grava hook [dry-run]: failed to read %s: %v\n", issuesPath, err)
+			return nil
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+			"grava hook [dry-run]: would sync up to %d issues from issues.jsonl after %s\n",
+			count, trigger)
+		return nil
 	}
 
 	// Check A: skip if we already imported this exact file content.
@@ -226,14 +268,14 @@ func syncFromFile(cmd *cobra.Command, trigger string) error {
 	return nil
 }
 
-func runPostMerge(cmd *cobra.Command) error {
+func runPostMerge(cmd *cobra.Command, dryRun bool) error {
 	if !issuesChangedInMerge() {
 		return nil
 	}
-	return syncFromFile(cmd, "merge")
+	return syncFromFile(cmd, "merge", dryRun)
 }
 
-func runPostCheckout(cmd *cobra.Command, args []string) error {
+func runPostCheckout(cmd *cobra.Command, args []string, dryRun bool) error {
 	// Git passes: prev-head new-head is-branch-checkout
 	if len(args) < 2 {
 		return nil
@@ -242,7 +284,7 @@ func runPostCheckout(cmd *cobra.Command, args []string) error {
 	if !issuesChangedInCheckout(prevHead, newHead) {
 		return nil
 	}
-	return syncFromFile(cmd, "checkout")
+	return syncFromFile(cmd, "checkout", dryRun)
 }
 
 func runPreCommit(cmd *cobra.Command) error {
@@ -265,4 +307,6 @@ func runPreCommit(cmd *cobra.Command) error {
 func init() {
 	hookCmd.AddCommand(hookRunCmd)
 	rootCmd.AddCommand(hookCmd)
+	hookRunCmd.Flags().BoolVar(&hookDryRun, "dry-run", false,
+		"Preview what would be synced without touching the database")
 }
