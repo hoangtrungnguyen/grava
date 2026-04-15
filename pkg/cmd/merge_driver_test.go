@@ -141,3 +141,32 @@ func TestMergeDriverCmd_DryRunConflict_NoExit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, currentContent, string(afterContent))
 }
+
+func TestMergeDriverCmd_CleanAddOnOneSide(t *testing.T) {
+	// AC: issues that exist only in one side (clean add) are passed through without conflict.
+	resetMergeDriverFlags(t)
+	ancestor := writeTempFile(t, "")
+	current := writeTempFile(t, `{"id":"issue-from-current","title":"Only on current"}`+"\n")
+	other := writeTempFile(t, "")
+
+	rootCmd.SetArgs([]string{"merge-driver", ancestor, current, other})
+	err := rootCmd.Execute()
+	assert.NoError(t, err)
+
+	result, err := os.ReadFile(current)
+	require.NoError(t, err)
+	assert.Contains(t, string(result), "issue-from-current", "clean-add issue must be in merged output")
+	assert.NotContains(t, string(result), `"_conflict"`, "clean-add must not produce conflict markers")
+}
+
+func TestMergeDriverCmd_NonExistentAncestor(t *testing.T) {
+	// os.ReadFile error is propagated with file path in error message.
+	resetMergeDriverFlags(t)
+	current := writeTempFile(t, `{"id":"1"}`+"\n")
+	other := writeTempFile(t, `{"id":"1"}`+"\n")
+
+	rootCmd.SetArgs([]string{"merge-driver", "/nonexistent/ancestor.jsonl", current, other})
+	err := rootCmd.Execute()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "/nonexistent/ancestor.jsonl")
+}

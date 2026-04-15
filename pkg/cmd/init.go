@@ -10,6 +10,8 @@ import (
 
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/hoangtrungnguyen/grava/pkg/doltinstall"
+	"github.com/hoangtrungnguyen/grava/pkg/gitattributes"
+	"github.com/hoangtrungnguyen/grava/pkg/gitconfig"
 	"github.com/hoangtrungnguyen/grava/pkg/migrate"
 	"github.com/hoangtrungnguyen/grava/pkg/utils"
 	"github.com/spf13/cobra"
@@ -198,6 +200,22 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 
 		if !outputJSON {
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Created configuration in .grava.yaml")
+		}
+
+		// 8. Register merge driver in .git/config and .gitattributes (non-fatal).
+		// Only runs when we are inside a Git repository; silently skipped otherwise.
+		if gitconfig.IsInGitRepo() {
+			driverCfg := gitconfig.DefaultDriverConfig()
+			if _, regErr := gitconfig.RegisterMergeDriver(driverCfg, cmd.OutOrStdout(), cmd.ErrOrStderr()); regErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not register merge driver in .git/config: %v\n", regErr)
+			} else if !outputJSON {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Merge driver 'grava-merge' registered in .git/config")
+			}
+			if added, attrErr := gitattributes.EnsureMergeAttr(cwd); attrErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not update .gitattributes: %v\n", attrErr)
+			} else if added && !outputJSON {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Added 'issues.jsonl merge=grava-merge' to .gitattributes")
+			}
 		}
 
 		if outputJSON {
