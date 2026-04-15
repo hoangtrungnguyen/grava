@@ -199,7 +199,7 @@ func TestHookRunCmd_PreCommitValidFile(t *testing.T) {
 	_, cleanup := initTempGitRepo(t)
 	defer cleanup()
 
-	valid := `{"type":"issue","data":{"id":"abc123","title":"Test"}}` + "\n"
+	valid := `{"id":"abc123","title":"Test","type":"task","status":"open","priority":1,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","created_by":"x","updated_by":"x"}` + "\n"
 	require.NoError(t, os.WriteFile("issues.jsonl", []byte(valid), 0644))
 
 	rootCmd.SetArgs([]string{"hook", "run", "pre-commit"})
