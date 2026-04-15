@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
+	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -343,35 +346,6 @@ func TestValidateJSONL_EmptyLines(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// --- hashFileForImport ---
-
-func TestHashFileForImport_ReturnsSHA256(t *testing.T) {
-	f, err := os.CreateTemp(t.TempDir(), "hash-*.jsonl")
-	require.NoError(t, err)
-	_, err = f.WriteString(`{"id":"x"}`)
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
-
-	h, err := hashFileForImport(f.Name())
-	require.NoError(t, err)
-	assert.Len(t, h, 64, "SHA-256 hex digest must be 64 characters")
-}
-
-func TestHashFileForImport_SameContentSameHash(t *testing.T) {
-	dir := t.TempDir()
-	content := `{"id":"abc"}` + "\n"
-	a := dir + "/a.jsonl"
-	b := dir + "/b.jsonl"
-	require.NoError(t, os.WriteFile(a, []byte(content), 0644))
-	require.NoError(t, os.WriteFile(b, []byte(content), 0644))
-
-	ha, err := hashFileForImport(a)
-	require.NoError(t, err)
-	hb, err := hashFileForImport(b)
-	require.NoError(t, err)
-	assert.Equal(t, ha, hb)
-}
-
 // --- doltHasUncommittedChanges ---
 
 func TestDoltHasUncommittedChanges_TrueWhenRowsExist(t *testing.T) {
@@ -379,7 +353,7 @@ func TestDoltHasUncommittedChanges_TrueWhenRowsExist(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
-	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM dolt_status").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(3))
 
 	store := dolt.NewClientFromDB(db)
@@ -392,7 +366,7 @@ func TestDoltHasUncommittedChanges_FalseWhenNoRows(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
-	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM dolt_status").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
 
 	store := dolt.NewClientFromDB(db)
@@ -405,9 +379,116 @@ func TestDoltHasUncommittedChanges_FalseOnError(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
-	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM dolt_status").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
 		WillReturnError(assert.AnError)
 
 	store := dolt.NewClientFromDB(db)
 	assert.False(t, doltHasUncommittedChanges(store))
+}
+
+// --- newImportCmd command-level tests ---
+
+// makeDeps creates a cmddeps.Deps wired to a mock store for use in command tests.
+func makeDeps(store dolt.Store) *cmddeps.Deps {
+	actor := "test"
+	model := ""
+	outputJSON := false
+	return &cmddeps.Deps{
+		Store:      &store,
+		Actor:      &actor,
+		AgentModel: &model,
+		OutputJSON: &outputJSON,
+	}
+}
+
+func TestImportCmd_FileNotFound(t *testing.T) {
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	d := makeDeps(dolt.NewClientFromDB(db))
+	cmd := newImportCmd(d)
+	runErr := cmd.RunE(cmd, []string{"/tmp/does-not-exist-grava-test.jsonl"})
+	require.Error(t, runErr)
+	assert.ErrorIs(t, runErr, gravaerrors.New("FILE_NOT_FOUND", "", nil))
+}
+
+func TestImportCmd_ImportConflict_DoltHasChanges(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	// dolt_status returns rows → uncommitted changes present.
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(2))
+
+	f, writeErr := os.CreateTemp(t.TempDir(), "issues-*.jsonl")
+	require.NoError(t, writeErr)
+	_, _ = f.WriteString(`{"id":"x","title":"T","type":"task","status":"open","priority":1,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","created_by":"a","updated_by":"a"}` + "\n")
+	require.NoError(t, f.Close())
+
+	d := makeDeps(dolt.NewClientFromDB(db))
+	cmd := newImportCmd(d)
+	cmd.SetContext(context.Background())
+	runErr := cmd.RunE(cmd, []string{f.Name()})
+	require.Error(t, runErr)
+	assert.ErrorIs(t, runErr, gravaerrors.New("IMPORT_CONFLICT", "", nil))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestImportCmd_JSONOutput(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	// dolt_status returns 0 → no uncommitted changes.
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+	// importFlatJSONL (overwrite=true): BEGIN, upsert issue, COMMIT.
+	// overwrite=true → "INSERT INTO issues ... ON DUPLICATE KEY UPDATE ..."
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO issues").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	f, writeErr := os.CreateTemp(t.TempDir(), "issues-*.jsonl")
+	require.NoError(t, writeErr)
+	_, _ = f.WriteString(`{"id":"x","title":"T","type":"task","status":"open","priority":1,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","created_by":"a","updated_by":"a"}` + "\n")
+	require.NoError(t, f.Close())
+
+	d := makeDeps(dolt.NewClientFromDB(db))
+	*d.OutputJSON = true
+
+	var outBuf bytes.Buffer
+	cmd := newImportCmd(d)
+	cmd.SetContext(context.Background())
+	cmd.SetOut(&outBuf)
+	runErr := cmd.RunE(cmd, []string{f.Name()})
+	require.NoError(t, runErr)
+
+	var out map[string]int
+	require.NoError(t, json.Unmarshal(outBuf.Bytes(), &out))
+	assert.Equal(t, 1, out["imported"])
+	assert.Equal(t, 0, out["updated"])
+	assert.Equal(t, 0, out["skipped"])
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestImportCmd_FlagConflictWithPositionalArg(t *testing.T) {
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	f, writeErr := os.CreateTemp(t.TempDir(), "issues-*.jsonl")
+	require.NoError(t, writeErr)
+	require.NoError(t, f.Close())
+
+	d := makeDeps(dolt.NewClientFromDB(db))
+	cmd := newImportCmd(d)
+	cmd.SetContext(context.Background())
+	// Set --overwrite via flags then call RunE with positional arg.
+	require.NoError(t, cmd.Flags().Set("overwrite", "true"))
+	runErr := cmd.RunE(cmd, []string{f.Name()})
+	require.Error(t, runErr)
+	assert.Contains(t, runErr.Error(), "--overwrite and --skip-existing are only valid with --file")
 }

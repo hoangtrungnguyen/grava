@@ -6,8 +6,6 @@ package synccmd
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -679,22 +677,6 @@ func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite,
 	return result, nil
 }
 
-// hashFileForImport computes the SHA-256 hex digest of a file.
-// Used by the Dual-Safety Check (FR24) to detect whether issues.jsonl has
-// changed since the last Dolt commit.
-func hashFileForImport(path string) (string, error) {
-	f, err := os.Open(path) //nolint:gosec
-	if err != nil {
-		return "", err
-	}
-	defer f.Close() //nolint:errcheck
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
 // doltHasUncommittedChanges returns true when dolt_status reports any
 // staged or unstaged rows. Errors are treated as "no changes" (fail-open).
 func doltHasUncommittedChanges(store dolt.Store) bool {
@@ -736,6 +718,10 @@ The legacy --file flag accepts the old wrapped ExportItem format
 
 			// --- New path: positional <file> argument (flat JSONL + Dual-Safety) ---
 			if len(args) == 1 {
+				if importOverwrite || importSkipExisting {
+					return fmt.Errorf("--overwrite and --skip-existing are only valid with --file; omit them for positional import")
+				}
+
 				filePath := args[0]
 
 				f, err := os.Open(filePath) //nolint:gosec
