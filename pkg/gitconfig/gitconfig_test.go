@@ -68,7 +68,7 @@ func TestRegisterMergeDriver_UpdatesStaleConfig(t *testing.T) {
 	// Write an old config first
 	var buf strings.Builder
 	require.NoError(t, gitconfig.Set(
-		"merge.grava.driver", "old-grava merge %O %A %B", &buf, &buf,
+		"merge.grava-merge.driver", "old-grava merge %O %A %B", &buf, &buf,
 	))
 
 	cfg := gitconfig.DefaultDriverConfig()
@@ -153,7 +153,7 @@ func TestGetLocal_PartialConfig_ReturnsFalse(t *testing.T) {
 
 	// Set only the name key — driver is absent
 	var buf strings.Builder
-	require.NoError(t, gitconfig.Set("merge.grava.name", "Grava", &buf, &buf))
+	require.NoError(t, gitconfig.Set("merge.grava-merge.name", "Grava", &buf, &buf))
 
 	_, ok := gitconfig.GetLocal()
 	assert.False(t, ok, "GetLocal should return false when only one of the two keys is set")
@@ -190,11 +190,11 @@ func TestRegisterMergeDriver_UsesLocalScope(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the values are in the local config, not just the effective chain
-	name, ok := gitconfig.GetLocalValue("merge.grava.name")
+	name, ok := gitconfig.GetLocalValue("merge.grava-merge.name")
 	assert.True(t, ok, "name should be in local config")
 	assert.Equal(t, cfg.Name, name)
 
-	driver, ok := gitconfig.GetLocalValue("merge.grava.driver")
+	driver, ok := gitconfig.GetLocalValue("merge.grava-merge.driver")
 	assert.True(t, ok, "driver should be in local config")
 	assert.Equal(t, cfg.Driver, driver)
 }
@@ -206,5 +206,5 @@ func TestDefaultDriverConfig(t *testing.T) {
 	assert.Contains(t, cfg.Driver, "%O")
 	assert.Contains(t, cfg.Driver, "%A")
 	assert.Contains(t, cfg.Driver, "%B")
-	assert.Contains(t, cfg.Driver, "merge-slot")
+	assert.Contains(t, cfg.Driver, "merge-driver")
 }

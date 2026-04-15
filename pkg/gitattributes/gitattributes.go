@@ -14,8 +14,8 @@ import (
 
 const (
 	// MergeAttrLine is the entry written to .gitattributes.
-	// It instructs Git to use the 'grava' merge driver for issues.jsonl.
-	MergeAttrLine = "issues.jsonl merge=grava"
+	// It instructs Git to use the 'grava-merge' merge driver for issues.jsonl.
+	MergeAttrLine = "issues.jsonl merge=grava-merge"
 
 	// AttrFileName is the name of the gitattributes file.
 	AttrFileName = ".gitattributes"

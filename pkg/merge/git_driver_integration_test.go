@@ -54,7 +54,7 @@ func initMergeDriverRepo(t *testing.T, gravaBin string) string {
 	t.Helper()
 	dir := t.TempDir()
 
-	driverCmd := gravaBin + " merge-slot --ancestor %O --current %A --other %B"
+	driverCmd := gravaBin + " merge-driver %O %A %B"
 
 	for _, args := range [][]string{
 		{"git", "init", dir},
@@ -63,8 +63,8 @@ func initMergeDriverRepo(t *testing.T, gravaBin string) string {
 		// Pin default branch to "master" so tests are portable across systems
 		// where init.defaultBranch may be set to "main".
 		{"git", "-C", dir, "config", "init.defaultBranch", "master"},
-		{"git", "-C", dir, "config", "merge.grava.name", "Grava Schema-Aware Merge"},
-		{"git", "-C", dir, "config", "merge.grava.driver", driverCmd},
+		{"git", "-C", dir, "config", "merge.grava-merge.name", "Grava Schema-Aware Merge Driver"},
+		{"git", "-C", dir, "config", "merge.grava-merge.driver", driverCmd},
 	} {
 		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
 		require.NoError(t, err, "git setup: %s", string(out))
@@ -72,7 +72,7 @@ func initMergeDriverRepo(t *testing.T, gravaBin string) string {
 
 	// Write .gitattributes so git routes issues.jsonl through the driver.
 	attrPath := filepath.Join(dir, ".gitattributes")
-	require.NoError(t, os.WriteFile(attrPath, []byte("issues.jsonl merge=grava\n"), 0644))
+	require.NoError(t, os.WriteFile(attrPath, []byte("issues.jsonl merge=grava-merge\n"), 0644))
 
 	return dir
 }
@@ -249,12 +249,12 @@ func TestMergeDriver_IdempotentInstall(t *testing.T) {
 	}
 
 	// Verify git config has merge driver registered.
-	out, err := exec.Command("git", "-C", dir, "config", "--local", "merge.grava.driver").Output()
+	out, err := exec.Command("git", "-C", dir, "config", "--local", "merge.grava-merge.driver").Output()
 	require.NoError(t, err)
-	assert.Contains(t, strings.TrimSpace(string(out)), "merge-slot")
+	assert.Contains(t, strings.TrimSpace(string(out)), "merge-driver")
 
 	// Verify .gitattributes contains the entry.
 	attrs, err := os.ReadFile(filepath.Join(dir, ".gitattributes"))
 	require.NoError(t, err)
-	assert.Contains(t, string(attrs), "issues.jsonl merge=grava")
+	assert.Contains(t, string(attrs), "issues.jsonl merge=grava-merge")
 }

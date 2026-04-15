@@ -139,14 +139,14 @@ func checkGitInvocation() (bool, string) {
 	}
 	defer os.RemoveAll(dir) //nolint:errcheck
 
-	driverCmd := gravaBin + " merge-slot --ancestor %O --current %A --other %B"
+	driverCmd := gravaBin + " merge-driver %O %A %B"
 
 	setup := [][]string{
 		{"git", "init", dir},
 		{"git", "-C", dir, "config", "user.email", "spike@grava.test"},
 		{"git", "-C", dir, "config", "user.name", "Spike"},
-		{"git", "-C", dir, "config", "merge.grava.name", "Grava Schema-Aware Merge"},
-		{"git", "-C", dir, "config", "merge.grava.driver", driverCmd},
+		{"git", "-C", dir, "config", "merge.grava-merge.name", "Grava Schema-Aware Merge Driver"},
+		{"git", "-C", dir, "config", "merge.grava-merge.driver", driverCmd},
 	}
 	for _, args := range setup {
 		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
@@ -155,7 +155,7 @@ func checkGitInvocation() (bool, string) {
 	}
 
 	attrPath := filepath.Join(dir, ".gitattributes")
-	if err := os.WriteFile(attrPath, []byte("issues.jsonl merge=grava\n"), 0o644); err != nil {
+	if err := os.WriteFile(attrPath, []byte("issues.jsonl merge=grava-merge\n"), 0o644); err != nil {
 		return false, fmt.Sprintf("git_invocation=FAIL (write .gitattributes: %v)", err)
 	}
 

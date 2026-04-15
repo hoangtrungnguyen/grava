@@ -16,8 +16,8 @@ var installCmd = &cobra.Command{
 merge driver for JSONL issue files.
 
 Steps performed:
-  1. Register 'grava' merge driver in .git/config
-  2. Ensure 'issues.jsonl merge=grava' is present in .gitattributes
+  1. Register 'grava-merge' merge driver in .git/config
+  2. Ensure 'issues.jsonl merge=grava-merge' is present in .gitattributes
   3. Deploy pre-commit, post-merge, post-checkout, and prepare-commit-msg hooks
 
 Use --shared to install hooks to .grava/hooks and configure core.hooksPath,
@@ -48,9 +48,9 @@ Note: 'grava' must be on PATH at merge time.`,
 			return err
 		}
 		if added {
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Added 'issues.jsonl merge=grava' to .gitattributes")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Added 'issues.jsonl merge=grava-merge' to .gitattributes")
 		} else {
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ .gitattributes already contains 'issues.jsonl merge=grava'")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ .gitattributes already contains 'issues.jsonl merge=grava-merge'")
 		}
 
 		// Step 3: deploy Git hooks

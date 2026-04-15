@@ -106,7 +106,7 @@ func TestInstallCmd_DriverHasCorrectPlaceholders(t *testing.T) {
 	assert.Contains(t, cfg.Driver, "%O")
 	assert.Contains(t, cfg.Driver, "%A")
 	assert.Contains(t, cfg.Driver, "%B")
-	assert.Contains(t, cfg.Driver, "merge-slot")
+	assert.Contains(t, cfg.Driver, "merge-driver")
 }
 
 func TestInstallCmd_SharedFlagExists(t *testing.T) {

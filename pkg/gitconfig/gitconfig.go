@@ -11,15 +11,15 @@ import (
 
 const (
 	// DriverName is the git merge driver identifier used in .git/config and .gitattributes.
-	DriverName = "grava"
+	DriverName = "grava-merge"
 
-	// DriverCmd is the command template stored in .git/config under merge.grava.driver.
+	// DriverCmd is the command template stored in .git/config under merge.grava-merge.driver.
 	// %O = ancestor, %A = current (result written here), %B = other.
 	// Requires 'grava' on PATH at merge time.
-	DriverCmd = "grava merge-slot --ancestor %O --current %A --other %B"
+	DriverCmd = "grava merge-driver %O %A %B"
 
-	// DriverHumanName is the human-readable name stored under merge.grava.name.
-	DriverHumanName = "Grava JSONL Merge Driver"
+	// DriverHumanName is the human-readable name stored under merge.grava-merge.name.
+	DriverHumanName = "Grava Schema-Aware Merge Driver"
 
 	keyName   = "merge." + DriverName + ".name"
 	keyDriver = "merge." + DriverName + ".driver"

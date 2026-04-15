@@ -67,7 +67,7 @@ leveraging the power of a version-controlled database.`,
 		// Step 2: Skip DB init for commands that don't need it
 		if cmd.Name() == "help" || cmd.Name() == "init" || cmd.Name() == "version" ||
 			cmd.Name() == "db-start" || cmd.Name() == "db-stop" || cmd.Name() == "merge-slot" ||
-			cmd.Name() == "install" || cmd.Name() == "sync-status" {
+			cmd.Name() == "merge-driver" || cmd.Name() == "install" || cmd.Name() == "sync-status" {
 			return nil
 		}
 		// Hook dispatch commands connect to DB themselves with graceful
