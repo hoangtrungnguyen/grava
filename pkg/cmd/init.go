@@ -12,6 +12,7 @@ import (
 	"github.com/hoangtrungnguyen/grava/pkg/doltinstall"
 	"github.com/hoangtrungnguyen/grava/pkg/gitattributes"
 	"github.com/hoangtrungnguyen/grava/pkg/gitconfig"
+	"github.com/hoangtrungnguyen/grava/pkg/githooks"
 	"github.com/hoangtrungnguyen/grava/pkg/migrate"
 	"github.com/hoangtrungnguyen/grava/pkg/utils"
 	"github.com/spf13/cobra"
@@ -204,6 +205,7 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 
 		// 8. Register merge driver in .git/config and .gitattributes (non-fatal).
 		// Only runs when we are inside a Git repository; silently skipped otherwise.
+		hooksRegistered, hooksAppended, hooksSkipped := 0, 0, 0
 		if gitconfig.IsInGitRepo() {
 			driverCfg := gitconfig.DefaultDriverConfig()
 			if _, regErr := gitconfig.RegisterMergeDriver(driverCfg, cmd.OutOrStdout(), cmd.ErrOrStderr()); regErr != nil {
@@ -216,13 +218,40 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			} else if added && !outputJSON {
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Added 'issues.jsonl merge=grava-merge' to .gitattributes")
 			}
+
+			// 9. Register Git hook stubs (FR25, ADR-H2) — append mode, idempotent.
+			hooksDir := githooks.DefaultHooksDir(cwd)
+			hookResults, hookErr := githooks.AppendStubs(hooksDir, githooks.InitHookNames)
+			if hookErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not register git hooks: %v\n", hookErr)
+			} else {
+				for _, r := range hookResults {
+					switch r.Action {
+					case "registered":
+						hooksRegistered++
+						if !outputJSON {
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Registered git hook: %s\n", r.Name)
+						}
+					case "appended":
+						hooksAppended++
+						if !outputJSON {
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Appended grava to existing hook: %s\n", r.Name)
+						}
+					case "skipped":
+						hooksSkipped++
+					}
+				}
+			}
 		}
 
 		if outputJSON {
 			resp := map[string]interface{}{
-				"status": "initialized",
-				"port":   port,
-				"db_url": dbURL,
+				"status":           "initialized",
+				"port":             port,
+				"db_url":           dbURL,
+				"hooks_registered": hooksRegistered,
+				"hooks_appended":   hooksAppended,
+				"hooks_skipped":    hooksSkipped,
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))

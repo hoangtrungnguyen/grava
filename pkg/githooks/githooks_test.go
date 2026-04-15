@@ -167,3 +167,92 @@ func TestSharedHooksDir(t *testing.T) {
 	dir := githooks.SharedHooksDir("/repo")
 	assert.Equal(t, "/repo/.grava/hooks", filepath.ToSlash(dir))
 }
+
+// --- AppendStubs ---
+
+func TestAppendStubs_RegistersNewHooks(t *testing.T) {
+	dir := tempHooksDir(t)
+	results, err := githooks.AppendStubs(dir, githooks.InitHookNames)
+	require.NoError(t, err)
+	assert.Len(t, results, len(githooks.InitHookNames))
+
+	for _, r := range results {
+		assert.Equal(t, "registered", r.Action, "new hook %s should be registered", r.Name)
+		content := readHook(t, dir, r.Name)
+		assert.Contains(t, content, githooks.AppendStartMarker)
+		assert.Contains(t, content, githooks.AppendEndMarker)
+		assert.Contains(t, content, "grava hook run "+r.Name)
+
+		info, err := os.Stat(hookPath(dir, r.Name))
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0755), info.Mode().Perm(), "hook %s should be executable", r.Name)
+	}
+}
+
+func TestAppendStubs_IdempotentOnRerun(t *testing.T) {
+	dir := tempHooksDir(t)
+	_, err := githooks.AppendStubs(dir, githooks.InitHookNames)
+	require.NoError(t, err)
+
+	results, err := githooks.AppendStubs(dir, githooks.InitHookNames)
+	require.NoError(t, err)
+	for _, r := range results {
+		assert.Equal(t, "skipped", r.Action, "hook %s should be skipped on re-run", r.Name)
+	}
+}
+
+func TestAppendStubs_AppendsToExistingForeignHook(t *testing.T) {
+	dir := tempHooksDir(t)
+	original := "#!/bin/sh\necho 'my custom hook'\n"
+	require.NoError(t, os.WriteFile(hookPath(dir, "pre-commit"), []byte(original), 0755))
+
+	results, err := githooks.AppendStubs(dir, []string{"pre-commit"})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "appended", results[0].Action)
+
+	content := readHook(t, dir, "pre-commit")
+	// Original content preserved
+	assert.Contains(t, content, "my custom hook")
+	// Grava invocation appended
+	assert.Contains(t, content, githooks.AppendStartMarker)
+	assert.Contains(t, content, "grava hook run pre-commit")
+	assert.Contains(t, content, githooks.AppendEndMarker)
+}
+
+func TestAppendStubs_SkipsExistingGravaShim(t *testing.T) {
+	dir := tempHooksDir(t)
+	// Write a full replace-mode shim (contains ShimMarker but not AppendStartMarker)
+	shim := "#!/bin/sh\n# grava-shim\ngrava hook run pre-commit \"$@\"\n"
+	require.NoError(t, os.WriteFile(hookPath(dir, "pre-commit"), []byte(shim), 0755))
+
+	// AppendStubs checks for AppendStartMarker; this shim has none → should append
+	results, err := githooks.AppendStubs(dir, []string{"pre-commit"})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "appended", results[0].Action)
+}
+
+func TestAppendStubs_IdempotentAfterAppend(t *testing.T) {
+	dir := tempHooksDir(t)
+	original := "#!/bin/sh\necho 'existing'\n"
+	require.NoError(t, os.WriteFile(hookPath(dir, "post-merge"), []byte(original), 0755))
+
+	// First run — should append
+	r1, err := githooks.AppendStubs(dir, []string{"post-merge"})
+	require.NoError(t, err)
+	assert.Equal(t, "appended", r1[0].Action)
+
+	// Second run — AppendStartMarker now present → skip
+	r2, err := githooks.AppendStubs(dir, []string{"post-merge"})
+	require.NoError(t, err)
+	assert.Equal(t, "skipped", r2[0].Action)
+}
+
+func TestAppendStubs_CreatesHooksDirIfAbsent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nonexistent-hooks")
+	_, err := githooks.AppendStubs(dir, githooks.InitHookNames)
+	require.NoError(t, err)
+	_, statErr := os.Stat(dir)
+	assert.NoError(t, statErr, "hooks directory should have been created")
+}

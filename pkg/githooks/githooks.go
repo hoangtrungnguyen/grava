@@ -15,9 +15,95 @@ const (
 	// Its presence identifies the file as safe to overwrite on re-install.
 	ShimMarker = "# grava-shim"
 
+	// AppendStartMarker and AppendEndMarker bracket the grava invocation
+	// appended to pre-existing hooks by AppendStubs (ADR-H2 append mode).
+	// Their presence is used for idempotency: if AppendStartMarker is found,
+	// the hook already delegates to grava and AppendStubs is a no-op.
+	AppendStartMarker = "# grava-hook-start"
+	AppendEndMarker   = "# grava-hook-end"
+
 	// preservedSuffix is appended to pre-existing hooks that grava displaces.
 	preservedSuffix = ".pre-grava"
 )
+
+// InitHookNames lists the hooks registered by AppendStubs during grava init.
+// Only the two hooks required for the Git Sync pipeline (FR25) are included.
+var InitHookNames = []string{
+	"pre-commit",
+	"post-merge",
+}
+
+// AppendResult describes what happened to a single hook file during AppendStubs.
+type AppendResult struct {
+	Name   string
+	Action string // "registered" | "appended" | "skipped"
+}
+
+// AppendStubs registers grava hook invocations for the named hooks using
+// append mode (ADR-H2):
+//
+//   - Hook absent     → write a minimal new stub ("registered").
+//   - Hook present, no grava marker → append grava invocation with
+//     AppendStartMarker / AppendEndMarker ("appended").
+//   - Hook present with AppendStartMarker already → no-op ("skipped").
+//
+// All written/appended files are made executable (0755).
+// Creates hooksDir if it does not exist.
+func AppendStubs(hooksDir string, hookNames []string) ([]AppendResult, error) {
+	if err := os.MkdirAll(hooksDir, 0755); err != nil { //nolint:gosec
+		return nil, fmt.Errorf("failed to create hooks directory %s: %w", hooksDir, err)
+	}
+
+	var results []AppendResult
+	for _, name := range hookNames {
+		res, err := appendOne(hooksDir, name)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, res)
+	}
+	return results, nil
+}
+
+// appendOne handles a single hook file in append mode.
+func appendOne(hooksDir, name string) (AppendResult, error) {
+	path := filepath.Join(hooksDir, name)
+	res := AppendResult{Name: name}
+
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return res, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	if len(existing) == 0 {
+		// Hook absent — write a new minimal stub.
+		stub := fmt.Sprintf("#!/bin/sh\n%s\ngrava hook run %s \"$@\"\n%s\n",
+			AppendStartMarker, name, AppendEndMarker)
+		if err := os.WriteFile(path, []byte(stub), 0755); err != nil { //nolint:gosec
+			return res, fmt.Errorf("failed to write hook %s: %w", path, err)
+		}
+		res.Action = "registered"
+		return res, nil
+	}
+
+	// Hook exists — check for idempotency marker.
+	if strings.Contains(string(existing), AppendStartMarker) {
+		res.Action = "skipped"
+		return res, nil
+	}
+
+	// Append grava invocation with start/end markers.
+	suffix := fmt.Sprintf("\n%s\ngrava hook run %s \"$@\"\n%s\n",
+		AppendStartMarker, name, AppendEndMarker)
+	content := strings.TrimRight(string(existing), "\n") + suffix
+	if err := os.WriteFile(path, []byte(content), 0755); err != nil { //nolint:gosec
+		return res, fmt.Errorf("failed to append to hook %s: %w", path, err)
+	}
+	// Ensure the file is executable even if the original wasn't.
+	_ = os.Chmod(path, 0755) //nolint:gosec
+	res.Action = "appended"
+	return res, nil
+}
 
 // hookShim returns the shim content for a named hook.
 // The shim delegates exclusively to 'grava hook run <name>'. Any pre-existing
