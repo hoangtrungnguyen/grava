@@ -265,6 +265,57 @@ func TestImportFlatJSONL_WithLabelsAndComments(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestImportFlatJSONL_Overwrite_UpdatesExisting(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	now := time.Now().UTC().Truncate(time.Second)
+	line := `{"id":"grava-f003","title":"Updated","description":"d","type":"task","priority":2,"status":"closed","created_at":"` +
+		now.Format(time.RFC3339) + `","updated_at":"` + now.Format(time.RFC3339) + `","created_by":"dev1","updated_by":"dev1"}` + "\n"
+
+	mock.ExpectBegin()
+	// ON DUPLICATE KEY UPDATE returns RowsAffected=2 for updated rows
+	mock.ExpectExec("INSERT INTO issues").WillReturnResult(sqlmock.NewResult(1, 2))
+	mock.ExpectCommit()
+
+	store := dolt.NewClientFromDB(db)
+	result, err := importFlatJSONL(context.Background(), store, strings.NewReader(line), true)
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.Imported)
+	assert.Equal(t, 1, result.Updated)
+	assert.Equal(t, 0, result.Skipped)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestImportFlatJSONL_WithDependencies(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	now := time.Now().UTC().Truncate(time.Second)
+	rec := IssueJSONLRecord{
+		ID: "grava-f004", Title: "With Deps", Description: "d", Type: "epic",
+		Priority: 1, Status: "open", CreatedAt: now, UpdatedAt: now,
+		CreatedBy: "dev1", UpdatedBy: "dev1",
+		Dependencies: []DepRecord{
+			{FromID: "grava-f004", ToID: "grava-f005", Type: "blocks", CreatedBy: "dev1"},
+		},
+	}
+	b, _ := json.Marshal(rec)
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT IGNORE INTO issues").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO dependencies").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	store := dolt.NewClientFromDB(db)
+	result, err := importFlatJSONL(context.Background(), store, strings.NewReader(string(b)+"\n"), false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Imported)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestValidateJSONL_ValidFlatFormat(t *testing.T) {
 	lines := `{"id":"g-001","title":"T1","type":"task","status":"open","priority":1,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","created_by":"x","updated_by":"x"}` + "\n" +
 		`{"id":"g-002","title":"T2","type":"bug","status":"open","priority":2,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","created_by":"x","updated_by":"x"}` + "\n"

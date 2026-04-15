@@ -159,7 +159,6 @@ func newExportCmd(d *cmddeps.Deps) *cobra.Command {
 	var (
 		outputPath         string
 		exportIncludeWisps bool
-		outputJSON         bool
 	)
 
 	cmd := &cobra.Command{
@@ -191,7 +190,7 @@ By default writes to issues.jsonl in the git repository root.`,
 				return err
 			}
 
-			if outputJSON {
+			if *d.OutputJSON {
 				resp := map[string]interface{}{
 					"exported_path": path,
 					"issue_count":   count,
@@ -207,7 +206,6 @@ By default writes to issues.jsonl in the git repository root.`,
 
 	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output path (default: <git-root>/issues.jsonl)")
 	cmd.Flags().BoolVar(&exportIncludeWisps, "include-wisps", false, "Include ephemeral Wisp issues")
-	cmd.Flags().BoolVar(&outputJSON, "json", false, "Output metadata as JSON instead of human-readable message")
 	return cmd
 }
 
@@ -265,74 +263,90 @@ func exportFlatJSONL(ctx context.Context, store dolt.Store, w io.Writer, include
 	// 2. Fetch all labels
 	labelRows, err := store.QueryContext(ctx,
 		"SELECT issue_id, label FROM issue_labels ORDER BY issue_id, created_at")
-	if err == nil {
-		defer labelRows.Close() //nolint:errcheck
-		for labelRows.Next() {
-			var issueID, label string
-			if scanErr := labelRows.Scan(&issueID, &label); scanErr == nil {
-				if idx, ok := idxByID[issueID]; ok {
-					issues[idx].Labels = append(issues[idx].Labels, label)
-				}
+	if err != nil {
+		return 0, fmt.Errorf("failed to query labels: %w", err)
+	}
+	defer labelRows.Close() //nolint:errcheck
+	for labelRows.Next() {
+		var issueID, label string
+		if scanErr := labelRows.Scan(&issueID, &label); scanErr == nil {
+			if idx, ok := idxByID[issueID]; ok {
+				issues[idx].Labels = append(issues[idx].Labels, label)
 			}
 		}
+	}
+	if err := labelRows.Err(); err != nil {
+		return 0, fmt.Errorf("label scan error: %w", err)
 	}
 
 	// 3. Fetch all comments
 	commentRows, err := store.QueryContext(ctx,
 		"SELECT issue_id, id, message, actor, agent_model, created_at FROM issue_comments ORDER BY issue_id, created_at")
-	if err == nil {
-		defer commentRows.Close() //nolint:errcheck
-		for commentRows.Next() {
-			var issueID string
-			var c CommentRecord
-			var actor *string
-			if scanErr := commentRows.Scan(&issueID, &c.ID, &c.Message, &actor, &c.AgentModel, &c.CreatedAt); scanErr == nil {
-				if actor != nil {
-					c.Actor = *actor
-				}
-				if idx, ok := idxByID[issueID]; ok {
-					issues[idx].Comments = append(issues[idx].Comments, c)
-				}
+	if err != nil {
+		return 0, fmt.Errorf("failed to query comments: %w", err)
+	}
+	defer commentRows.Close() //nolint:errcheck
+	for commentRows.Next() {
+		var issueID string
+		var c CommentRecord
+		var actor *string
+		if scanErr := commentRows.Scan(&issueID, &c.ID, &c.Message, &actor, &c.AgentModel, &c.CreatedAt); scanErr == nil {
+			if actor != nil {
+				c.Actor = *actor
+			}
+			if idx, ok := idxByID[issueID]; ok {
+				issues[idx].Comments = append(issues[idx].Comments, c)
 			}
 		}
+	}
+	if err := commentRows.Err(); err != nil {
+		return 0, fmt.Errorf("comment scan error: %w", err)
 	}
 
 	// 4. Fetch all dependencies (keyed by from_id)
 	depRows, err := store.QueryContext(ctx,
 		"SELECT from_id, to_id, type, created_by, updated_by, agent_model FROM dependencies ORDER BY from_id, to_id")
-	if err == nil {
-		defer depRows.Close() //nolint:errcheck
-		for depRows.Next() {
-			var dep DepRecord
-			var createdBy, updatedBy *string
-			if scanErr := depRows.Scan(&dep.FromID, &dep.ToID, &dep.Type, &createdBy, &updatedBy, &dep.AgentModel); scanErr == nil {
-				if createdBy != nil {
-					dep.CreatedBy = *createdBy
-				}
-				if updatedBy != nil {
-					dep.UpdatedBy = *updatedBy
-				}
-				if idx, ok := idxByID[dep.FromID]; ok {
-					issues[idx].Dependencies = append(issues[idx].Dependencies, dep)
-				}
+	if err != nil {
+		return 0, fmt.Errorf("failed to query dependencies: %w", err)
+	}
+	defer depRows.Close() //nolint:errcheck
+	for depRows.Next() {
+		var dep DepRecord
+		var createdBy, updatedBy *string
+		if scanErr := depRows.Scan(&dep.FromID, &dep.ToID, &dep.Type, &createdBy, &updatedBy, &dep.AgentModel); scanErr == nil {
+			if createdBy != nil {
+				dep.CreatedBy = *createdBy
+			}
+			if updatedBy != nil {
+				dep.UpdatedBy = *updatedBy
+			}
+			if idx, ok := idxByID[dep.FromID]; ok {
+				issues[idx].Dependencies = append(issues[idx].Dependencies, dep)
 			}
 		}
+	}
+	if err := depRows.Err(); err != nil {
+		return 0, fmt.Errorf("dependency scan error: %w", err)
 	}
 
 	// 5. Fetch wisp entries
 	wispRows, err := store.QueryContext(ctx,
 		"SELECT issue_id, key_name, value, written_by, written_at FROM wisp_entries ORDER BY issue_id, key_name")
-	if err == nil {
-		defer wispRows.Close() //nolint:errcheck
-		for wispRows.Next() {
-			var issueID string
-			var we WispEntryRecord
-			if scanErr := wispRows.Scan(&issueID, &we.Key, &we.Value, &we.WrittenBy, &we.WrittenAt); scanErr == nil {
-				if idx, ok := idxByID[issueID]; ok {
-					issues[idx].WispEntries = append(issues[idx].WispEntries, we)
-				}
+	if err != nil {
+		return 0, fmt.Errorf("failed to query wisp entries: %w", err)
+	}
+	defer wispRows.Close() //nolint:errcheck
+	for wispRows.Next() {
+		var issueID string
+		var we WispEntryRecord
+		if scanErr := wispRows.Scan(&issueID, &we.Key, &we.Value, &we.WrittenBy, &we.WrittenAt); scanErr == nil {
+			if idx, ok := idxByID[issueID]; ok {
+				issues[idx].WispEntries = append(issues[idx].WispEntries, we)
 			}
 		}
+	}
+	if err := wispRows.Err(); err != nil {
+		return 0, fmt.Errorf("wisp scan error: %w", err)
 	}
 
 	// 6. Write one JSON line per issue
@@ -426,43 +440,55 @@ func importFlatJSONL(ctx context.Context, store dolt.Store, r io.Reader, overwri
 
 		// Upsert labels
 		for _, label := range rec.Labels {
-			_, _ = tx.ExecContext(ctx,
+			if _, execErr := tx.ExecContext(ctx,
 				`INSERT IGNORE INTO issue_labels (issue_id, label) VALUES (?, ?)`,
 				rec.ID, label,
-			)
+			); execErr != nil {
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK",
+					fmt.Sprintf("failed to upsert label %q for issue %s", label, rec.ID), execErr)
+			}
 		}
 
 		// Upsert comments (by id)
 		for _, c := range rec.Comments {
 			if c.ID > 0 {
-				_, _ = tx.ExecContext(ctx,
+				if _, execErr := tx.ExecContext(ctx,
 					`INSERT INTO issue_comments (id, issue_id, message, actor, agent_model, created_at)
 					 VALUES (?, ?, ?, ?, ?, ?)
 					 ON DUPLICATE KEY UPDATE message=VALUES(message), actor=VALUES(actor)`,
 					c.ID, rec.ID, c.Message, nullableStr(c.Actor), c.AgentModel, c.CreatedAt,
-				)
+				); execErr != nil {
+					return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK",
+						fmt.Sprintf("failed to upsert comment %d for issue %s", c.ID, rec.ID), execErr)
+				}
 			}
 		}
 
 		// Upsert dependencies
 		for _, dep := range rec.Dependencies {
-			_, _ = tx.ExecContext(ctx,
+			if _, execErr := tx.ExecContext(ctx,
 				`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model)
 				 VALUES (?, ?, ?, ?, ?, ?)
 				 ON DUPLICATE KEY UPDATE type=VALUES(type)`,
 				dep.FromID, dep.ToID, dep.Type,
 				nullableStr(dep.CreatedBy), nullableStr(dep.UpdatedBy), dep.AgentModel,
-			)
+			); execErr != nil {
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK",
+					fmt.Sprintf("failed to upsert dependency %s→%s", dep.FromID, dep.ToID), execErr)
+			}
 		}
 
 		// Upsert wisp entries (by issue_id + key_name)
 		for _, we := range rec.WispEntries {
-			_, _ = tx.ExecContext(ctx,
+			if _, execErr := tx.ExecContext(ctx,
 				`INSERT INTO wisp_entries (issue_id, key_name, value, written_by, written_at)
 				 VALUES (?, ?, ?, ?, ?)
 				 ON DUPLICATE KEY UPDATE value=VALUES(value), written_by=VALUES(written_by), written_at=VALUES(written_at)`,
 				rec.ID, we.Key, we.Value, we.WrittenBy, we.WrittenAt,
-			)
+			); execErr != nil {
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK",
+					fmt.Sprintf("failed to upsert wisp entry %q for issue %s", we.Key, rec.ID), execErr)
+			}
 		}
 	}
 
