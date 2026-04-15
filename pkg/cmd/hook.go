@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -171,9 +172,10 @@ func hasDoltUncommittedChanges(store dolt.Store) bool {
 	return count > 0
 }
 
-// countNonEmptyLines counts the non-blank lines in a file.
-// Used by dry-run mode to report how many issues would be synced.
-func countNonEmptyLines(path string) (int, error) {
+// countJSONLRecords counts the lines in a JSONL file that contain valid JSON objects.
+// Blank lines and non-JSON content are excluded so the dry-run count matches
+// what importFlatJSONL would actually process.
+func countJSONLRecords(path string) (int, error) {
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
 		return 0, err
@@ -183,7 +185,12 @@ func countNonEmptyLines(path string) (int, error) {
 	var n int
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		if strings.TrimSpace(scanner.Text()) != "" {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var obj map[string]interface{}
+		if json.Unmarshal([]byte(line), &obj) == nil {
 			n++
 		}
 	}
@@ -213,7 +220,7 @@ func syncFromFile(cmd *cobra.Command, trigger string, dryRun bool) error {
 	}
 
 	if dryRun {
-		count, err := countNonEmptyLines(issuesPath)
+		count, err := countJSONLRecords(issuesPath)
 		if err != nil {
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 				"grava hook [dry-run]: failed to read %s: %v\n", issuesPath, err)

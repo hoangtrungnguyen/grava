@@ -340,6 +340,10 @@ func TestHookRunCmd_PostMergeDryRun(t *testing.T) {
 	_, cleanup := initTempGitRepo(t)
 	defer cleanup()
 
+	// Reset hookDryRun after this test so subsequent tests are not affected.
+	// cobra/pflag does not reset unspecified flags between Execute() calls.
+	t.Cleanup(func() { hookDryRun = false })
+
 	require.NoError(t, os.WriteFile("issues.jsonl",
 		[]byte(`{"id":"x","title":"T"}`+"\n"), 0644))
 
@@ -348,9 +352,10 @@ func TestHookRunCmd_PostMergeDryRun(t *testing.T) {
 	defer hookRunCmd.SetOut(nil)
 
 	rootCmd.SetArgs([]string{"hook", "run", "post-merge", "--dry-run"})
-	// post-merge checks issuesChangedInMerge() — may be false in a fresh repo;
-	// that's fine, it means nothing is printed (no issues.jsonl in last commit).
-	// We just verify the command exits 0.
+	// post-merge checks issuesChangedInMerge() — may be false in a fresh repo
+	// (no HEAD@{1}), which means the dry-run path is never reached.
+	// We verify the command exits 0 and that hookDryRun was wired correctly
+	// (syncFromFile_DryRun_PrintsCountWithoutDB tests the actual output path).
 	assert.NoError(t, rootCmd.Execute())
 }
 
