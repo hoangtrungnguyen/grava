@@ -76,9 +76,11 @@ leveraging the power of a version-controlled database.`,
 		if cmd.Parent() != nil && cmd.Parent().Name() == "hook" {
 			return nil
 		}
-		// Resolve subcommands operate only on .grava/conflicts.json and
-		// issues.jsonl; no database connection required.
-		if cmd.Parent() != nil && cmd.Parent().Name() == "resolve" {
+		// Resolve and conflicts subcommands operate on .grava/conflicts.json and
+		// issues.jsonl. DB is used optionally when available; commands must not
+		// fail if the Dolt server is not running.
+		if cmd.Parent() != nil &&
+			(cmd.Parent().Name() == "resolve" || cmd.Parent().Name() == "conflicts") {
 			return nil
 		}
 
