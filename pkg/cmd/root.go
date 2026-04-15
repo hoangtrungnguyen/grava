@@ -76,11 +76,9 @@ leveraging the power of a version-controlled database.`,
 		if cmd.Parent() != nil && cmd.Parent().Name() == "hook" {
 			return nil
 		}
-		// Resolve and conflicts subcommands operate on .grava/conflicts.json and
-		// issues.jsonl. DB is used optionally when available; commands must not
-		// fail if the Dolt server is not running.
-		if cmd.Parent() != nil &&
-			(cmd.Parent().Name() == "resolve" || cmd.Parent().Name() == "conflicts") {
+		// Resolve subcommands operate only on .grava/conflicts.json and
+		// issues.jsonl; no database connection required.
+		if cmd.Parent() != nil && cmd.Parent().Name() == "resolve" {
 			return nil
 		}
 
@@ -93,6 +91,22 @@ leveraging the power of a version-controlled database.`,
 		gravaDir, err := grava.ResolveGravaDir()
 		if err != nil {
 			return gravaerrors.New("NOT_INITIALIZED", "grava is not initialized in this directory; run 'grava init' first", err)
+		}
+
+		// conflicts subcommands need only .grava/conflicts.json — skip schema check.
+		// They try DB for optional audit persistence but must not fail when Dolt is down.
+		if cmd.Parent() != nil && cmd.Parent().Name() == "conflicts" {
+			resolvedURL := dbURL
+			if resolvedURL == "" {
+				resolvedURL = viper.GetString("db_url")
+			}
+			if resolvedURL == "" {
+				resolvedURL = "root@tcp(127.0.0.1:3306)/grava?parseTime=true"
+			}
+			if s, connErr := dolt.NewClient(resolvedURL); connErr == nil {
+				Store = s
+			}
+			return nil
 		}
 
 		// Step 4: Check schema version — replaces migrate.Run() in PersistentPreRunE (ADR-FM6)

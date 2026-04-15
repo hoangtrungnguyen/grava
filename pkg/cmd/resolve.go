@@ -168,6 +168,10 @@ func resolveIssuesFilePath() string {
 
 // applyConflictResolution patches issues.jsonl by replacing the conflicted
 // field with the chosen winner value and removing the _conflict marker.
+//
+// For delete-wins conflicts (Field="" and winner is non-null), the issue may
+// not be present in issues.jsonl. In that case the winner object is appended
+// as a new line (restoring the previously-deleted issue).
 func applyConflictResolution(target *merge.ConflictEntry, winner json.RawMessage) error {
 	issuesFile := resolveIssuesFilePath()
 
@@ -178,6 +182,7 @@ func applyConflictResolution(target *merge.ConflictEntry, winner json.RawMessage
 
 	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 	var out []string
+	found := false
 
 	for _, line := range lines {
 		if line == "" {
@@ -202,9 +207,15 @@ func applyConflictResolution(target *merge.ConflictEntry, winner json.RawMessage
 			continue
 		}
 
+		found = true
+
 		if target.Field == "" {
 			// Whole-issue conflict — replace the line with the winner value.
-			out = append(out, string(winner))
+			// If winner is null (delete wins), omit the line entirely.
+			var winnerObj interface{}
+			if json.Unmarshal(winner, &winnerObj) == nil && winnerObj != nil {
+				out = append(out, string(winner))
+			}
 			continue
 		}
 
@@ -225,6 +236,15 @@ func applyConflictResolution(target *merge.ConflictEntry, winner json.RawMessage
 			return fmt.Errorf("failed to marshal resolved issue: %w", err)
 		}
 		out = append(out, string(reMarshaled))
+	}
+
+	// Delete-wins conflict: issue was absent from issues.jsonl (deleted by merge-driver).
+	// If the winner is non-null (i.e. we chose to restore it), append as a new line.
+	if !found && target.Field == "" {
+		var winnerObj interface{}
+		if json.Unmarshal(winner, &winnerObj) == nil && winnerObj != nil {
+			out = append(out, string(winner))
+		}
 	}
 
 	result := strings.Join(out, "\n") + "\n"
