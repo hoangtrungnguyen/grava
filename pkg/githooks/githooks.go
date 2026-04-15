@@ -99,8 +99,6 @@ func appendOne(hooksDir, name string) (AppendResult, error) {
 	if err := os.WriteFile(path, []byte(content), 0755); err != nil { //nolint:gosec
 		return res, fmt.Errorf("failed to append to hook %s: %w", path, err)
 	}
-	// Ensure the file is executable even if the original wasn't.
-	_ = os.Chmod(path, 0755) //nolint:gosec
 	res.Action = "appended"
 	return res, nil
 }

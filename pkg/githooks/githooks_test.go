@@ -218,15 +218,20 @@ func TestAppendStubs_AppendsToExistingForeignHook(t *testing.T) {
 	assert.Contains(t, content, githooks.AppendStartMarker)
 	assert.Contains(t, content, "grava hook run pre-commit")
 	assert.Contains(t, content, githooks.AppendEndMarker)
+
+	// File must remain executable
+	info, err := os.Stat(hookPath(dir, "pre-commit"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0755), info.Mode().Perm(), "appended hook must be executable")
 }
 
-func TestAppendStubs_SkipsExistingGravaShim(t *testing.T) {
+func TestAppendStubs_AppendsToExistingGravaShim(t *testing.T) {
 	dir := tempHooksDir(t)
-	// Write a full replace-mode shim (contains ShimMarker but not AppendStartMarker)
+	// Write a full replace-mode shim (contains ShimMarker but NOT AppendStartMarker).
+	// AppendStubs uses AppendStartMarker for idempotency, so this file gets appended.
 	shim := "#!/bin/sh\n# grava-shim\ngrava hook run pre-commit \"$@\"\n"
 	require.NoError(t, os.WriteFile(hookPath(dir, "pre-commit"), []byte(shim), 0755))
 
-	// AppendStubs checks for AppendStartMarker; this shim has none → should append
 	results, err := githooks.AppendStubs(dir, []string{"pre-commit"})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
