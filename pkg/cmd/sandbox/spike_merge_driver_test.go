@@ -24,13 +24,13 @@ func TestCheckProcessMerge_Pass(t *testing.T) {
 	assert.Contains(t, detail, "PASS")
 }
 
-// TestCheckProcessMerge_CaseA_NonConflicting directly tests the merge logic
-// for non-conflicting field changes (both sides modify different fields).
-func TestCheckProcessMerge_CaseA_NonConflicting(t *testing.T) {
-	// Validate case A inline: title changes on current, status changes on other.
-	ok, detail := checkProcessMerge()
-	require.True(t, ok, detail)
-	assert.True(t, strings.Contains(detail, "non-conflicting"), "detail should mention non-conflicting case")
+// TestCheckProcessMerge_DetailMentionsCases verifies the detail string describes
+// all three tested cases so callers can parse what was validated.
+func TestCheckProcessMerge_DetailMentionsCases(t *testing.T) {
+	_, detail := checkProcessMerge()
+	assert.Contains(t, detail, "non-conflicting", "detail should mention non-conflicting case")
+	assert.Contains(t, detail, "conflicting", "detail should mention conflicting case")
+	assert.Contains(t, detail, "add-both-sides", "detail should mention add-both-sides case")
 }
 
 // TestCheckGitInvocation_ReturnsDetail verifies the git check always returns

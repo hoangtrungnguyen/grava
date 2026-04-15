@@ -60,8 +60,8 @@ func runSpikeMergeDriver(ctx context.Context, store dolt.Store) Result {
 	_ = writeSpikePOCReport(true, true, gitOK, details)
 
 	// Scenario passes regardless of git check (advisory).
-	status := fmt.Sprintf("git_invocation=%s", boolStr(gitOK))
-	return pass(spikeMergeDriverID, append(details, status)...)
+	// gitDetail is already in details; no extra status entry needed.
+	return pass(spikeMergeDriverID, details...)
 }
 
 // checkProcessMerge validates all three merge cases inline using merge.ProcessMerge.
@@ -236,7 +236,10 @@ func writeSpikePOCReport(mergeOK, dbOK, gitOK bool, details []string) error {
 		return err
 	}
 
-	detailsJSON, _ := json.MarshalIndent(details, "", "  ")
+	detailsJSON := []byte("[]")
+	if b, err := json.MarshalIndent(details, "", "  "); err == nil {
+		detailsJSON = b
+	}
 
 	content := fmt.Sprintf(`# Spike Report: Merge Driver Proof-of-Concept
 
