@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -340,4 +341,73 @@ func TestValidateJSONL_InvalidJSON(t *testing.T) {
 func TestValidateJSONL_EmptyLines(t *testing.T) {
 	err := ValidateJSONL(strings.NewReader("\n\n"))
 	assert.NoError(t, err)
+}
+
+// --- hashFileForImport ---
+
+func TestHashFileForImport_ReturnsSHA256(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "hash-*.jsonl")
+	require.NoError(t, err)
+	_, err = f.WriteString(`{"id":"x"}`)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	h, err := hashFileForImport(f.Name())
+	require.NoError(t, err)
+	assert.Len(t, h, 64, "SHA-256 hex digest must be 64 characters")
+}
+
+func TestHashFileForImport_SameContentSameHash(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"id":"abc"}` + "\n"
+	a := dir + "/a.jsonl"
+	b := dir + "/b.jsonl"
+	require.NoError(t, os.WriteFile(a, []byte(content), 0644))
+	require.NoError(t, os.WriteFile(b, []byte(content), 0644))
+
+	ha, err := hashFileForImport(a)
+	require.NoError(t, err)
+	hb, err := hashFileForImport(b)
+	require.NoError(t, err)
+	assert.Equal(t, ha, hb)
+}
+
+// --- doltHasUncommittedChanges ---
+
+func TestDoltHasUncommittedChanges_TrueWhenRowsExist(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM dolt_status").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(3))
+
+	store := dolt.NewClientFromDB(db)
+	assert.True(t, doltHasUncommittedChanges(store))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDoltHasUncommittedChanges_FalseWhenNoRows(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM dolt_status").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+	store := dolt.NewClientFromDB(db)
+	assert.False(t, doltHasUncommittedChanges(store))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDoltHasUncommittedChanges_FalseOnError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM dolt_status").
+		WillReturnError(assert.AnError)
+
+	store := dolt.NewClientFromDB(db)
+	assert.False(t, doltHasUncommittedChanges(store))
 }

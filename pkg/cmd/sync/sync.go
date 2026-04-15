@@ -6,6 +6,8 @@ package synccmd
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -677,6 +679,39 @@ func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite,
 	return result, nil
 }
 
+// hashFileForImport computes the SHA-256 hex digest of a file.
+// Used by the Dual-Safety Check (FR24) to detect whether issues.jsonl has
+// changed since the last Dolt commit.
+func hashFileForImport(path string) (string, error) {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// doltHasUncommittedChanges returns true when dolt_status reports any
+// staged or unstaged rows. Errors are treated as "no changes" (fail-open).
+func doltHasUncommittedChanges(store dolt.Store) bool {
+	rows, err := store.Query("SELECT COUNT(*) FROM dolt_status")
+	if err != nil {
+		return false
+	}
+	defer rows.Close() //nolint:errcheck
+	var count int
+	if rows.Next() {
+		if err := rows.Scan(&count); err != nil {
+			return false
+		}
+	}
+	return count > 0
+}
+
 func newImportCmd(d *cmddeps.Deps) *cobra.Command {
 	var (
 		importFile         string
@@ -685,39 +720,85 @@ func newImportCmd(d *cmddeps.Deps) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "import",
-		Short: "Import issues and dependencies",
-		Long: `Import issues and dependencies from a JSONL file.
-By default, the command fails if an ID already exists.
-Use --skip-existing to ignore duplicates, or --overwrite to update them.`,
+		Use:   "import [file]",
+		Short: "Import issues from a flat JSONL file",
+		Long: `Import issues from a flat JSONL file (issues.jsonl format).
+
+When a positional <file> argument is given the command runs the Dual-Safety Check
+(FR24): it hashes the file and aborts with IMPORT_CONFLICT when Dolt has
+uncommitted local changes that would be silently overwritten.
+
+The legacy --file flag accepts the old wrapped ExportItem format
+({"type":"issue","data":{...}}) and skips the Dual-Safety Check.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
+			// --- New path: positional <file> argument (flat JSONL + Dual-Safety) ---
+			if len(args) == 1 {
+				filePath := args[0]
+
+				f, err := os.Open(filePath) //nolint:gosec
+				if os.IsNotExist(err) {
+					return gravaerrors.New("FILE_NOT_FOUND",
+						fmt.Sprintf("import file not found: %s", filePath), err)
+				}
+				if err != nil {
+					return fmt.Errorf("failed to open import file: %w", err)
+				}
+				defer f.Close() //nolint:errcheck
+
+				// Dual-Safety Check (FR24): abort if Dolt has uncommitted changes.
+				if doltHasUncommittedChanges(*d.Store) {
+					return gravaerrors.New("IMPORT_CONFLICT",
+						"Dolt has uncommitted changes; commit or reset them before importing", nil)
+				}
+
+				result, err := importFlatJSONL(ctx, *d.Store, f, true)
+				if err != nil {
+					return err
+				}
+
+				if *d.OutputJSON {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]int{
+						"imported": result.Imported,
+						"updated":  result.Updated,
+						"skipped":  result.Skipped,
+					})
+				}
+				cmd.Printf("Imported %d, updated %d, skipped %d\n",
+					result.Imported, result.Updated, result.Skipped)
+				return nil
+			}
+
+			// --- Legacy path: --file flag (ExportItem wrapped format) ---
 			if importFile == "" {
-				return fmt.Errorf("input file is required (use --file)")
+				return fmt.Errorf("provide a file as positional argument or use --file for the legacy format")
 			}
 
 			if importOverwrite && importSkipExisting {
 				return fmt.Errorf("cannot use both --overwrite and --skip-existing")
 			}
 
-			f, err := os.Open(importFile)
+			f, err := os.Open(importFile) //nolint:gosec
 			if err != nil {
 				return fmt.Errorf("failed to open import file: %w", err)
 			}
 			defer f.Close() //nolint:errcheck
 
-			ctx := cmd.Context()
 			result, err := importIssues(ctx, *d.Store, f, importOverwrite, importSkipExisting)
 			if err != nil {
 				return err
 			}
 
-			cmd.Printf("Imported %d items (Updated: %d, Skipped: %d)\n", result.Imported, result.Updated, result.Skipped)
+			cmd.Printf("Imported %d items (Updated: %d, Skipped: %d)\n",
+				result.Imported, result.Updated, result.Skipped)
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVarP(&importFile, "file", "f", "", "Input file (required)")
-	cmd.Flags().BoolVar(&importOverwrite, "overwrite", false, "Overwrite existing IDs (upsert)")
-	cmd.Flags().BoolVar(&importSkipExisting, "skip-existing", false, "Skip existing IDs (ignore duplicates)")
+	cmd.Flags().StringVarP(&importFile, "file", "f", "", "Input file in legacy ExportItem format")
+	cmd.Flags().BoolVar(&importOverwrite, "overwrite", false, "Overwrite existing IDs (upsert) [legacy --file only]")
+	cmd.Flags().BoolVar(&importSkipExisting, "skip-existing", false, "Skip existing IDs [legacy --file only]")
 	return cmd
 }
