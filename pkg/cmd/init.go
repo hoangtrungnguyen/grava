@@ -148,7 +148,7 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "🚀 Starting Dolt server on port %d...\n", port)
 		}
 
-		serverCmd := exec.Command(doltBin, "sql-server", "--port", fmt.Sprintf("%d", port), "--host", "0.0.0.0")
+		serverCmd := exec.Command(doltBin, "sql-server", "--port", fmt.Sprintf("%d", port), "--host", "127.0.0.1")
 		serverCmd.Dir = doltRepoDir
 
 		// Redirect output to log file
@@ -159,7 +159,14 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 		}
 
 		if err := serverCmd.Start(); err != nil {
+			if logFile != nil {
+				_ = logFile.Close()
+			}
 			return fmt.Errorf("failed to start dolt server: %w", err)
+		}
+		// Close parent's copy of the log fd; child process inherited its own.
+		if logFile != nil {
+			_ = logFile.Close()
 		}
 
 		// 6. Wait for server ready, run migrations, write schema_version
