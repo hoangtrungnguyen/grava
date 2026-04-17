@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmd/reserve"
 	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
@@ -351,8 +352,10 @@ func checkReservationConflicts(cmd *cobra.Command) error {
 	defer store.Close() //nolint:errcheck
 
 	actor := viper.GetString("actor")
-	if actor == "" {
-		actor = "unknown"
+	if actor == "" || actor == "unknown" {
+		// No identity configured — check ALL exclusive leases to be safe.
+		// Without a unique actor, we can't distinguish "own" vs "other" leases.
+		actor = ""
 	}
 
 	ctx := cmd.Context()
@@ -374,7 +377,7 @@ func checkReservationConflicts(cmd *cobra.Command) error {
 	// Block the commit with structured output.
 	first := conflicts[0]
 	errMsg := fmt.Sprintf("Path %s is reserved by %s until %s. Release or wait.",
-		first.Path, first.AgentID, first.ExpiresTS.Format("2006-01-02 15:04:05 UTC"))
+		first.Path, first.AgentID, first.ExpiresTS.UTC().Format(time.RFC3339))
 
 	result := map[string]interface{}{
 		"code":      "FILE_RESERVATION_BLOCK",

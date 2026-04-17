@@ -12,8 +12,15 @@ import (
 // Returns true if the directory was created, false if it already existed.
 func EnsureWorktreeDir(repoRoot string) (bool, error) {
 	dir := filepath.Join(repoRoot, ".worktree")
-	if _, err := os.Stat(dir); err == nil {
+	info, err := os.Stat(dir)
+	if err == nil {
+		if !info.IsDir() {
+			return false, fmt.Errorf(".worktree exists but is not a directory")
+		}
 		return false, nil
+	}
+	if !os.IsNotExist(err) {
+		return false, fmt.Errorf("failed to stat .worktree: %w", err)
 	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return false, fmt.Errorf("failed to create .worktree directory: %w", err)

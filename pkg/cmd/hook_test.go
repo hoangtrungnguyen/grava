@@ -290,9 +290,10 @@ func TestCheckReservationConflicts_BlocksOnExclusiveLease(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mock: return an exclusive lease from agent-02 on src/cmd/*.go
+	// When actor is unconfigured (empty/unknown), query uses only 1 arg (projectID).
 	futureTime := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
 	mock.ExpectQuery("SELECT id, agent_id, path_pattern, expires_ts").
-		WithArgs("default", sqlmock.AnyArg()).
+		WithArgs("default").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_id", "path_pattern", "expires_ts"}).
 			AddRow("res-abc123", "agent-02", "src/cmd/*.go", futureTime))
 
@@ -320,7 +321,7 @@ func TestCheckReservationConflicts_AllowsNoConflict(t *testing.T) {
 
 	// Mock: no active exclusive leases
 	mock.ExpectQuery("SELECT id, agent_id, path_pattern, expires_ts").
-		WithArgs("default", sqlmock.AnyArg()).
+		WithArgs("default").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_id", "path_pattern", "expires_ts"}))
 
 	origConnect := connectDBFn
