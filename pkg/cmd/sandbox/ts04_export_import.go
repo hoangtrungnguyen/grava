@@ -185,5 +185,21 @@ func runTS04(ctx context.Context, store dolt.Store) Result {
 	}
 	details = append(details, "dependency links preserved")
 
+	// Verify label survived round-trip
+	var labelCount int
+	row = store.QueryRowContext(ctx, "SELECT COUNT(*) FROM issue_labels WHERE issue_id = ? AND label = ?", ids[0], "test-label")
+	if err := row.Scan(&labelCount); err != nil || labelCount == 0 {
+		return fail(ts04ID, "verify: label lost during round-trip", details...)
+	}
+	details = append(details, "labels preserved")
+
+	// Verify comment survived round-trip
+	var commentCount int
+	row = store.QueryRowContext(ctx, "SELECT COUNT(*) FROM issue_comments WHERE issue_id = ?", ids[1])
+	if err := row.Scan(&commentCount); err != nil || commentCount == 0 {
+		return fail(ts04ID, "verify: comment lost during round-trip", details...)
+	}
+	details = append(details, "comments preserved")
+
 	return pass(ts04ID, details...)
 }

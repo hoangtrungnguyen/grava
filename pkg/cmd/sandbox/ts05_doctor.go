@@ -25,7 +25,7 @@ func init() {
 //   - Verify the fix (release) works
 func runTS05(ctx context.Context, store dolt.Store) Result {
 	tag := fmt.Sprintf("ts05-%d", time.Now().UnixNano())
-	resID := fmt.Sprintf("res-%s", tag[:10])
+	resID := fmt.Sprintf("res-%s", tag)
 
 	defer func() {
 		ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
