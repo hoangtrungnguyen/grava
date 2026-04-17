@@ -143,6 +143,22 @@ func TestEnsureClaudeWorktreeSettings_MergesExisting(t *testing.T) {
 	assert.NotNil(t, settings["worktree"])
 }
 
+func TestEnsureClaudeWorktreeSettings_NullJSON(t *testing.T) {
+	dir := t.TempDir()
+	claudeDir := filepath.Join(dir, ".claude")
+	require.NoError(t, os.MkdirAll(claudeDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte("null"), 0644))
+
+	added, err := EnsureClaudeWorktreeSettings(dir)
+	require.NoError(t, err, "should not panic on null JSON")
+	assert.True(t, added)
+
+	data, _ := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	var settings map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &settings))
+	assert.NotNil(t, settings["worktree"])
+}
+
 func TestEnsureClaudeWorktreeSettings_Idempotent(t *testing.T) {
 	dir := t.TempDir()
 	claudeDir := filepath.Join(dir, ".claude")

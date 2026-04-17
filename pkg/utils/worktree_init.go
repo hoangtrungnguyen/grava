@@ -81,6 +81,9 @@ func EnsureClaudeWorktreeSettings(repoRoot string) (bool, error) {
 		if err := json.Unmarshal(data, &settings); err != nil {
 			return false, fmt.Errorf("failed to parse .claude/settings.json: %w", err)
 		}
+		if settings == nil {
+			settings = make(map[string]interface{})
+		}
 	}
 
 	// Check if worktree block already exists
