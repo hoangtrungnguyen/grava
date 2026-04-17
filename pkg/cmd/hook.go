@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hoangtrungnguyen/grava/pkg/cmd/reserve"
 	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/hoangtrungnguyen/grava/pkg/grava"
@@ -295,6 +296,12 @@ func runPostCheckout(cmd *cobra.Command, args []string, dryRun bool) error {
 }
 
 func runPreCommit(cmd *cobra.Command) error {
+	// 1. Check file reservations: block commits to paths held by other agents.
+	if err := checkReservationConflicts(cmd); err != nil {
+		return err
+	}
+
+	// 2. Validate issues.jsonl format (existing behavior).
 	if _, err := os.Stat("issues.jsonl"); os.IsNotExist(err) {
 		return nil // file not present — nothing to validate
 	}
@@ -309,6 +316,73 @@ func runPreCommit(cmd *cobra.Command) error {
 		return fmt.Errorf("grava hook pre-commit: issues.jsonl is malformed: %w", err)
 	}
 	return nil
+}
+
+// stagedFilesFn is the function used to get staged files. Overridden in tests.
+var stagedFilesFn = getStagedFiles
+
+// getStagedFiles returns the list of staged file paths via git diff --cached.
+func getStagedFiles() ([]string, error) {
+	out, err := exec.Command("git", "diff", "--cached", "--name-only").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get staged files: %w", err)
+	}
+	raw := strings.TrimSpace(string(out))
+	if raw == "" {
+		return nil, nil
+	}
+	return strings.Split(raw, "\n"), nil
+}
+
+// checkReservationConflicts queries active exclusive leases and blocks if any
+// staged paths are reserved by another agent. DB connection failures are
+// non-fatal (fail-open) so hooks never block on infrastructure issues.
+func checkReservationConflicts(cmd *cobra.Command) error {
+	staged, err := stagedFilesFn()
+	if err != nil || len(staged) == 0 {
+		return nil // no staged files or can't determine — allow commit
+	}
+
+	store, err := connectDBFn()
+	if err != nil {
+		// DB unavailable — fail open, don't block commits
+		return nil
+	}
+	defer store.Close() //nolint:errcheck
+
+	actor := viper.GetString("actor")
+	if actor == "" {
+		actor = "unknown"
+	}
+
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	conflicts, err := reserve.CheckStagedConflicts(ctx, store, staged, actor)
+	if err != nil {
+		// Query failure — fail open
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+			"grava hook pre-commit: reservation check failed (allowing commit): %v\n", err)
+		return nil
+	}
+
+	if len(conflicts) == 0 {
+		return nil
+	}
+
+	// Block the commit with structured output.
+	first := conflicts[0]
+	errMsg := fmt.Sprintf("Path %s is reserved by %s until %s. Release or wait.",
+		first.Path, first.AgentID, first.ExpiresTS.Format("2006-01-02 15:04:05 UTC"))
+
+	result := map[string]interface{}{
+		"code":      "FILE_RESERVATION_BLOCK",
+		"message":   errMsg,
+		"conflicts": conflicts,
+	}
+	b, _ := json.MarshalIndent(result, "", "  ")
+	return fmt.Errorf("grava hook pre-commit: %s\n%s", errMsg, string(b))
 }
 
 func init() {
