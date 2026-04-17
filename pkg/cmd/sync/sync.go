@@ -187,6 +187,8 @@ By default writes to issues.jsonl in the git repository root.`,
 			ctx := cmd.Context()
 			count, err := exportFlatJSONL(ctx, *d.Store, f, exportIncludeWisps)
 			if err != nil {
+				_ = f.Close()
+				_ = os.Remove(path) // Clean up partial file
 				return err
 			}
 
@@ -436,6 +438,23 @@ func importFlatJSONL(ctx context.Context, store dolt.Store, r io.Reader, overwri
 			result.Updated++
 		} else {
 			result.Imported++
+		}
+
+		// When overwriting, delete stale related data before re-inserting.
+		// This ensures labels/comments/deps removed from the source are also removed here.
+		if overwrite {
+			if _, execErr := tx.ExecContext(ctx, "DELETE FROM issue_labels WHERE issue_id = ?", rec.ID); execErr != nil {
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK",
+					fmt.Sprintf("failed to clear stale labels for issue %s", rec.ID), execErr)
+			}
+			if _, execErr := tx.ExecContext(ctx, "DELETE FROM issue_comments WHERE issue_id = ?", rec.ID); execErr != nil {
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK",
+					fmt.Sprintf("failed to clear stale comments for issue %s", rec.ID), execErr)
+			}
+			if _, execErr := tx.ExecContext(ctx, "DELETE FROM dependencies WHERE from_id = ?", rec.ID); execErr != nil {
+				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK",
+					fmt.Sprintf("failed to clear stale deps for issue %s", rec.ID), execErr)
+			}
 		}
 
 		// Upsert labels

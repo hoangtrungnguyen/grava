@@ -281,6 +281,10 @@ func TestImportFlatJSONL_Overwrite_UpdatesExisting(t *testing.T) {
 	mock.ExpectBegin()
 	// ON DUPLICATE KEY UPDATE returns RowsAffected=2 for updated rows
 	mock.ExpectExec("INSERT INTO issues").WillReturnResult(sqlmock.NewResult(1, 2))
+	// overwrite=true clears stale related data
+	mock.ExpectExec("DELETE FROM issue_labels").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("DELETE FROM issue_comments").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("DELETE FROM dependencies").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
 	store := dolt.NewClientFromDB(db)
@@ -445,10 +449,12 @@ func TestImportCmd_JSONOutput(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
 
-	// importFlatJSONL (overwrite=true): BEGIN, upsert issue, COMMIT.
-	// overwrite=true → "INSERT INTO issues ... ON DUPLICATE KEY UPDATE ..."
+	// importFlatJSONL (overwrite=true): BEGIN, upsert issue, clear stale related data, COMMIT.
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO issues").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("DELETE FROM issue_labels").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("DELETE FROM issue_comments").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("DELETE FROM dependencies").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
 	f, writeErr := os.CreateTemp(t.TempDir(), "issues-*.jsonl")
