@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
@@ -27,15 +28,24 @@ func CheckStagedConflicts(ctx context.Context, store dolt.Store, stagedPaths []s
 		return nil, nil
 	}
 
-	// Fetch all active exclusive leases from other agents.
-	const q = `SELECT id, agent_id, path_pattern, expires_ts
+	// Fetch active exclusive leases. When actor is empty (unconfigured identity),
+	// check ALL leases — we can't distinguish own vs other.
+	var args []interface{}
+	q := `SELECT id, agent_id, path_pattern, expires_ts
 		FROM file_reservations
 		WHERE project_id = ?
 		  AND exclusive = TRUE
 		  AND released_ts IS NULL
-		  AND expires_ts > NOW()
-		  AND agent_id != ?`
-	rows, err := store.QueryContext(ctx, q, defaultProjectID, actor)
+		  AND expires_ts > NOW()`
+	args = append(args, defaultProjectID)
+	if actor != "" {
+		q += ` AND agent_id != ?`
+		args = append(args, actor)
+	}
+	rows, err := store.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("check staged conflicts: query: %w", err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("check staged conflicts: query: %w", err)
 	}
@@ -83,13 +93,56 @@ func CheckStagedConflicts(ctx context.Context, store dolt.Store, stagedPaths []s
 }
 
 // matchPattern checks if a file path matches a reservation pattern.
-// Supports filepath.Match glob syntax (e.g. "src/cmd/*.go").
+// Supports filepath.Match glob syntax (e.g. "src/cmd/*.go") and additionally
+// handles "**" as a recursive directory wildcard (matching zero or more path segments).
 // Falls back to exact match if the pattern is invalid.
 func matchPattern(pattern, path string) bool {
+	if strings.Contains(pattern, "**") {
+		return matchDoublestar(pattern, path)
+	}
 	matched, err := filepath.Match(pattern, path)
 	if err != nil {
-		// Invalid pattern — fall back to exact string match
 		return pattern == path
 	}
 	return matched
+}
+
+// matchDoublestar handles patterns containing "**" by splitting on "**" and
+// checking that the prefix matches the start of the path and the suffix matches
+// the end, with any number of path segments in between.
+func matchDoublestar(pattern, path string) bool {
+	parts := strings.SplitN(pattern, "**", 2)
+	prefix := parts[0] // e.g. "src/cmd/" from "src/cmd/**/*.go"
+	suffix := parts[1] // e.g. "/*.go" from "src/cmd/**/*.go"
+
+	// Strip leading separator from suffix
+	suffix = strings.TrimPrefix(suffix, "/")
+
+	// Path must start with prefix
+	if prefix != "" && !strings.HasPrefix(path, prefix) {
+		return false
+	}
+
+	remainder := strings.TrimPrefix(path, prefix)
+
+	// If no suffix, ** matches everything after prefix
+	if suffix == "" {
+		return true
+	}
+
+	// Try matching suffix against every possible tail of the remainder.
+	// e.g. remainder="reserve/sub/enforce.go", suffix="*.go"
+	// Try: "reserve/sub/enforce.go", "sub/enforce.go", "enforce.go"
+	for {
+		matched, err := filepath.Match(suffix, remainder)
+		if err == nil && matched {
+			return true
+		}
+		idx := strings.IndexByte(remainder, '/')
+		if idx < 0 {
+			break
+		}
+		remainder = remainder[idx+1:]
+	}
+	return false
 }
