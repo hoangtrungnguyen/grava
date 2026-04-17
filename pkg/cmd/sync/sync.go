@@ -512,6 +512,19 @@ func nullableStr(s string) *string {
 	return &s
 }
 
+// ExportFlatJSONL queries all non-tombstone issues and writes one JSON line per
+// issue to w (including labels, comments, dependencies, and wisp entries).
+// This is the exported version of exportFlatJSONL for use by sandbox scenarios.
+func ExportFlatJSONL(ctx context.Context, store dolt.Store, w io.Writer, includeWisps bool) (int, error) {
+	return exportFlatJSONL(ctx, store, w, includeWisps)
+}
+
+// ImportFlatJSONL reads flat IssueJSONLRecord lines from r and upserts them
+// into store. This is the exported version for use by sandbox scenarios.
+func ImportFlatJSONL(ctx context.Context, store dolt.Store, r io.Reader, overwrite bool) (ImportResult, error) {
+	return importFlatJSONL(ctx, store, r, overwrite)
+}
+
 // SyncIssuesFile opens the flat JSONL file at path and upserts all records into
 // store (overwrite=true). It is used by git hook handlers to sync after a
 // merge or checkout that changed issues.jsonl.
