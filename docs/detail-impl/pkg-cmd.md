@@ -35,6 +35,7 @@
 | `config.go` | 45 | — |
 | `history_undo_integration_test.go` | 234 | TestHistoryIntegration,TestUndoIntegration TestUndoAffectedFilesIntegration,TestSessionUndoIntegration |
 | `history_undo_test.go` | 175 | TestUndoCmd_Dirty,TestUndoCmd_Clean TestUndoCmd_NoHistory,TestUndoCmd_NotFound |
+| `hook.go` | ~390 | — (hookCmd, hookRunCmd; runPreCommit with reservation enforcement) |
 | `init.go` | 181 | — |
 | `ready_test.go` | 66 | TestReadyCmd,TestBlockedCmd |
 | `root.go` | 191 | Execute,SetVersion |

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
@@ -277,6 +278,90 @@ func TestIssuesChangedInMerge_ReturnsTrueWhenFileExists(t *testing.T) {
 
 	changed := issuesChangedInMerge()
 	assert.True(t, changed)
+}
+
+// --- pre-commit reservation enforcement ---
+
+func TestCheckReservationConflicts_BlocksOnExclusiveLease(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+
+	// Mock: return an exclusive lease from agent-02 on src/cmd/*.go
+	futureTime := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
+	mock.ExpectQuery("SELECT id, agent_id, path_pattern, expires_ts").
+		WithArgs("default", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_id", "path_pattern", "expires_ts"}).
+			AddRow("res-abc123", "agent-02", "src/cmd/*.go", futureTime))
+
+	origConnect := connectDBFn
+	connectDBFn = func() (dolt.Store, error) { return dolt.NewClientFromDB(db), nil }
+	t.Cleanup(func() { connectDBFn = origConnect })
+
+	origStaged := stagedFilesFn
+	stagedFilesFn = func() ([]string, error) { return []string{"src/cmd/create.go"}, nil }
+	t.Cleanup(func() { stagedFilesFn = origStaged })
+
+	err = checkReservationConflicts(hookRunCmd)
+	require.Error(t, err, "pre-commit should block on exclusive lease conflict")
+	assert.Contains(t, err.Error(), "FILE_RESERVATION_BLOCK")
+	assert.Contains(t, err.Error(), "agent-02")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCheckReservationConflicts_AllowsNoConflict(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+
+	// Mock: no active exclusive leases
+	mock.ExpectQuery("SELECT id, agent_id, path_pattern, expires_ts").
+		WithArgs("default", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "agent_id", "path_pattern", "expires_ts"}))
+
+	origConnect := connectDBFn
+	connectDBFn = func() (dolt.Store, error) { return dolt.NewClientFromDB(db), nil }
+	t.Cleanup(func() { connectDBFn = origConnect })
+
+	origStaged := stagedFilesFn
+	stagedFilesFn = func() ([]string, error) { return []string{"src/cmd/create.go"}, nil }
+	t.Cleanup(func() { stagedFilesFn = origStaged })
+
+	err = checkReservationConflicts(hookRunCmd)
+	assert.NoError(t, err, "pre-commit should allow commit when no conflicts")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCheckReservationConflicts_FailOpenOnDBUnavailable(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	origConnect := connectDBFn
+	connectDBFn = func() (dolt.Store, error) { return nil, assert.AnError }
+	t.Cleanup(func() { connectDBFn = origConnect })
+
+	origStaged := stagedFilesFn
+	stagedFilesFn = func() ([]string, error) { return []string{"src/cmd/create.go"}, nil }
+	t.Cleanup(func() { stagedFilesFn = origStaged })
+
+	err := checkReservationConflicts(hookRunCmd)
+	assert.NoError(t, err, "pre-commit should allow commit when DB is unavailable (fail-open)")
+}
+
+func TestCheckReservationConflicts_NoStagedFiles(t *testing.T) {
+	_, cleanup := initTempGitRepo(t)
+	defer cleanup()
+
+	origStaged := stagedFilesFn
+	stagedFilesFn = func() ([]string, error) { return nil, nil }
+	t.Cleanup(func() { stagedFilesFn = origStaged })
+
+	err := checkReservationConflicts(hookRunCmd)
+	assert.NoError(t, err, "pre-commit should allow commit when no staged files")
 }
 
 // --- hook command wiring ---

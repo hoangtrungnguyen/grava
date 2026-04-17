@@ -33,6 +33,11 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			return fmt.Errorf("failed to get working directory: %w", err)
 		}
 
+		// 0a. Pre-flight: verify Git version >= 2.17 (required for worktree remove)
+		if err := utils.CheckGitVersion(); err != nil {
+			return fmt.Errorf("pre-flight check failed: %w", err)
+		}
+
 		// 0. Check if this is a worktree — if so, just write redirect and exit
 		if utils.IsWorktree(cwd) {
 			if !outputJSON {
@@ -242,6 +247,36 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 					}
 				}
 			}
+		}
+
+		// 10. Create .worktree/ directory (AC#1)
+		if created, wtErr := utils.EnsureWorktreeDir(cwd); wtErr != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not create .worktree directory: %v\n", wtErr)
+		} else if created && !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Created .worktree/ directory")
+		}
+
+		// 10a. Add .worktree/ to .gitignore (AC#1)
+		if added, giErr := utils.EnsureWorktreeGitignore(cwd); giErr != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not update .gitignore for .worktree/: %v\n", giErr)
+		} else if added && !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Added .worktree/ to .gitignore")
+		}
+
+		// 11. Set git config grava.worktreeDir (AC#2)
+		if gitconfig.IsInGitRepo() {
+			if gcErr := utils.SetWorktreeGitConfig(cwd); gcErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not set grava.worktreeDir git config: %v\n", gcErr)
+			} else if !outputJSON {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Set git config grava.worktreeDir = .worktree")
+			}
+		}
+
+		// 12. Update .claude/settings.json with worktree block (AC#3)
+		if added, csErr := utils.EnsureClaudeWorktreeSettings(cwd); csErr != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not update .claude/settings.json: %v\n", csErr)
+		} else if added && !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Updated .claude/settings.json with worktree configuration")
 		}
 
 		if outputJSON {
