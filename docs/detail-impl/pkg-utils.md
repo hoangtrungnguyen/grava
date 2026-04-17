@@ -1,8 +1,8 @@
 # Module: `pkg/utils`
 
-**Package role:** Miscellaneous utilities: Dolt binary resolution (local vs PATH), git exclude management, network helpers, and Git worktree orchestration (redirect files, conflict checks, provisioning, lifecycle, Claude settings sync).
+**Package role:** Miscellaneous utilities: Dolt binary resolution (local vs PATH), git exclude management, network helpers, Git version validation, and Git worktree orchestration (redirect files, conflict checks, provisioning, lifecycle, Claude settings sync, init-time worktree setup).
 
-> _Updated 2026-04-14 (Story 5.5, grava-4136.1)._
+> _Updated 2026-04-17 (Story 5.5, grava-4136)._
 
 ---
 
@@ -15,7 +15,9 @@
 | `net.go` | 118 | GetGlobalPortsFile, LoadUsedPorts, SaveUsedPort, AllocatePort, FindAvailablePort |
 | `path.go` | 33 | FindScript |
 | `schema.go` | 95 | CheckSchemaVersion, WriteSchemaVersion, ResolveGravaDir |
+| `gitversion.go` | 56 | CheckGitVersion, ParseAndCheckGitVersion |
 | `worktree.go` | ~330 | IsWorktree, ComputeRedirectPath, WriteRedirectFile, ResolveGravaDirWithRedirect, CheckWorktreeConflict, ProvisionWorktree, DeleteWorktree, LinkClaudeWorktree, IsWorktreeDirty, RemoveWorktreeOnly, IsInsideClaudeWorktree, SyncClaudeSettings, ConfigureGitUser |
+| `worktree_init.go` | ~116 | EnsureWorktreeDir, EnsureWorktreeGitignore, SetWorktreeGitConfig, EnsureClaudeWorktreeSettings |
 
 ## Public API
 
@@ -42,6 +44,16 @@ func FindScript(name string) (string, error)
 func CheckSchemaVersion(gravaDir string, expectedVersion int) error
 func WriteSchemaVersion(gravaDir string, version int) error
 func ResolveGravaDir() (string, error)
+
+// Git version (Story 5.5 AC#4)
+func CheckGitVersion() error
+func ParseAndCheckGitVersion(versionStr string) error
+
+// Worktree init (Story 5.5 AC#1–AC#3)
+func EnsureWorktreeDir(repoRoot string) (bool, error)
+func EnsureWorktreeGitignore(repoRoot string) (bool, error)
+func SetWorktreeGitConfig(repoRoot string) error
+func EnsureClaudeWorktreeSettings(repoRoot string) (bool, error)
 
 // Worktree orchestration (Stories 5.1–5.5)
 func IsWorktree(cwd string) bool
