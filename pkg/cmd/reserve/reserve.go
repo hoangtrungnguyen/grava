@@ -99,9 +99,9 @@ func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) 
 	now := time.Now().UTC()
 	expires := now.Add(time.Duration(p.TTLMinutes) * time.Minute)
 
-	const q = `INSERT INTO file_reservations
-		(id, project_id, agent_id, path_pattern, exclusive, reason, created_ts, expires_ts)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	const q = "INSERT INTO file_reservations" +
+		" (id, project_id, agent_id, path_pattern, `exclusive`, reason, created_ts, expires_ts)" +
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 	if _, err := store.ExecContext(ctx, q,
 		id, p.ProjectID, p.AgentID, p.PathPattern, p.Exclusive, p.Reason, now, expires,
 	); err != nil {
@@ -124,14 +124,14 @@ func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) 
 // findConflict checks whether an active exclusive lease from a different agent
 // exists for the given path_pattern. Returns (true, conflictAgent, expiresTS) if found.
 func findConflict(ctx context.Context, store dolt.Store, projectID, pathPattern, requestingAgent string) (bool, string, time.Time, error) {
-	const q = `SELECT agent_id, expires_ts FROM file_reservations
-		WHERE project_id = ?
-		  AND path_pattern = ?
-		  AND exclusive = TRUE
-		  AND agent_id != ?
-		  AND released_ts IS NULL
-		  AND expires_ts > NOW()
-		LIMIT 1`
+	const q = "SELECT agent_id, expires_ts FROM file_reservations" +
+		" WHERE project_id = ?" +
+		" AND path_pattern = ?" +
+		" AND `exclusive` = TRUE" +
+		" AND agent_id != ?" +
+		" AND released_ts IS NULL" +
+		" AND expires_ts > NOW()" +
+		" LIMIT 1"
 	row := store.QueryRowContext(ctx, q, projectID, pathPattern, requestingAgent)
 	var agentID string
 	var expiresTS time.Time
@@ -149,12 +149,12 @@ func ListReservations(ctx context.Context, store dolt.Store, projectID string) (
 	if projectID == "" {
 		projectID = defaultProjectID
 	}
-	const q = `SELECT id, project_id, agent_id, path_pattern, exclusive, COALESCE(reason,''), created_ts, expires_ts
-		FROM file_reservations
-		WHERE project_id = ?
-		  AND released_ts IS NULL
-		  AND expires_ts > NOW()
-		ORDER BY created_ts ASC`
+	const q = "SELECT id, project_id, agent_id, path_pattern, `exclusive`, COALESCE(reason,''), created_ts, expires_ts" +
+		" FROM file_reservations" +
+		" WHERE project_id = ?" +
+		" AND released_ts IS NULL" +
+		" AND expires_ts > NOW()" +
+		" ORDER BY created_ts ASC"
 	rows, err := store.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("reserve list: query: %w", err)
@@ -229,9 +229,9 @@ func WriteReservationArtifact(gravaDir string, r Reservation) error {
 
 // GetReservation fetches a single reservation by ID (including released rows).
 func GetReservation(ctx context.Context, store dolt.Store, reservationID string) (*Reservation, error) {
-	const q = `SELECT id, project_id, agent_id, path_pattern, exclusive, COALESCE(reason,''),
-		created_ts, expires_ts, released_ts
-		FROM file_reservations WHERE id = ?`
+	const q = "SELECT id, project_id, agent_id, path_pattern, `exclusive`, COALESCE(reason,'')," +
+		" created_ts, expires_ts, released_ts" +
+		" FROM file_reservations WHERE id = ?"
 	row := store.QueryRowContext(ctx, q, reservationID)
 	var r Reservation
 	var releasedTS sql.NullTime

@@ -31,12 +31,12 @@ func CheckStagedConflicts(ctx context.Context, store dolt.Store, stagedPaths []s
 	// Fetch active exclusive leases. When actor is empty (unconfigured identity),
 	// check ALL leases — we can't distinguish own vs other.
 	var args []interface{}
-	q := `SELECT id, agent_id, path_pattern, expires_ts
-		FROM file_reservations
-		WHERE project_id = ?
-		  AND exclusive = TRUE
-		  AND released_ts IS NULL
-		  AND expires_ts > NOW()`
+	q := "SELECT id, agent_id, path_pattern, expires_ts" +
+		" FROM file_reservations" +
+		" WHERE project_id = ?" +
+		" AND `exclusive` = TRUE" +
+		" AND released_ts IS NULL" +
+		" AND expires_ts > NOW()"
 	args = append(args, defaultProjectID)
 	if actor != "" {
 		q += ` AND agent_id != ?`

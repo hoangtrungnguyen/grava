@@ -3,7 +3,6 @@ package reserve
 import (
 	"context"
 	"database/sql"
-	"regexp"
 	"testing"
 	"time"
 
@@ -24,10 +23,10 @@ func newMock(t *testing.T) (dolt.Store, sqlmock.Sqlmock) {
 }
 
 var (
-	qInsertReservation = regexp.QuoteMeta(`INSERT INTO file_reservations`)
-	qCheckConflict     = regexp.QuoteMeta(`SELECT agent_id, expires_ts FROM file_reservations`)
-	qListReservations  = regexp.QuoteMeta(`SELECT id, project_id, agent_id, path_pattern, exclusive, COALESCE(reason,''), created_ts, expires_ts`)
-	qReleaseQuery      = regexp.QuoteMeta(`UPDATE file_reservations`)
+	qInsertReservation = `INSERT INTO file_reservations`
+	qCheckConflict     = `SELECT agent_id, expires_ts FROM file_reservations`
+	qListReservations  = `SELECT id, project_id, agent_id, path_pattern, .exclusive., COALESCE`
+	qReleaseQuery      = `UPDATE file_reservations`
 )
 
 // TestDeclareReservation_ExclusiveSuccess verifies that declaring an exclusive

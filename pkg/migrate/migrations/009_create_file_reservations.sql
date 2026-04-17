@@ -6,7 +6,7 @@ CREATE TABLE file_reservations (
     project_id   VARCHAR(12)   NOT NULL,
     agent_id     VARCHAR(255)  NOT NULL,
     path_pattern VARCHAR(1024) NOT NULL,
-    exclusive    BOOLEAN       NOT NULL DEFAULT TRUE,
+    `exclusive`  BOOLEAN       NOT NULL DEFAULT TRUE,
     reason       TEXT,
     created_ts   DATETIME      NOT NULL DEFAULT (NOW()),
     expires_ts   DATETIME      NOT NULL,

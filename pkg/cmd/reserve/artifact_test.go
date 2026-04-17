@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
 
@@ -19,9 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var qGetReservation = regexp.QuoteMeta(
-	`SELECT id, project_id, agent_id, path_pattern, exclusive, COALESCE(reason,''), created_ts, expires_ts, released_ts`,
-)
+var qGetReservation = `SELECT id, project_id, agent_id, path_pattern, .exclusive., COALESCE`
 
 // tmpGravaDir creates a temporary directory that acts as .grava/ for a test.
 func tmpGravaDir(t *testing.T) string {
