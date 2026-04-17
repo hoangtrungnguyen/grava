@@ -72,10 +72,17 @@ func runTS03(ctx context.Context, store dolt.Store) Result {
 
 	details := []string{fmt.Sprintf("created chain of %d issues with sequential deps", chainLen)}
 
+	// Build set of blocked IDs (all except the leaf)
+	blockedSet := make(map[string]struct{}, chainLen-1)
+	for i := 0; i < chainLen-1; i++ {
+		blockedSet[ids[i]] = struct{}{}
+	}
+
 	// Swarm: concurrent ReadyQueue calls
 	type callResult struct {
-		count int
-		err   error
+		count  int
+		taskIDs []string
+		err    error
 	}
 	results := make([]callResult, swarmSize)
 	var wg sync.WaitGroup
@@ -88,7 +95,13 @@ func runTS03(ctx context.Context, store dolt.Store) Result {
 			callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			tasks, err := cmdgraph.ReadyQueue(callCtx, store, 200)
-			results[i] = callResult{count: len(tasks), err: err}
+			var taskIDs []string
+			for _, t := range tasks {
+				if t.Node != nil {
+					taskIDs = append(taskIDs, t.Node.ID)
+				}
+			}
+			results[i] = callResult{count: len(tasks), taskIDs: taskIDs, err: err}
 		}(i)
 	}
 	wg.Wait()
@@ -110,6 +123,22 @@ func runTS03(ctx context.Context, store dolt.Store) Result {
 		return fail(ts03ID, fmt.Sprintf("%d/%d ReadyQueue calls failed", errorCount, swarmSize), details...)
 	}
 	details = append(details, fmt.Sprintf("all %d ReadyQueue calls succeeded", swarmSize))
+
+	// Verify blocked issues never appear in ready queue results
+	leaked := 0
+	for _, r := range results {
+		for _, id := range r.taskIDs {
+			if _, blocked := blockedSet[id]; blocked {
+				leaked++
+			}
+		}
+	}
+	if leaked > 0 {
+		return fail(ts03ID,
+			fmt.Sprintf("%d blocked issue(s) leaked into ReadyQueue responses", leaked),
+			details...)
+	}
+	details = append(details, "no blocked issues appeared in ready queue results")
 
 	return pass(ts03ID, details...)
 }
