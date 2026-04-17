@@ -377,6 +377,9 @@ func importFlatJSONL(ctx context.Context, store dolt.Store, r io.Reader, overwri
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	// Disable FK checks so dependencies can reference issues not yet imported.
+	_, _ = tx.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 0")
+
 	scanner := bufio.NewScanner(r)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)

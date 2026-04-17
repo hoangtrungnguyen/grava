@@ -96,29 +96,23 @@ func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) 
 	}
 
 	id := generateReservationID()
-	now := time.Now().UTC()
-	expires := now.Add(time.Duration(p.TTLMinutes) * time.Minute)
 
+	// Use SQL NOW() + INTERVAL for timestamps to stay consistent with Dolt's clock.
 	const q = "INSERT INTO file_reservations" +
 		" (id, project_id, agent_id, path_pattern, `exclusive`, reason, created_ts, expires_ts)" +
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+		" VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW() + INTERVAL ? MINUTE)"
 	if _, err := store.ExecContext(ctx, q,
-		id, p.ProjectID, p.AgentID, p.PathPattern, p.Exclusive, p.Reason, now, expires,
+		id, p.ProjectID, p.AgentID, p.PathPattern, p.Exclusive, p.Reason, p.TTLMinutes,
 	); err != nil {
 		return DeclareResult{}, fmt.Errorf("reserve: insert: %w", err)
 	}
 
-	r := Reservation{
-		ID:          id,
-		ProjectID:   p.ProjectID,
-		AgentID:     p.AgentID,
-		PathPattern: p.PathPattern,
-		Exclusive:   p.Exclusive,
-		Reason:      p.Reason,
-		CreatedTS:   now,
-		ExpiresTS:   expires,
+	// Re-read the row to get server-computed timestamps.
+	inserted, err := GetReservation(ctx, store, id)
+	if err != nil {
+		return DeclareResult{}, fmt.Errorf("reserve: read-back: %w", err)
 	}
-	return DeclareResult{Reservation: r}, nil
+	return DeclareResult{Reservation: *inserted}, nil
 }
 
 // findConflict checks whether an active exclusive lease from a different agent

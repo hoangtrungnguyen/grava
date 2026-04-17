@@ -40,6 +40,13 @@ func TestDeclareReservation_ExclusiveSuccess(t *testing.T) {
 	// INSERT succeeds.
 	mock.ExpectExec(qInsertReservation).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	// Re-read after insert (GetReservation).
+	future := time.Now().Add(30 * time.Minute)
+	mock.ExpectQuery(qGetReservation).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "project_id", "agent_id", "path_pattern", "exclusive", "reason",
+			"created_ts", "expires_ts", "released_ts",
+		}).AddRow("res-mock", "default", "agent-01", "src/cmd/issues/*.go", true, "", time.Now(), future, nil))
 
 	p := DeclareParams{
 		PathPattern: "src/cmd/issues/*.go",
@@ -54,7 +61,6 @@ func TestDeclareReservation_ExclusiveSuccess(t *testing.T) {
 	assert.Equal(t, "agent-01", result.Reservation.AgentID)
 	assert.Equal(t, "src/cmd/issues/*.go", result.Reservation.PathPattern)
 	assert.True(t, result.Reservation.Exclusive)
-	assert.True(t, result.Reservation.ExpiresTS.After(time.Now()))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -66,6 +72,13 @@ func TestDeclareReservation_NonExclusiveNoConflictCheck(t *testing.T) {
 	// Non-exclusive: no conflict query expected.
 	mock.ExpectExec(qInsertReservation).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	// Re-read after insert (GetReservation).
+	future := time.Now().Add(15 * time.Minute)
+	mock.ExpectQuery(qGetReservation).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "project_id", "agent_id", "path_pattern", "exclusive", "reason",
+			"created_ts", "expires_ts", "released_ts",
+		}).AddRow("res-mock", "default", "agent-02", "src/cmd/issues/*.go", false, "", time.Now(), future, nil))
 
 	p := DeclareParams{
 		PathPattern: "src/cmd/issues/*.go",

@@ -24,8 +24,7 @@ func init() {
 //   - Verify doctor detects it via DB query
 //   - Verify the fix (release) works
 func runTS05(ctx context.Context, store dolt.Store) Result {
-	tag := fmt.Sprintf("ts05-%d", time.Now().UnixNano())
-	resID := fmt.Sprintf("res-%s", tag)
+	resID := fmt.Sprintf("res-%06d", time.Now().UnixNano()%1000000)
 
 	defer func() {
 		ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -33,12 +32,11 @@ func runTS05(ctx context.Context, store dolt.Store) Result {
 		_, _ = store.ExecContext(ctx2, "DELETE FROM file_reservations WHERE id = ?", resID)
 	}()
 
-	// Insert an expired reservation (expires_ts in the past)
-	pastTime := time.Now().UTC().Add(-1 * time.Hour)
+	// Insert an expired reservation (expires_ts 1 hour in the past using server time)
 	_, err := store.ExecContext(ctx,
-		`INSERT INTO file_reservations (id, project_id, agent_id, path_pattern, exclusive, reason, created_ts, expires_ts)
-		 VALUES (?, 'default', 'stale-agent', 'src/stale/*.go', TRUE, 'sandbox test', NOW(), ?)`,
-		resID, pastTime)
+		"INSERT INTO file_reservations (id, project_id, agent_id, path_pattern, `exclusive`, reason, created_ts, expires_ts)"+
+			" VALUES (?, 'default', 'stale-agent', 'src/stale/*.go', TRUE, 'sandbox test', NOW(), NOW() - INTERVAL 1 HOUR)",
+		resID)
 	if err != nil {
 		return fail(ts05ID, fmt.Sprintf("setup: insert expired reservation: %v", err))
 	}
