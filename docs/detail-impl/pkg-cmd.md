@@ -2,7 +2,7 @@
 
 **Package role:** CLI command registration layer. Wires all Cobra commands, manages lifecycle (PersistentPreRunE / PersistentPostRunE), and builds the shared `cmddeps.Deps` container.
 
-> _Auto-generated on 2026-04-08 (commit `baefe84`). Edit `scripts/update-docs.sh` to change the template._
+> _Updated 2026-04-17 (comprehensive doc review)._
 
 ---
 
@@ -24,20 +24,34 @@
 | `undo.go` | `grava undo <id>` |
 | `update.go` | `grava update <id>` |
 | `wisp.go` | `grava wisp` |
+| `close.go` | `grava close <id>` |
 
-## Files
+## Files (pkg/cmd/)
 
-| File | Lines | Exported Symbols |
-|:---|:---|:---|
-| `audit_integration_test.go` | 103 | TestCreateAuditIntegration |
-| `commands_benchmark_test.go` | 214 | BenchmarkCreateBaseIssue,BenchmarkCreateSubtask BenchmarkBulkInsert1000,BenchmarkMixedWorkload BenchmarkSequentialInserts |
-| `commands_test.go` | 1643 | TestCreateCmd,TestShowCmd TestCreateEphemeralCmd,TestListCmd TestListWispCmd |
-| `config.go` | 45 | — |
-| `history_undo_integration_test.go` | 234 | TestHistoryIntegration,TestUndoIntegration TestUndoAffectedFilesIntegration,TestSessionUndoIntegration |
-| `history_undo_test.go` | 175 | TestUndoCmd_Dirty,TestUndoCmd_Clean TestUndoCmd_NoHistory,TestUndoCmd_NotFound |
-| `hook.go` | ~390 | — (hookCmd, hookRunCmd; runPreCommit with reservation enforcement) |
-| `init.go` | 181 | — |
-| `ready_test.go` | 66 | TestReadyCmd,TestBlockedCmd |
-| `root.go` | 191 | Execute,SetVersion |
-| `version.go` | 19 | — |
+| File | Description |
+|:---|:---|
+| `config.go` | `grava config` — display current configuration |
+| `conflicts.go` | `grava conflicts` — view and resolve merge conflicts |
+| `db_server.go` | `grava db-start` / `grava db-stop` — Dolt server lifecycle |
+| `hook.go` | `grava hook run <name>` — Git hook dispatch (pre-commit reservation enforcement, post-merge sync) |
+| `init.go` | `grava init` — repository initialization (Dolt, git config, worktree, Claude settings) |
+| `install.go` | `grava install` — register merge driver and git hooks |
+| `merge_driver.go` | `grava merge-driver` — LWW 3-way merge for issues.jsonl |
+| `merge_slot.go` | `grava merge-slot` — serialize concurrent merge operations |
+| `orchestrate.go` | `grava orchestrate` — background task orchestration |
+| `resolve.go` | `grava resolve` — dependency resolution commands |
+| `root.go` | Root command, PersistentPreRunE/PostRunE lifecycle, audit logging |
+| `sync_status.go` | `grava sync-status` — show sync state between DB and JSONL |
+| `version.go` | `grava version` |
+
+## Sub-packages
+
+| Package | Description |
+|:---|:---|
+| `pkg/cmd/issues/` | Issue CRUD commands (create, show, update, claim, label, comment, etc.) |
+| `pkg/cmd/graph/` | Dependency graph commands (dep, ready, blocked, visualize, search, stats) |
+| `pkg/cmd/maintenance/` | Health commands (doctor, compact, cmd_history, clear-archived) |
+| `pkg/cmd/reserve/` | File reservation commands (reserve, enforce) |
+| `pkg/cmd/sandbox/` | Sandbox validation scenarios (TS-01 through TS-10) |
+| `pkg/cmd/sync/` | Export/import commands (export, import, sync) |
 

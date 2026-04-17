@@ -22,7 +22,37 @@ A specialized persistence layer for Dolt. It implements Git-like versioning conc
 Handles DAG (Directed Acyclic Graph) traversal for parent-child relationships and blocking dependencies. Essential for automated task discovery.
 
 ### 5. Migration System (`pkg/migrate`)
-Embeds SQL scripts into the binary using `go:embed` and manages schema evolution via Goose.
+Embeds SQL scripts into the binary using `go:embed` and manages schema evolution via Goose. Currently 11 migrations covering all tables.
+
+### 6. Git Integration Layer (`pkg/gitconfig`, `pkg/gitattributes`, `pkg/githooks`)
+Manages the Git-side configuration for merge drivers, attributes, and hook stubs:
+- **Merge Driver**: Registers `grava-merge` in `.git/config` for LWW 3-way merge of `issues.jsonl`.
+- **Git Attributes**: Ensures `issues.jsonl merge=grava-merge` in `.gitattributes`.
+- **Hook Stubs**: Deploys `pre-commit` and `post-merge` hook stubs that delegate to `grava hook run`.
+
+### 7. Merge Driver (`pkg/merge`)
+Schema-aware 3-way merge for `issues.jsonl` using Last-Write-Wins (LWW) semantics:
+- Field-level conflict resolution by `updated_at` timestamp comparison.
+- Delete-wins policy: when one branch deletes an issue, deletion is deterministic.
+- Equal-timestamp conflicts produce `ConflictEntry` records and set `HasGitConflict=true`.
+
+### 8. Sync Pipeline (`pkg/cmd/sync`)
+Export/import pipeline for Git-tracked JSONL files:
+- **Export**: Flat JSONL with embedded labels, comments, dependencies, and wisp entries.
+- **Import**: Upsert with overwrite mode that cleans stale related data.
+- **Dual-Safety Check**: Content hash (skip unchanged) + Dolt uncommitted changes guard.
+
+### 9. File Reservation System (`pkg/cmd/reserve`)
+Advisory file-path leases for concurrent edit safety:
+- Declare exclusive/shared leases with TTL auto-expiry.
+- Pre-commit hook enforcement blocks commits to paths held by other agents.
+- Glob pattern matching including `**` recursive wildcards.
+
+### 10. Orchestrator (`pkg/orchestrator`)
+Background task orchestration with poller, worker pool, and watchdog for long-running operations.
+
+### 11. Sandbox Validation (`pkg/cmd/sandbox`)
+Integration validation framework with 10 executable scenarios (TS-01 through TS-10) covering concurrent claims, dependency graphs, export/import round-trips, merge conflicts, file reservations, and swarm load testing.
 
 ## Data Flow
 1. **User/Agent Command**: Received via CLI.
