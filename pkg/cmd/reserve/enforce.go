@@ -46,9 +46,6 @@ func CheckStagedConflicts(ctx context.Context, store dolt.Store, stagedPaths []s
 	if err != nil {
 		return nil, fmt.Errorf("check staged conflicts: query: %w", err)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("check staged conflicts: query: %w", err)
-	}
 	defer rows.Close() //nolint:errcheck
 
 	type lease struct {
@@ -107,9 +104,9 @@ func matchPattern(pattern, path string) bool {
 	return matched
 }
 
-// matchDoublestar handles patterns containing "**" by splitting on "**" and
-// checking that the prefix matches the start of the path and the suffix matches
-// the end, with any number of path segments in between.
+// matchDoublestar handles patterns containing "**" by splitting on the first "**"
+// and checking that the prefix matches the start of the path and the suffix matches
+// the end, with any number of path segments in between. Recurses for multiple "**".
 func matchDoublestar(pattern, path string) bool {
 	parts := strings.SplitN(pattern, "**", 2)
 	prefix := parts[0] // e.g. "src/cmd/" from "src/cmd/**/*.go"
@@ -119,24 +116,36 @@ func matchDoublestar(pattern, path string) bool {
 	suffix = strings.TrimPrefix(suffix, "/")
 
 	// Path must start with prefix
-	if prefix != "" && !strings.HasPrefix(path, prefix) {
-		return false
+	if prefix != "" {
+		if !strings.HasPrefix(path, prefix) {
+			// Also match zero-segment case: "docs/**" should match "docs"
+			if suffix == "" && strings.HasSuffix(prefix, "/") &&
+				path == strings.TrimSuffix(prefix, "/") {
+				return true
+			}
+			return false
+		}
 	}
 
 	remainder := strings.TrimPrefix(path, prefix)
 
-	// If no suffix, ** matches everything after prefix
+	// If no suffix, ** matches everything after prefix (including empty = zero segments)
 	if suffix == "" {
 		return true
 	}
 
 	// Try matching suffix against every possible tail of the remainder.
-	// e.g. remainder="reserve/sub/enforce.go", suffix="*.go"
-	// Try: "reserve/sub/enforce.go", "sub/enforce.go", "enforce.go"
 	for {
-		matched, err := filepath.Match(suffix, remainder)
-		if err == nil && matched {
-			return true
+		// If suffix still contains **, recurse instead of using filepath.Match
+		if strings.Contains(suffix, "**") {
+			if matchDoublestar(suffix, remainder) {
+				return true
+			}
+		} else {
+			matched, err := filepath.Match(suffix, remainder)
+			if err == nil && matched {
+				return true
+			}
 		}
 		idx := strings.IndexByte(remainder, '/')
 		if idx < 0 {

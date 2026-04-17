@@ -32,6 +32,10 @@ func TestMatchPattern(t *testing.T) {
 		{"doublestar everything", "src/**", "src/cmd/reserve/enforce.go", true},
 		{"doublestar prefix only", "**/*.go", "any/deep/path/file.go", true},
 		{"doublestar prefix only no match", "**/*.go", "file.ts", false},
+		// Edge cases from bug hunt
+		{"doublestar zero segment docs", "docs/**", "docs", true},
+		{"doublestar multi star", "src/**/cmd/**/*.go", "src/deep/cmd/file.go", true},
+		{"doublestar multi star nested", "src/**/cmd/**/*.go", "src/a/b/cmd/x/y.go", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -24,7 +24,7 @@ func newMock(t *testing.T) (dolt.Store, sqlmock.Sqlmock) {
 
 var (
 	qInsertReservation = `INSERT INTO file_reservations`
-	qCheckConflict     = `SELECT agent_id, expires_ts FROM file_reservations`
+	qCheckConflict     = `SELECT agent_id, path_pattern, expires_ts FROM file_reservations`
 	qListReservations  = `SELECT id, project_id, agent_id, path_pattern, .exclusive., COALESCE`
 	qReleaseQuery      = `UPDATE file_reservations`
 )
@@ -34,12 +34,15 @@ var (
 func TestDeclareReservation_ExclusiveSuccess(t *testing.T) {
 	store, mock := newMock(t)
 
-	// No conflict found.
+	// No conflict found (glob-based: returns path_pattern column too).
 	mock.ExpectQuery(qCheckConflict).
-		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "expires_ts"}))
-	// INSERT succeeds.
+		WithArgs("default", "agent-01").
+		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "path_pattern", "expires_ts"}))
+	// Transaction: BEGIN, INSERT, COMMIT.
+	mock.ExpectBegin()
 	mock.ExpectExec(qInsertReservation).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 	// Re-read after insert (GetReservation).
 	future := time.Now().Add(30 * time.Minute)
 	mock.ExpectQuery(qGetReservation).
@@ -69,9 +72,14 @@ func TestDeclareReservation_ExclusiveSuccess(t *testing.T) {
 func TestDeclareReservation_NonExclusiveNoConflictCheck(t *testing.T) {
 	store, mock := newMock(t)
 
-	// Non-exclusive: no conflict query expected.
+	// Non-exclusive: conflict check still runs (shared must respect existing exclusive).
+	mock.ExpectQuery(qCheckConflict).
+		WithArgs("default", "agent-02").
+		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "path_pattern", "expires_ts"}))
+	mock.ExpectBegin()
 	mock.ExpectExec(qInsertReservation).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 	// Re-read after insert (GetReservation).
 	future := time.Now().Add(15 * time.Minute)
 	mock.ExpectQuery(qGetReservation).
@@ -100,8 +108,9 @@ func TestDeclareReservation_ExclusiveConflict(t *testing.T) {
 
 	expiresAt := time.Now().Add(20 * time.Minute)
 	mock.ExpectQuery(qCheckConflict).
-		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "expires_ts"}).
-			AddRow("agent-99", expiresAt))
+		WithArgs("default", "agent-01").
+		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "path_pattern", "expires_ts"}).
+			AddRow("agent-99", "src/cmd/issues/*.go", expiresAt))
 
 	p := DeclareParams{
 		PathPattern: "src/cmd/issues/*.go",
@@ -124,6 +133,7 @@ func TestDeclareReservation_ConflictCheckDBError(t *testing.T) {
 	store, mock := newMock(t)
 
 	mock.ExpectQuery(qCheckConflict).
+		WithArgs("default", "agent-01").
 		WillReturnError(assert.AnError)
 
 	p := DeclareParams{
@@ -143,10 +153,12 @@ func TestDeclareReservation_ConflictCheckDBError(t *testing.T) {
 func TestDeclareReservation_InsertDBError(t *testing.T) {
 	store, mock := newMock(t)
 
-	// No conflict.
+	// No conflict (glob-based).
 	mock.ExpectQuery(qCheckConflict).
-		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "expires_ts"}))
-	// INSERT fails.
+		WithArgs("default", "agent-01").
+		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "path_pattern", "expires_ts"}))
+	// Transaction: BEGIN, INSERT fails.
+	mock.ExpectBegin()
 	mock.ExpectExec(qInsertReservation).
 		WillReturnError(assert.AnError)
 
@@ -181,9 +193,10 @@ func TestListReservations_ReturnsActiveOnly(t *testing.T) {
 	now := time.Now()
 	expires := now.Add(25 * time.Minute)
 	mock.ExpectQuery(qListReservations).
+		WithArgs("default").
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "project_id", "agent_id", "path_pattern", "exclusive", "reason", "created_ts", "expires_ts",
-		}).AddRow("res-aabbcc", "default", "agent-01", "src/*.go", true, "", now, expires))
+			"id", "project_id", "agent_id", "path_pattern", "exclusive", "reason", "created_ts", "expires_ts", "remaining_seconds",
+		}).AddRow("res-aabbcc", "default", "agent-01", "src/*.go", true, "", now, expires, 1500))
 
 	reservations, err := ListReservations(context.Background(), store, "default")
 
@@ -200,8 +213,9 @@ func TestListReservations_Empty(t *testing.T) {
 	store, mock := newMock(t)
 
 	mock.ExpectQuery(qListReservations).
+		WithArgs("default").
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "project_id", "agent_id", "path_pattern", "exclusive", "reason", "created_ts", "expires_ts",
+			"id", "project_id", "agent_id", "path_pattern", "exclusive", "reason", "created_ts", "expires_ts", "remaining_seconds",
 		}))
 
 	reservations, err := ListReservations(context.Background(), store, "default")
