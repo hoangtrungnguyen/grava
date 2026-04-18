@@ -28,15 +28,16 @@ const defaultTTLMinutes = 30
 
 // Reservation is the JSON-serialisable view of a file_reservations row.
 type Reservation struct {
-	ID          string     `json:"id"`
-	ProjectID   string     `json:"project_id"`
-	AgentID     string     `json:"agent_id"`
-	PathPattern string     `json:"path_pattern"`
-	Exclusive   bool       `json:"exclusive"`
-	Reason      string     `json:"reason,omitempty"`
-	CreatedTS   time.Time  `json:"created_ts"`
-	ExpiresTS   time.Time  `json:"expires_ts"`
-	ReleasedTS  *time.Time `json:"released_ts,omitempty"`
+	ID               string        `json:"id"`
+	ProjectID        string        `json:"project_id"`
+	AgentID          string        `json:"agent_id"`
+	PathPattern      string        `json:"path_pattern"`
+	Exclusive        bool          `json:"exclusive"`
+	Reason           string        `json:"reason,omitempty"`
+	CreatedTS        time.Time     `json:"created_ts"`
+	ExpiresTS        time.Time     `json:"expires_ts"`
+	ReleasedTS       *time.Time    `json:"released_ts,omitempty"`
+	RemainingSeconds int64         `json:"remaining_seconds,omitempty"` // server-side computed
 }
 
 // generateReservationID returns a short ID like "res-a1b2c3".
@@ -83,28 +84,37 @@ func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) 
 	}
 
 	// Check for conflicting exclusive lease from a different agent.
-	if p.Exclusive {
-		conflict, conflictAgent, conflictExpires, err := findConflict(ctx, store, p.ProjectID, p.PathPattern, p.AgentID)
-		if err != nil {
-			return DeclareResult{}, fmt.Errorf("reserve: check conflict: %w", err)
-		}
-		if conflict {
-			msg := fmt.Sprintf("path %q is exclusively reserved by %s until %s — release or wait",
-				p.PathPattern, conflictAgent, conflictExpires.Format(time.RFC3339))
-			return DeclareResult{}, gravaerrors.New("FILE_RESERVATION_CONFLICT", msg, nil)
-		}
+	// Always check — both exclusive AND shared requests must respect existing exclusive leases.
+	conflict, conflictAgent, conflictExpires, err := findConflict(ctx, store, p.ProjectID, p.PathPattern, p.AgentID)
+	if err != nil {
+		return DeclareResult{}, fmt.Errorf("reserve: check conflict: %w", err)
+	}
+	if conflict {
+		msg := fmt.Sprintf("path %q is exclusively reserved by %s until %s — release or wait",
+			p.PathPattern, conflictAgent, conflictExpires.Format(time.RFC3339))
+		return DeclareResult{}, gravaerrors.New("FILE_RESERVATION_CONFLICT", msg, nil)
 	}
 
 	id := generateReservationID()
 
 	// Use SQL NOW() + INTERVAL for timestamps to stay consistent with Dolt's clock.
+	// Wrap check+insert in a transaction to prevent TOCTOU race.
+	tx, txErr := store.BeginTx(ctx, nil)
+	if txErr != nil {
+		return DeclareResult{}, fmt.Errorf("reserve: begin tx: %w", txErr)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	const q = "INSERT INTO file_reservations" +
 		" (id, project_id, agent_id, path_pattern, `exclusive`, reason, created_ts, expires_ts)" +
 		" VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW() + INTERVAL ? MINUTE)"
-	if _, err := store.ExecContext(ctx, q,
+	if _, err := tx.ExecContext(ctx, q,
 		id, p.ProjectID, p.AgentID, p.PathPattern, p.Exclusive, p.Reason, p.TTLMinutes,
 	); err != nil {
 		return DeclareResult{}, fmt.Errorf("reserve: insert: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return DeclareResult{}, fmt.Errorf("reserve: commit: %w", err)
 	}
 
 	// Re-read the row to get server-computed timestamps.
@@ -116,26 +126,47 @@ func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) 
 }
 
 // findConflict checks whether an active exclusive lease from a different agent
-// exists for the given path_pattern. Returns (true, conflictAgent, expiresTS) if found.
+// overlaps with the requested path_pattern using glob matching.
+// Returns (true, conflictAgent, expiresTS) if an overlapping lease is found.
 func findConflict(ctx context.Context, store dolt.Store, projectID, pathPattern, requestingAgent string) (bool, string, time.Time, error) {
-	const q = "SELECT agent_id, expires_ts FROM file_reservations" +
+	// Fetch ALL active exclusive leases from other agents, then match with globs.
+	// Exact SQL match is insufficient — patterns like src/**/*.go and src/cmd/*.go overlap.
+	const q = "SELECT agent_id, path_pattern, expires_ts FROM file_reservations" +
 		" WHERE project_id = ?" +
-		" AND path_pattern = ?" +
 		" AND `exclusive` = TRUE" +
 		" AND agent_id != ?" +
 		" AND released_ts IS NULL" +
-		" AND expires_ts > NOW()" +
-		" LIMIT 1"
-	row := store.QueryRowContext(ctx, q, projectID, pathPattern, requestingAgent)
-	var agentID string
-	var expiresTS time.Time
-	if err := row.Scan(&agentID, &expiresTS); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, "", time.Time{}, nil
-		}
-		return false, "", time.Time{}, fmt.Errorf("findConflict scan: %w", err)
+		" AND expires_ts > NOW()"
+	rows, err := store.QueryContext(ctx, q, projectID, requestingAgent)
+	if err != nil {
+		return false, "", time.Time{}, fmt.Errorf("findConflict query: %w", err)
 	}
-	return true, agentID, expiresTS, nil
+	defer rows.Close() //nolint:errcheck
+
+	for rows.Next() {
+		var agentID, existingPattern string
+		var expiresTS time.Time
+		if err := rows.Scan(&agentID, &existingPattern, &expiresTS); err != nil {
+			return false, "", time.Time{}, fmt.Errorf("findConflict scan: %w", err)
+		}
+		// Check overlap in both directions: does existing cover requested, or vice versa?
+		if patternsOverlap(existingPattern, pathPattern) {
+			return true, agentID, expiresTS, nil
+		}
+	}
+	return false, "", time.Time{}, rows.Err()
+}
+
+// patternsOverlap checks if two glob patterns could match the same file.
+// Tests both directions: does pattern A match a representative of B, and vice versa.
+// For exact patterns, also checks if either matches the other directly.
+func patternsOverlap(a, b string) bool {
+	// Direct match in either direction
+	if matchPattern(a, b) || matchPattern(b, a) {
+		return true
+	}
+	// If patterns are identical strings, they obviously overlap
+	return a == b
 }
 
 // ListReservations returns all active (non-expired, non-released) reservations.
@@ -143,7 +174,8 @@ func ListReservations(ctx context.Context, store dolt.Store, projectID string) (
 	if projectID == "" {
 		projectID = defaultProjectID
 	}
-	const q = "SELECT id, project_id, agent_id, path_pattern, `exclusive`, COALESCE(reason,''), created_ts, expires_ts" +
+	const q = "SELECT id, project_id, agent_id, path_pattern, `exclusive`, COALESCE(reason,''), created_ts, expires_ts," +
+		" TIMESTAMPDIFF(SECOND, NOW(), expires_ts) AS remaining_seconds" +
 		" FROM file_reservations" +
 		" WHERE project_id = ?" +
 		" AND released_ts IS NULL" +
@@ -160,7 +192,7 @@ func ListReservations(ctx context.Context, store dolt.Store, projectID string) (
 		var r Reservation
 		if err := rows.Scan(
 			&r.ID, &r.ProjectID, &r.AgentID, &r.PathPattern,
-			&r.Exclusive, &r.Reason, &r.CreatedTS, &r.ExpiresTS,
+			&r.Exclusive, &r.Reason, &r.CreatedTS, &r.ExpiresTS, &r.RemainingSeconds,
 		); err != nil {
 			return nil, fmt.Errorf("reserve list: scan: %w", err)
 		}
@@ -298,7 +330,7 @@ Examples:
 					if r.Exclusive {
 						exc = "exclusive"
 					}
-					eta := time.Until(r.ExpiresTS).Round(time.Second)
+					eta := time.Duration(r.RemainingSeconds) * time.Second
 					cmd.Printf("%-12s  %-20s  %-10s  %-9s  %s\n",
 						r.ID, r.AgentID, exc, eta, r.PathPattern)
 				}
