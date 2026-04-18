@@ -7,6 +7,7 @@ package cmdgraph
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -29,6 +30,7 @@ var (
 	searchWisp    bool
 	searchLabels  []string
 	statsDays     int
+	statsFormat   string
 	readyLimit    int
 	readyPriority int
 	showInherited bool
@@ -1110,86 +1112,131 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 				stats.ClosedByDate[day] = count
 			}
 
-			if *d.OutputJSON {
+			// Resolve output format: --json is shorthand for --format json
+			format := statsFormat
+			if *d.OutputJSON && format == "table" {
+				format = "json"
+			}
+
+			switch format {
+			case "json":
 				bytes, err := json.MarshalIndent(stats, "", "  ")
 				if err != nil {
 					return err
 				}
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(bytes))
 				return nil
-			}
 
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintf(w, "Total Issues:\t%d\n", stats.Total)
-			_, _ = fmt.Fprintf(w, "Open Issues:\t%d\n", stats.Open)
-			_, _ = fmt.Fprintf(w, "Closed Issues:\t%d\n", stats.Closed)
-			_, _ = fmt.Fprintf(w, "Blocked Issues:\t%d\n", stats.BlockedCount)
-			_, _ = fmt.Fprintf(w, "Stale In-Progress:\t%d\n", stats.StaleInProgressCount)
-			if stats.AvgCycleTimeMinutes != nil {
-				_, _ = fmt.Fprintf(w, "Avg Cycle Time:\t%.0f min\n", *stats.AvgCycleTimeMinutes)
-			}
-			_, _ = fmt.Fprintln(w, "")
-
-			_, _ = fmt.Fprintln(w, "By Status:")
-			for status, count := range stats.ByStatus {
-				_, _ = fmt.Fprintf(w, "  %s:\t%d\n", status, count)
-			}
-			_, _ = fmt.Fprintln(w, "")
-
-			_, _ = fmt.Fprintln(w, "By Priority:")
-			var priorities []int
-			for p := range stats.ByPriority {
-				priorities = append(priorities, p)
-			}
-			sort.Ints(priorities)
-			for _, p := range priorities {
-				_, _ = fmt.Fprintf(w, "  P%d:\t%d\n", p, stats.ByPriority[p])
-			}
-			_, _ = fmt.Fprintln(w, "")
-
-			_, _ = fmt.Fprintln(w, "Top Authors:")
-			type kv struct {
-				Key   string
-				Value int
-			}
-			var authors []kv
-			for k, v := range stats.ByAuthor {
-				authors = append(authors, kv{k, v})
-			}
-			sort.Slice(authors, func(i, j int) bool { return authors[i].Value > authors[j].Value })
-			for _, a := range authors {
-				_, _ = fmt.Fprintf(w, "  %s:\t%d\n", a.Key, a.Value)
-			}
-			_, _ = fmt.Fprintln(w, "")
-
-			_, _ = fmt.Fprintln(w, "Top Assignees:")
-			var assignees []kv
-			for k, v := range stats.ByAssignee {
-				assignees = append(assignees, kv{k, v})
-			}
-			sort.Slice(assignees, func(i, j int) bool { return assignees[i].Value > assignees[j].Value })
-			for _, a := range assignees {
-				_, _ = fmt.Fprintf(w, "  %s:\t%d\n", a.Key, a.Value)
-			}
-			_, _ = fmt.Fprintln(w, "")
-
-			_, _ = fmt.Fprintf(w, "Activity (Last %d Days):\n", statsDays)
-			_, _ = fmt.Fprintln(w, "  Date\t\tCreated\tClosed")
-			now := time.Now()
-			for i := 0; i < statsDays; i++ {
-				d := now.AddDate(0, 0, -i).Format("2006-01-02")
-				created := stats.CreatedByDate[d]
-				closed := stats.ClosedByDate[d]
-				if created > 0 || closed > 0 {
-					_, _ = fmt.Fprintf(w, "  %s\t%d\t%d\n", d, created, closed)
+			case "csv":
+				cw := csv.NewWriter(cmd.OutOrStdout())
+				_ = cw.Write([]string{"metric", "key", "value"})
+				_ = cw.Write([]string{"summary", "total_issues", fmt.Sprintf("%d", stats.Total)})
+				_ = cw.Write([]string{"summary", "open_issues", fmt.Sprintf("%d", stats.Open)})
+				_ = cw.Write([]string{"summary", "closed_issues", fmt.Sprintf("%d", stats.Closed)})
+				_ = cw.Write([]string{"summary", "blocked_count", fmt.Sprintf("%d", stats.BlockedCount)})
+				_ = cw.Write([]string{"summary", "stale_in_progress", fmt.Sprintf("%d", stats.StaleInProgressCount)})
+				if stats.AvgCycleTimeMinutes != nil {
+					_ = cw.Write([]string{"summary", "avg_cycle_time_min", fmt.Sprintf("%.0f", *stats.AvgCycleTimeMinutes)})
 				}
+				for status, count := range stats.ByStatus {
+					_ = cw.Write([]string{"by_status", status, fmt.Sprintf("%d", count)})
+				}
+				for p, count := range stats.ByPriority {
+					_ = cw.Write([]string{"by_priority", fmt.Sprintf("P%d", p), fmt.Sprintf("%d", count)})
+				}
+				for author, count := range stats.ByAuthor {
+					_ = cw.Write([]string{"by_author", author, fmt.Sprintf("%d", count)})
+				}
+				for assignee, count := range stats.ByAssignee {
+					_ = cw.Write([]string{"by_assignee", assignee, fmt.Sprintf("%d", count)})
+				}
+				now := time.Now()
+				for i := 0; i < statsDays; i++ {
+					d := now.AddDate(0, 0, -i).Format("2006-01-02")
+					created := stats.CreatedByDate[d]
+					closed := stats.ClosedByDate[d]
+					if created > 0 || closed > 0 {
+						_ = cw.Write([]string{"activity_created", d, fmt.Sprintf("%d", created)})
+						_ = cw.Write([]string{"activity_closed", d, fmt.Sprintf("%d", closed)})
+					}
+				}
+				cw.Flush()
+				return cw.Error()
+
+			default: // "table"
+				w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+				_, _ = fmt.Fprintf(w, "Total Issues:\t%d\n", stats.Total)
+				_, _ = fmt.Fprintf(w, "Open Issues:\t%d\n", stats.Open)
+				_, _ = fmt.Fprintf(w, "Closed Issues:\t%d\n", stats.Closed)
+				_, _ = fmt.Fprintf(w, "Blocked Issues:\t%d\n", stats.BlockedCount)
+				_, _ = fmt.Fprintf(w, "Stale In-Progress:\t%d\n", stats.StaleInProgressCount)
+				if stats.AvgCycleTimeMinutes != nil {
+					_, _ = fmt.Fprintf(w, "Avg Cycle Time:\t%.0f min\n", *stats.AvgCycleTimeMinutes)
+				}
+				_, _ = fmt.Fprintln(w, "")
+
+				_, _ = fmt.Fprintln(w, "By Status:")
+				for status, count := range stats.ByStatus {
+					_, _ = fmt.Fprintf(w, "  %s:\t%d\n", status, count)
+				}
+				_, _ = fmt.Fprintln(w, "")
+
+				_, _ = fmt.Fprintln(w, "By Priority:")
+				var priorities []int
+				for p := range stats.ByPriority {
+					priorities = append(priorities, p)
+				}
+				sort.Ints(priorities)
+				for _, p := range priorities {
+					_, _ = fmt.Fprintf(w, "  P%d:\t%d\n", p, stats.ByPriority[p])
+				}
+				_, _ = fmt.Fprintln(w, "")
+
+				_, _ = fmt.Fprintln(w, "Top Authors:")
+				type kv struct {
+					Key   string
+					Value int
+				}
+				var authors []kv
+				for k, v := range stats.ByAuthor {
+					authors = append(authors, kv{k, v})
+				}
+				sort.Slice(authors, func(i, j int) bool { return authors[i].Value > authors[j].Value })
+				for _, a := range authors {
+					_, _ = fmt.Fprintf(w, "  %s:\t%d\n", a.Key, a.Value)
+				}
+				_, _ = fmt.Fprintln(w, "")
+
+				_, _ = fmt.Fprintln(w, "Top Assignees:")
+				var assignees []kv
+				for k, v := range stats.ByAssignee {
+					assignees = append(assignees, kv{k, v})
+				}
+				sort.Slice(assignees, func(i, j int) bool { return assignees[i].Value > assignees[j].Value })
+				for _, a := range assignees {
+					_, _ = fmt.Fprintf(w, "  %s:\t%d\n", a.Key, a.Value)
+				}
+				_, _ = fmt.Fprintln(w, "")
+
+				_, _ = fmt.Fprintf(w, "Activity (Last %d Days):\n", statsDays)
+				_, _ = fmt.Fprintln(w, "  Date\t\tCreated\tClosed")
+				now := time.Now()
+				for i := 0; i < statsDays; i++ {
+					d := now.AddDate(0, 0, -i).Format("2006-01-02")
+					created := stats.CreatedByDate[d]
+					closed := stats.ClosedByDate[d]
+					if created > 0 || closed > 0 {
+						_, _ = fmt.Fprintf(w, "  %s\t%d\t%d\n", d, created, closed)
+					}
+				}
+				w.Flush() //nolint:errcheck
+				return nil
 			}
-			w.Flush() //nolint:errcheck
-			return nil
 		},
 	}
 
 	cmd.Flags().IntVar(&statsDays, "days", 7, "Number of days to show activity for")
+	cmd.Flags().StringVar(&statsFormat, "format", "table", "Output format: json, table, or csv")
 	return cmd
 }
 
