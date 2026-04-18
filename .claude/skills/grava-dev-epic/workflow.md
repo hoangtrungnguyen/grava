@@ -75,6 +75,22 @@ grava dep tree <issue-id>
 
 Understand what this issue depends on and what it unblocks. Check if parent epic exists and read its description for broader context.
 
+### Related issues:
+
+Query for issues related to this one (e.g. `relates-to`, `duplicates`, `caused-by`) and read their descriptions for additional context:
+
+```bash
+grava dep list <issue-id> --json
+```
+
+For each related issue returned, fetch its description:
+
+```bash
+grava show <related-id> --json
+```
+
+Extract relevant context — design decisions, constraints, known pitfalls, or implementation notes — that could inform this issue's implementation.
+
 ### Project context:
 
 - Load `**/project-context.md` if it exists — coding standards, architecture patterns
