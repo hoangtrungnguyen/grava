@@ -18,98 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestImportIssues_EmptyInput(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close() //nolint:errcheck
-
-	mock.ExpectBegin()
-	mock.ExpectCommit()
-
-	store := dolt.NewClientFromDB(db)
-	result, err := importIssues(context.Background(), store, strings.NewReader(""), false, false)
-	require.NoError(t, err)
-	assert.Equal(t, 0, result.Imported)
-	assert.Equal(t, 0, result.Updated)
-	assert.Equal(t, 0, result.Skipped)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestImportIssues_SingleIssue(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close() //nolint:errcheck
-
-	now := time.Now().UTC().Truncate(time.Second)
-	agentModel := "model1"
-	line := `{"type":"issue","data":{"id":"grava-test001","title":"Test Issue","description":"desc","issue_type":"task","priority":2,"status":"open","metadata":{},"created_at":"` +
-		now.Format(time.RFC3339) + `","updated_at":"` + now.Format(time.RFC3339) + `","created_by":"actor1","updated_by":"actor1","agent_model":"` + agentModel + `","affected_files":[],"ephemeral":false}}`
-
-	mock.ExpectBegin()
-	mock.ExpectExec("INSERT INTO issues").
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectCommit()
-
-	store := dolt.NewClientFromDB(db)
-	result, err := importIssues(context.Background(), store, strings.NewReader(line), false, false)
-	require.NoError(t, err)
-	assert.Equal(t, 1, result.Imported)
-	assert.Equal(t, 0, result.Updated)
-	assert.Equal(t, 0, result.Skipped)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestImportIssues_SkipExisting(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close() //nolint:errcheck
-
-	now := time.Now().UTC().Truncate(time.Second)
-	agentModel := "model1"
-	line := `{"type":"issue","data":{"id":"grava-test001","title":"Test Issue","description":"desc","issue_type":"task","priority":2,"status":"open","metadata":{},"created_at":"` +
-		now.Format(time.RFC3339) + `","updated_at":"` + now.Format(time.RFC3339) + `","created_by":"actor1","updated_by":"actor1","agent_model":"` + agentModel + `","affected_files":[],"ephemeral":false}}`
-
-	mock.ExpectBegin()
-	// INSERT IGNORE returns 0 affected rows when row exists
-	mock.ExpectExec("INSERT IGNORE INTO issues").
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectCommit()
-
-	store := dolt.NewClientFromDB(db)
-	result, err := importIssues(context.Background(), store, strings.NewReader(line), false, true)
-	require.NoError(t, err)
-	assert.Equal(t, 0, result.Imported)
-	assert.Equal(t, 0, result.Updated)
-	assert.Equal(t, 1, result.Skipped)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestImportIssues_TwoIssuesImported(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close() //nolint:errcheck
-
-	now := time.Now().UTC().Truncate(time.Second)
-	agentModel := "model1"
-	makeLine := func(id string) string {
-		return `{"type":"issue","data":{"id":"` + id + `","title":"Issue ` + id + `","description":"desc","issue_type":"task","priority":2,"status":"open","metadata":{},"created_at":"` +
-			now.Format(time.RFC3339) + `","updated_at":"` + now.Format(time.RFC3339) + `","created_by":"actor1","updated_by":"actor1","agent_model":"` + agentModel + `","affected_files":[],"ephemeral":false}}`
-	}
-	input := makeLine("grava-aaa001") + "\n" + makeLine("grava-bbb002")
-
-	mock.ExpectBegin()
-	mock.ExpectExec("INSERT INTO issues").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("INSERT INTO issues").WillReturnResult(sqlmock.NewResult(2, 1))
-	mock.ExpectCommit()
-
-	store := dolt.NewClientFromDB(db)
-	result, err := importIssues(context.Background(), store, strings.NewReader(input), false, false)
-	require.NoError(t, err)
-	assert.Equal(t, 2, result.Imported)
-	assert.Equal(t, 0, result.Updated)
-	assert.Equal(t, 0, result.Skipped)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
 
 // --- flat JSONL export/import tests ---
 
@@ -338,6 +246,21 @@ func TestValidateJSONL_MissingID(t *testing.T) {
 	assert.Contains(t, err.Error(), "missing required field 'id'")
 }
 
+func TestValidateJSONL_LegacyWrappedFormat(t *testing.T) {
+	line := `{"type":"issue","data":{"id":"grava-001","title":"Test"}}` + "\n"
+	err := ValidateJSONL(strings.NewReader(line))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "legacy wrapped format")
+	assert.Contains(t, err.Error(), "grava export")
+}
+
+func TestValidateJSONL_LegacyWrappedDependency(t *testing.T) {
+	line := `{"type":"dependency","data":{"from_id":"a","to_id":"b"}}` + "\n"
+	err := ValidateJSONL(strings.NewReader(line))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "legacy wrapped format")
+}
+
 func TestValidateJSONL_InvalidJSON(t *testing.T) {
 	line := `{not valid json}` + "\n"
 	err := ValidateJSONL(strings.NewReader(line))
@@ -457,6 +380,14 @@ func TestImportCmd_JSONOutput(t *testing.T) {
 	mock.ExpectExec("DELETE FROM dependencies").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
+	// Auto-export after import: exportFlatJSONL queries issues, labels, comments, deps, wisps.
+	mock.ExpectQuery("SELECT .* FROM issues WHERE").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "title", "description", "issue_type", "priority", "status",
+			"metadata", "created_at", "updated_at", "created_by", "updated_by",
+			"agent_model", "affected_files", "ephemeral",
+		}))
+
 	f, writeErr := os.CreateTemp(t.TempDir(), "issues-*.jsonl")
 	require.NoError(t, writeErr)
 	_, _ = f.WriteString(`{"id":"x","title":"T","type":"task","status":"open","priority":1,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","created_by":"a","updated_by":"a"}` + "\n")
@@ -480,21 +411,3 @@ func TestImportCmd_JSONOutput(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestImportCmd_FlagConflictWithPositionalArg(t *testing.T) {
-	db, _, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close() //nolint:errcheck
-
-	f, writeErr := os.CreateTemp(t.TempDir(), "issues-*.jsonl")
-	require.NoError(t, writeErr)
-	require.NoError(t, f.Close())
-
-	d := makeDeps(dolt.NewClientFromDB(db))
-	cmd := newImportCmd(d)
-	cmd.SetContext(context.Background())
-	// Set --overwrite via flags then call RunE with positional arg.
-	require.NoError(t, cmd.Flags().Set("overwrite", "true"))
-	runErr := cmd.RunE(cmd, []string{f.Name()})
-	require.Error(t, runErr)
-	assert.Contains(t, runErr.Error(), "--overwrite and --skip-existing are only valid with --file")
-}

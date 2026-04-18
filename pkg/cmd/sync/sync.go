@@ -71,39 +71,11 @@ type WispEntryRecord struct {
 	WrittenAt time.Time `json:"written_at"`
 }
 
-// ExportItem represents the legacy wrapped export format.
-// Kept for backward compatibility with existing tooling that reads the old format.
-type ExportItem struct {
-	Type string          `json:"type"` // "issue" or "dependency"
+// wrappedFormatProbe is used only by ValidateJSONL to detect the legacy
+// wrapped format ({"type":"issue","data":{...}}) and produce a clear error.
+type wrappedFormatProbe struct {
+	Type string          `json:"type"`
 	Data json.RawMessage `json:"data"`
-}
-
-// IssueExportData is the legacy issue export model (used by ExportItem).
-type IssueExportData struct {
-	ID            string          `json:"id"`
-	Title         string          `json:"title"`
-	Description   string          `json:"description"`
-	Type          string          `json:"issue_type"`
-	Priority      int             `json:"priority"`
-	Status        string          `json:"status"`
-	Metadata      json.RawMessage `json:"metadata"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
-	CreatedBy     string          `json:"created_by"`
-	UpdatedBy     string          `json:"updated_by"`
-	AgentModel    *string         `json:"agent_model"`
-	AffectedFiles json.RawMessage `json:"affected_files"`
-	Ephemeral     bool            `json:"ephemeral"`
-}
-
-// DependencyExportData is the dependency export model.
-type DependencyExportData struct {
-	FromID     string  `json:"from_id"`
-	ToID       string  `json:"to_id"`
-	Type       string  `json:"type"`
-	CreatedBy  string  `json:"created_by"`
-	UpdatedBy  string  `json:"updated_by"`
-	AgentModel *string `json:"agent_model"`
 }
 
 // AddCommands registers all sync commands with the root cobra.Command.
@@ -578,139 +550,17 @@ func ValidateJSONL(r io.Reader) error {
 			return fmt.Errorf("line %d: %w", lineNum, err)
 		}
 		if rec.ID == "" {
+			// Detect legacy wrapped format and give actionable error.
+			var probe wrappedFormatProbe
+			if json.Unmarshal(line, &probe) == nil && (probe.Type == "issue" || probe.Type == "dependency") && len(probe.Data) > 0 {
+				return fmt.Errorf("line %d: file uses legacy wrapped format ({\"type\":\"issue\",\"data\":{...}}); run 'grava export' to regenerate", lineNum)
+			}
 			return fmt.Errorf("line %d: missing required field 'id'", lineNum)
 		}
 	}
 	return scanner.Err()
 }
 
-// importIssues reads ExportItem-wrapped JSONL from r and imports issues and
-// dependencies into store. Kept for backward compatibility with legacy exports.
-// overwrite enables upsert on duplicate keys; skipExisting silently ignores duplicates.
-// The two flags are mutually exclusive — callers must validate before calling.
-func importIssues(ctx context.Context, store dolt.Store, r io.Reader, overwrite, skipExisting bool) (ImportResult, error) {
-	if overwrite && skipExisting {
-		return ImportResult{}, gravaerrors.New("INVALID_ARGS",
-			"overwrite and skip-existing are mutually exclusive", nil)
-	}
-	tx, err := store.BeginTx(ctx, nil)
-	if err != nil {
-		return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to start transaction", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	scanner := bufio.NewScanner(r)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 10*1024*1024)
-
-	var result ImportResult
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-
-		var item ExportItem
-		if err := json.Unmarshal(line, &item); err != nil {
-			return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to parse JSON line", err)
-		}
-
-		switch item.Type {
-		case "issue":
-			var i IssueExportData
-			if err := json.Unmarshal(item.Data, &i); err != nil {
-				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to parse issue data", err)
-			}
-
-			baseQuery := `INTO issues (
-				id, title, description, issue_type, priority, status, metadata,
-				created_at, updated_at, created_by, updated_by, agent_model,
-				affected_files, ephemeral
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-
-			var query string
-			if skipExisting {
-				query = "INSERT IGNORE " + baseQuery
-			} else {
-				query = "INSERT " + baseQuery
-			}
-
-			if overwrite {
-				query += ` ON DUPLICATE KEY UPDATE
-				title=VALUES(title), description=VALUES(description), issue_type=VALUES(issue_type),
-				priority=VALUES(priority), status=VALUES(status), metadata=VALUES(metadata),
-				updated_at=VALUES(updated_at),
-				updated_by=VALUES(updated_by),
-				agent_model=VALUES(agent_model), affected_files=VALUES(affected_files),
-				ephemeral=VALUES(ephemeral)`
-			}
-
-			res, err := tx.ExecContext(ctx, query,
-				i.ID, i.Title, i.Description, i.Type, i.Priority, i.Status, string(i.Metadata),
-				i.CreatedAt, i.UpdatedAt, i.CreatedBy, i.UpdatedBy, i.AgentModel,
-				string(i.AffectedFiles), i.Ephemeral,
-			)
-			if err != nil {
-				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", fmt.Sprintf("failed to insert issue %s", i.ID), err)
-			}
-
-			affected, _ := res.RowsAffected()
-			if affected == 0 {
-				result.Skipped++
-			} else if affected == 2 && overwrite {
-				result.Updated++
-			} else {
-				result.Imported++
-			}
-
-		case "dependency":
-			var dep DependencyExportData
-			if err := json.Unmarshal(item.Data, &dep); err != nil {
-				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to parse dependency data", err)
-			}
-
-			baseQuery := `INTO dependencies (
-				from_id, to_id, type, created_by, updated_by, agent_model
-			) VALUES (?, ?, ?, ?, ?, ?)`
-
-			var query string
-			if skipExisting {
-				query = "INSERT IGNORE " + baseQuery
-			} else {
-				query = "INSERT " + baseQuery
-			}
-
-			if overwrite {
-				query += ` ON DUPLICATE KEY UPDATE
-				created_by=VALUES(created_by), updated_by=VALUES(updated_by), agent_model=VALUES(agent_model)`
-			}
-
-			res, err := tx.ExecContext(ctx, query,
-				dep.FromID, dep.ToID, dep.Type, dep.CreatedBy, dep.UpdatedBy, dep.AgentModel,
-			)
-			if err != nil {
-				return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", fmt.Sprintf("failed to insert dependency %s->%s", dep.FromID, dep.ToID), err)
-			}
-			depAffected, _ := res.RowsAffected()
-			if depAffected == 0 {
-				result.Skipped++
-			} else {
-				result.Imported++
-			}
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "error reading import file", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return ImportResult{}, gravaerrors.New("IMPORT_ROLLED_BACK", "failed to commit transaction", err)
-	}
-
-	return result, nil
-}
 
 // doltHasUncommittedChanges returns true when dolt_status reports any
 // staged or unstaged rows. Errors are treated as "no changes" (fail-open).
@@ -730,96 +580,70 @@ func doltHasUncommittedChanges(store dolt.Store) bool {
 }
 
 func newImportCmd(d *cmddeps.Deps) *cobra.Command {
-	var (
-		importFile         string
-		importOverwrite    bool
-		importSkipExisting bool
-	)
-
 	cmd := &cobra.Command{
-		Use:   "import [file]",
+		Use:   "import <file>",
 		Short: "Import issues from a flat JSONL file",
 		Long: `Import issues from a flat JSONL file (issues.jsonl format).
 
-When a positional <file> argument is given the command runs the Dual-Safety Check
-(FR24): it hashes the file and aborts with IMPORT_CONFLICT when Dolt has
-uncommitted local changes that would be silently overwritten.
+Runs the Dual-Safety Check (FR24): hashes the file and aborts with
+IMPORT_CONFLICT when Dolt has uncommitted local changes that would be
+silently overwritten.
 
-The legacy --file flag accepts the old wrapped ExportItem format
-({"type":"issue","data":{...}}) and skips the Dual-Safety Check.`,
-		Args: cobra.MaximumNArgs(1),
+After a successful import, issues.jsonl is automatically re-exported so
+the on-disk file stays in sync with the canonical flat format.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			filePath := args[0]
 
-			// --- New path: positional <file> argument (flat JSONL + Dual-Safety) ---
-			if len(args) == 1 {
-				if importOverwrite || importSkipExisting {
-					return fmt.Errorf("--overwrite and --skip-existing are only valid with --file; omit them for positional import")
-				}
-
-				filePath := args[0]
-
-				f, err := os.Open(filePath) //nolint:gosec
-				if os.IsNotExist(err) {
-					return gravaerrors.New("FILE_NOT_FOUND",
-						fmt.Sprintf("import file not found: %s", filePath), err)
-				}
-				if err != nil {
-					return fmt.Errorf("failed to open import file: %w", err)
-				}
-				defer f.Close() //nolint:errcheck
-
-				// Dual-Safety Check (FR24): abort if Dolt has uncommitted changes.
-				if doltHasUncommittedChanges(*d.Store) {
-					return gravaerrors.New("IMPORT_CONFLICT",
-						"Dolt has uncommitted changes; commit or reset them before importing", nil)
-				}
-
-				result, err := importFlatJSONL(ctx, *d.Store, f, true)
-				if err != nil {
-					return err
-				}
-
-				if *d.OutputJSON {
-					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]int{
-						"imported": result.Imported,
-						"updated":  result.Updated,
-						"skipped":  result.Skipped,
-					})
-				}
-				cmd.Printf("Imported %d, updated %d, skipped %d\n",
-					result.Imported, result.Updated, result.Skipped)
-				return nil
+			f, err := os.Open(filePath) //nolint:gosec
+			if os.IsNotExist(err) {
+				return gravaerrors.New("FILE_NOT_FOUND",
+					fmt.Sprintf("import file not found: %s", filePath), err)
 			}
-
-			// --- Legacy path: --file flag (ExportItem wrapped format) ---
-			if importFile == "" {
-				return fmt.Errorf("provide a file as positional argument or use --file for the legacy format")
-			}
-
-			if importOverwrite && importSkipExisting {
-				return fmt.Errorf("cannot use both --overwrite and --skip-existing")
-			}
-
-			f, err := os.Open(importFile) //nolint:gosec
 			if err != nil {
 				return fmt.Errorf("failed to open import file: %w", err)
 			}
 			defer f.Close() //nolint:errcheck
 
-			result, err := importIssues(ctx, *d.Store, f, importOverwrite, importSkipExisting)
+			// Dual-Safety Check (FR24): abort if Dolt has uncommitted changes.
+			if doltHasUncommittedChanges(*d.Store) {
+				return gravaerrors.New("IMPORT_CONFLICT",
+					"Dolt has uncommitted changes; commit or reset them before importing", nil)
+			}
+
+			result, err := importFlatJSONL(ctx, *d.Store, f, true)
 			if err != nil {
 				return err
 			}
 
-			cmd.Printf("Imported %d items (Updated: %d, Skipped: %d)\n",
+			// Auto-export: re-write issues.jsonl so on-disk file matches
+			// the canonical flat format validated by pre-commit.
+			exportPath := resolveDefaultExportPath()
+			ef, err := os.Create(exportPath)
+			if err != nil {
+				return fmt.Errorf("auto-export failed to create %s: %w", exportPath, err)
+			}
+			defer ef.Close() //nolint:errcheck
+			if _, err := exportFlatJSONL(ctx, *d.Store, ef, false); err != nil {
+				_ = ef.Close()
+				_ = os.Remove(exportPath)
+				return fmt.Errorf("auto-export failed: %w", err)
+			}
+
+			if *d.OutputJSON {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]int{
+					"imported": result.Imported,
+					"updated":  result.Updated,
+					"skipped":  result.Skipped,
+				})
+			}
+			cmd.Printf("Imported %d, updated %d, skipped %d\n",
 				result.Imported, result.Updated, result.Skipped)
+			cmd.Printf("✅ Auto-exported issues.jsonl to %s\n", exportPath)
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVarP(&importFile, "file", "f", "", "Input file in legacy ExportItem format")
-	cmd.Flags().BoolVar(&importOverwrite, "overwrite", false, "Overwrite existing IDs (upsert) [legacy --file only]")
-	cmd.Flags().BoolVar(&importSkipExisting, "skip-existing", false, "Skip existing IDs [legacy --file only]")
 	return cmd
 }
