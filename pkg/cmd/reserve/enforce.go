@@ -20,9 +20,11 @@ type Conflict struct {
 }
 
 // CheckStagedConflicts checks whether any of the given staged file paths
-// overlap with active exclusive leases held by a different agent.
-// Returns a slice of conflicts (empty if none). Only active, exclusive,
-// non-expired, non-released leases from OTHER agents are considered.
+// overlap with active exclusive leases held by a different agent. It is used
+// by the pre-commit hook to warn or block commits that touch reserved files.
+// Returns a slice of conflicts (empty slice if none). Only active, exclusive,
+// non-expired, non-released leases from other agents are considered.
+// When actor is empty, all exclusive leases are checked regardless of owner.
 func CheckStagedConflicts(ctx context.Context, store dolt.Store, stagedPaths []string, actor string) ([]Conflict, error) {
 	if len(stagedPaths) == 0 {
 		return nil, nil

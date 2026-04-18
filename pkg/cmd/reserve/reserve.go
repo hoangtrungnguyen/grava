@@ -66,9 +66,14 @@ type DeclareResult struct {
 	Reservation Reservation `json:"reservation"`
 }
 
-// DeclareReservation creates a new file lease in the DB.
+// DeclareReservation creates a new advisory file-path lease in the database.
+// It validates the request, checks for conflicting exclusive leases from other
+// agents using glob-based overlap detection, and inserts the row inside a
+// transaction to prevent TOCTOU races. Missing fields in p are filled with
+// defaults (AgentID="unknown", ProjectID="default", TTLMinutes=30).
 // Returns FILE_RESERVATION_CONFLICT if an active exclusive lease from a
-// different agent already covers the same path_pattern.
+// different agent already covers the same path_pattern, or MISSING_REQUIRED_FIELD
+// if PathPattern is empty.
 func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) (DeclareResult, error) {
 	if p.PathPattern == "" {
 		return DeclareResult{}, gravaerrors.New("MISSING_REQUIRED_FIELD", "path pattern is required", nil)
@@ -169,7 +174,10 @@ func patternsOverlap(a, b string) bool {
 	return a == b
 }
 
-// ListReservations returns all active (non-expired, non-released) reservations.
+// ListReservations returns all active (non-expired, non-released) reservations
+// for the given project. It queries the file_reservations table, filtering out
+// rows that have been released or whose TTL has expired, and orders results
+// by creation time ascending. If projectID is empty, the default project is used.
 func ListReservations(ctx context.Context, store dolt.Store, projectID string) ([]Reservation, error) {
 	if projectID == "" {
 		projectID = defaultProjectID
@@ -201,8 +209,11 @@ func ListReservations(ctx context.Context, store dolt.Store, projectID string) (
 	return result, rows.Err()
 }
 
-// ReleaseReservation sets released_ts on the given reservation row.
-// Returns RESERVATION_NOT_FOUND if the reservation ID does not exist or is already released.
+// ReleaseReservation marks a lease as released by setting released_ts to the
+// current server time. Once released, the reservation no longer blocks other
+// agents from acquiring exclusive leases on the same path pattern.
+// Returns RESERVATION_NOT_FOUND if the reservation ID does not exist or is
+// already released.
 func ReleaseReservation(ctx context.Context, store dolt.Store, reservationID string) error {
 	const q = `UPDATE file_reservations
 		SET released_ts = NOW()
