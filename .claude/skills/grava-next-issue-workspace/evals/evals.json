@@ -1,0 +1,23 @@
+{
+  "skill_name": "grava-next-issue",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "next issue",
+      "expected_output": "Should discover grava-66ba (highest priority, oldest), claim it, and begin implementation following TDD workflow. Should show candidates before selecting.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "work through the backlog",
+      "expected_output": "Should discover ready issues, claim the top one, implement it, then loop back and grab the next. Should continue until backlog is empty or a stop condition is hit.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "what should I work on next",
+      "expected_output": "Should discover ready issues and present them. Should auto-select #1 and proceed to claim + implement. Indirect phrasing should still trigger the full workflow.",
+      "files": []
+    }
+  ]
+}
