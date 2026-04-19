@@ -33,6 +33,7 @@ var StdinReader io.Reader = os.Stdin
 
 var (
 	showTree          bool
+	showVerbose       bool
 	commentLastCommit string
 )
 
@@ -75,6 +76,33 @@ type CommentEntry struct {
 	Actor      string    `json:"actor"`
 	AgentModel string    `json:"agent_model,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+// relativeTime formats a time.Time as a human-readable relative string (e.g. "2 hours ago").
+func relativeTime(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		m := int(d.Minutes())
+		if m == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", m)
+	case d < 24*time.Hour:
+		h := int(d.Hours())
+		if h == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", h)
+	default:
+		days := int(d.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	}
 }
 
 // SortColumnMap maps CLI field names to SQL column names.
@@ -303,8 +331,13 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 				status = "🗑️  DELETED (tombstone)"
 			}
 			cmd.Printf("Status:      %s\n", status)
-			cmd.Printf("Created:     %s by %s\n", createdAt.Format(time.RFC3339), createdBy)
-			cmd.Printf("Updated:     %s by %s\n", updatedAt.Format(time.RFC3339), updatedBy)
+			if showVerbose {
+				cmd.Printf("Created:     %s (%s) by %s\n", createdAt.Format(time.RFC3339), relativeTime(createdAt), createdBy)
+				cmd.Printf("Updated:     %s (%s) by %s\n", updatedAt.Format(time.RFC3339), relativeTime(updatedAt), updatedBy)
+			} else {
+				cmd.Printf("Created:     %s by %s\n", createdAt.Format(time.RFC3339), createdBy)
+				cmd.Printf("Updated:     %s by %s\n", updatedAt.Format(time.RFC3339), updatedBy)
+			}
 			if assignee != "" {
 				cmd.Printf("Assignee:    %s\n", assignee)
 			}
@@ -323,6 +356,9 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 			if len(labels) > 0 {
 				cmd.Printf("Labels:      %v\n", labels)
 			}
+			if showVerbose {
+				cmd.Printf("Summary:     %d comment(s), %d label(s)\n", len(comments), len(labels))
+			}
 			if len(comments) > 0 {
 				cmd.Printf("\nComments:\n")
 				for _, c := range comments {
@@ -336,6 +372,7 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&showTree, "tree", false, "Show hierarchical tree visualization")
+	cmd.Flags().BoolVarP(&showVerbose, "verbose", "v", false, "Show additional metadata (relative timestamps, comment/label counts)")
 	return cmd
 }
 
