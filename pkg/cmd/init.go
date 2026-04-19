@@ -33,7 +33,12 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			return fmt.Errorf("failed to get working directory: %w", err)
 		}
 
-		// 0a. Pre-flight: verify Git version >= 2.17 (required for worktree remove)
+		// 0a. Pre-flight: verify Claude CLI is installed (grava is for Claude only)
+		if err := utils.CheckClaudeInstalled(); err != nil {
+			return fmt.Errorf("pre-flight check failed: %w", err)
+		}
+
+		// 0b. Pre-flight: verify Git version >= 2.17 (required for worktree remove)
 		if err := utils.CheckGitVersion(); err != nil {
 			return fmt.Errorf("pre-flight check failed: %w", err)
 		}
@@ -279,11 +284,11 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			}
 		}
 
-		// 12. Update .claude/settings.json with worktree block (AC#3)
+		// 12. Update .claude/settings.json with worktree and plugin settings
 		if added, csErr := utils.EnsureClaudeWorktreeSettings(cwd); csErr != nil {
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not update .claude/settings.json: %v\n", csErr)
 		} else if added && !outputJSON {
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Updated .claude/settings.json with worktree configuration")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Updated .claude/settings.json with worktree and plugin settings")
 		}
 
 		if outputJSON {

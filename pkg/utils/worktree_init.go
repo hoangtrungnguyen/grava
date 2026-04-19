@@ -68,9 +68,9 @@ func SetWorktreeGitConfig(repoRoot string) error {
 }
 
 // EnsureClaudeWorktreeSettings updates .claude/settings.json to include the
-// worktree configuration block with symlinkDirectories and sparsePaths.
+// worktree configuration block and enabledPlugins for grava's skill ecosystem.
 // Creates the file and directory if they don't exist.
-// If the file already has a worktree block, it is left unchanged (idempotent).
+// Idempotent: each block is only added if not already present.
 func EnsureClaudeWorktreeSettings(repoRoot string) (bool, error) {
 	claudeDir := filepath.Join(repoRoot, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
@@ -93,15 +93,27 @@ func EnsureClaudeWorktreeSettings(repoRoot string) (bool, error) {
 		}
 	}
 
-	// Check if worktree block already exists
-	if _, exists := settings["worktree"]; exists {
-		return false, nil
+	changed := false
+
+	// Ensure enabledPlugins block exists with skill-creator
+	if _, exists := settings["enabledPlugins"]; !exists {
+		settings["enabledPlugins"] = map[string]interface{}{
+			"skill-creator@claude-plugins-official": true,
+		}
+		changed = true
 	}
 
-	// Add worktree block
-	settings["worktree"] = map[string]interface{}{
-		"symlinkDirectories": []string{"node_modules", ".cache"},
-		"sparsePaths":        []string{},
+	// Ensure worktree block exists
+	if _, exists := settings["worktree"]; !exists {
+		settings["worktree"] = map[string]interface{}{
+			"symlinkDirectories": []string{"node_modules", ".cache"},
+			"sparsePaths":        []string{},
+		}
+		changed = true
+	}
+
+	if !changed {
+		return false, nil
 	}
 
 	// Marshal with indentation

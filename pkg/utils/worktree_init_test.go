@@ -118,6 +118,11 @@ func TestEnsureClaudeWorktreeSettings_CreatesNew(t *testing.T) {
 	wtMap := wt.(map[string]interface{})
 	assert.NotNil(t, wtMap["symlinkDirectories"])
 	assert.NotNil(t, wtMap["sparsePaths"])
+
+	ep, ok := settings["enabledPlugins"]
+	require.True(t, ok, "enabledPlugins key must exist")
+	epMap := ep.(map[string]interface{})
+	assert.Equal(t, true, epMap["skill-creator@claude-plugins-official"])
 }
 
 func TestEnsureClaudeWorktreeSettings_MergesExisting(t *testing.T) {
@@ -141,6 +146,8 @@ func TestEnsureClaudeWorktreeSettings_MergesExisting(t *testing.T) {
 	assert.NotNil(t, settings["allowedTools"])
 	// Worktree block added
 	assert.NotNil(t, settings["worktree"])
+	// enabledPlugins added
+	assert.NotNil(t, settings["enabledPlugins"])
 }
 
 func TestEnsureClaudeWorktreeSettings_NullJSON(t *testing.T) {
@@ -163,12 +170,12 @@ func TestEnsureClaudeWorktreeSettings_Idempotent(t *testing.T) {
 	dir := t.TempDir()
 	claudeDir := filepath.Join(dir, ".claude")
 	require.NoError(t, os.MkdirAll(claudeDir, 0755))
-	existing := `{"worktree":{"symlinkDirectories":["custom"],"sparsePaths":[]}}`
+	existing := `{"enabledPlugins":{"skill-creator@claude-plugins-official":true},"worktree":{"symlinkDirectories":["custom"],"sparsePaths":[]}}`
 	require.NoError(t, os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(existing), 0644))
 
 	added, err := EnsureClaudeWorktreeSettings(dir)
 	require.NoError(t, err)
-	assert.False(t, added, "should not modify existing worktree block")
+	assert.False(t, added, "should not modify when both blocks exist")
 
 	// Content should remain unchanged
 	data, _ := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
