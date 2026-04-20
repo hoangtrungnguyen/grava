@@ -33,6 +33,7 @@ jobs:
       - name: Run Sandbox Scenarios
         env:
           DB_URL: "root@tcp(127.0.0.1:3306)/test_grava?parseTime=true"
+          GRAVA_SKIP_CLAUDE_CHECK: "1"
         run: |
           chmod +x ./sandbox/scripts/run-scenarios.sh
           ./sandbox/scripts/run-scenarios.sh --verbose

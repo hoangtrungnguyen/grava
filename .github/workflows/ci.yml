@@ -36,4 +36,5 @@ jobs:
       - name: Run Unit Tests
         env:
           DB_URL: "root@tcp(127.0.0.1:3306)/test_grava?parseTime=true"
+          GRAVA_SKIP_CLAUDE_CHECK: "1"
         run: go test -v -race ./...
