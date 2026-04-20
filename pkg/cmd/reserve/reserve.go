@@ -84,13 +84,22 @@ func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) 
 	if p.ProjectID == "" {
 		p.ProjectID = defaultProjectID
 	}
-	if p.TTLMinutes < 1 {
-		p.TTLMinutes = defaultTTLMinutes
+	if p.TTLMinutes <= 0 {
+		return DeclareResult{}, gravaerrors.New("INVALID_TTL",
+			fmt.Sprintf("TTL must be at least 1 minute (got %d)", p.TTLMinutes), nil)
 	}
 
-	// Check for conflicting exclusive lease from a different agent.
-	// Always check — both exclusive AND shared requests must respect existing exclusive leases.
-	conflict, conflictAgent, conflictExpires, err := findConflict(ctx, store, p.ProjectID, p.PathPattern, p.AgentID)
+	id := generateReservationID()
+
+	// Wrap conflict check + insert in a single transaction to prevent TOCTOU race.
+	tx, txErr := store.BeginTx(ctx, nil)
+	if txErr != nil {
+		return DeclareResult{}, fmt.Errorf("reserve: begin tx: %w", txErr)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Check for conflicting exclusive lease from a different agent inside the tx.
+	conflict, conflictAgent, conflictExpires, err := findConflictTx(ctx, tx, p.ProjectID, p.PathPattern, p.AgentID)
 	if err != nil {
 		return DeclareResult{}, fmt.Errorf("reserve: check conflict: %w", err)
 	}
@@ -100,16 +109,7 @@ func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) 
 		return DeclareResult{}, gravaerrors.New("FILE_RESERVATION_CONFLICT", msg, nil)
 	}
 
-	id := generateReservationID()
-
 	// Use SQL NOW() + INTERVAL for timestamps to stay consistent with Dolt's clock.
-	// Wrap check+insert in a transaction to prevent TOCTOU race.
-	tx, txErr := store.BeginTx(ctx, nil)
-	if txErr != nil {
-		return DeclareResult{}, fmt.Errorf("reserve: begin tx: %w", txErr)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
 	const q = "INSERT INTO file_reservations" +
 		" (id, project_id, agent_id, path_pattern, `exclusive`, reason, created_ts, expires_ts)" +
 		" VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW() + INTERVAL ? MINUTE)"
@@ -130,10 +130,11 @@ func DeclareReservation(ctx context.Context, store dolt.Store, p DeclareParams) 
 	return DeclareResult{Reservation: *inserted}, nil
 }
 
-// findConflict checks whether an active exclusive lease from a different agent
+// findConflictTx checks whether an active exclusive lease from a different agent
 // overlaps with the requested path_pattern using glob matching.
+// Runs inside an existing transaction for TOCTOU safety.
 // Returns (true, conflictAgent, expiresTS) if an overlapping lease is found.
-func findConflict(ctx context.Context, store dolt.Store, projectID, pathPattern, requestingAgent string) (bool, string, time.Time, error) {
+func findConflictTx(ctx context.Context, tx *sql.Tx, projectID, pathPattern, requestingAgent string) (bool, string, time.Time, error) {
 	// Fetch ALL active exclusive leases from other agents, then match with globs.
 	// Exact SQL match is insufficient — patterns like src/**/*.go and src/cmd/*.go overlap.
 	const q = "SELECT agent_id, path_pattern, expires_ts FROM file_reservations" +
@@ -142,7 +143,7 @@ func findConflict(ctx context.Context, store dolt.Store, projectID, pathPattern,
 		" AND agent_id != ?" +
 		" AND released_ts IS NULL" +
 		" AND expires_ts > NOW()"
-	rows, err := store.QueryContext(ctx, q, projectID, requestingAgent)
+	rows, err := tx.QueryContext(ctx, q, projectID, requestingAgent)
 	if err != nil {
 		return false, "", time.Time{}, fmt.Errorf("findConflict query: %w", err)
 	}

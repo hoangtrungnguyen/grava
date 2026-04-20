@@ -28,14 +28,24 @@ func mockStoreForSubtask(db *sql.DB, seq int, parentExists bool) *testutil.MockS
 		_, err := tx.ExecContext(ctx, "INSERT INTO events VALUES ()")
 		return err
 	}
-	// Wire QueryRowFn for the pre-GenerateChildID parent existence check (H1 fix).
+	// Wire QueryRowFn for both:
+	//  1. The parent existence COUNT(*) check (subtaskIssue → store.QueryRow)
+	//  2. The guardNotArchived SELECT status check (called after count passes)
+	// Distinguish by query: COUNT query vs status query.
 	store.QueryRowFn = func(query string, args ...any) *sql.Row {
-		count := 0
-		if parentExists {
-			count = 1
-		}
 		mockDB, mock, _ := sqlmock.New()
-		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(count))
+		if len(query) > 6 && query[7:12] == "COUNT" {
+			// Parent existence check
+			count := 0
+			if parentExists {
+				count = 1
+			}
+			mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(count))
+		} else {
+			// guardNotArchived: SELECT status FROM issues WHERE id = ?
+			// Only reached when parentExists is true (otherwise subtask returns ISSUE_NOT_FOUND first)
+			mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
+		}
 		return mockDB.QueryRow("SELECT", args...)
 	}
 	return store

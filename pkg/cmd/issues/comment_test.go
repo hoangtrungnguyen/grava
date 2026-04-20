@@ -15,6 +15,11 @@ import (
 
 func mockStoreForComment(db *sql.DB) *testutil.MockStore {
 	store := testutil.NewMockStore()
+	// guardNotArchived calls store.QueryRow before WithAuditedTx opens the tx.
+	// Route it through the same sqlmock db so the expectation can be declared.
+	store.QueryRowFn = func(query string, args ...any) *sql.Row {
+		return dolt.NewClientFromDB(db).QueryRow(query, args...)
+	}
 	store.BeginTxFn = func(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 		return dolt.NewClientFromDB(db).BeginTx(ctx, nil)
 	}
@@ -30,6 +35,10 @@ func TestCommentIssue_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT status FROM issues WHERE id = ?")).
+		WithArgs("grava-abc").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	// Pre-read: issue exists
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ?")).
@@ -64,10 +73,10 @@ func TestCommentIssue_IssueNotFound(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
-	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ?")).
+	// guardNotArchived returns ISSUE_NOT_FOUND before WithAuditedTx is entered
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT status FROM issues WHERE id = ?")).
 		WithArgs("grava-missing").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+		WillReturnRows(sqlmock.NewRows([]string{"status"})) // empty → sql.ErrNoRows
 
 	store := mockStoreForComment(db)
 	_, err = commentIssue(context.Background(), store, CommentParams{
@@ -77,6 +86,7 @@ func TestCommentIssue_IssueNotFound(t *testing.T) {
 		Model:   "test-model",
 	})
 	testutil.AssertGravaError(t, err, "ISSUE_NOT_FOUND")
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestCommentIssue_EmptyMessage(t *testing.T) {

@@ -563,9 +563,11 @@ func ValidateJSONL(r io.Reader) error {
 
 
 // doltHasUncommittedChanges returns true when dolt_status reports any
-// staged or unstaged rows. Errors are treated as "no changes" (fail-open).
+// staged or unstaged rows in issue-related tables. The cmd_audit_log table
+// is excluded because every grava command (including "grava commit" itself)
+// appends to it in PersistentPostRunE, leaving it perpetually dirty.
 func doltHasUncommittedChanges(store dolt.Store) bool {
-	rows, err := store.Query("SELECT COUNT(*) FROM dolt_status")
+	rows, err := store.Query("SELECT COUNT(*) FROM dolt_status WHERE table_name != 'cmd_audit_log'")
 	if err != nil {
 		return false
 	}

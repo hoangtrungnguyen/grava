@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	qVisualizeLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status")
+	qVisualizeLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, updated_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status")
 	qVisualizeLoadDeps   = regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")
 )
 
@@ -36,8 +36,8 @@ func TestGraphVisualizeCmd_DefaultFormatASCII(t *testing.T) {
 	// Load two tasks with a dependency
 	mock.ExpectQuery(qVisualizeLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "First Task", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-2", "Second Task", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "First Task", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-2", "Second Task", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qVisualizeLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).
 			AddRow("task-1", "task-2", "blocks", []byte("{}")))
@@ -72,7 +72,7 @@ func TestGraphVisualizeCmd_FormatDOT(t *testing.T) {
 
 	mock.ExpectQuery(qVisualizeLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "Task A", "task", "open", 1, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "Task A", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qVisualizeLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()))
 
@@ -106,8 +106,8 @@ func TestGraphVisualizeCmd_FormatJSON(t *testing.T) {
 
 	mock.ExpectQuery(qVisualizeLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "Task One", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-2", "Task Two", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "Task One", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-2", "Task Two", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qVisualizeLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).
 			AddRow("task-1", "task-2", "blocks", []byte("{}")))
@@ -147,10 +147,10 @@ func TestGraphVisualizeCmd_RootFlag(t *testing.T) {
 	// Create chain: task-1 -> task-2 -> task-3, plus unrelated task-4
 	mock.ExpectQuery(qVisualizeLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "Root", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-2", "Child", "task", "open", 2, time.Now(), nil, nil, 0, nil).
-			AddRow("task-3", "Grandchild", "task", "open", 3, time.Now(), nil, nil, 0, nil).
-			AddRow("task-4", "Unrelated", "task", "open", 4, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "Root", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-2", "Child", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-3", "Grandchild", "task", "open", 3, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-4", "Unrelated", "task", "open", 4, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qVisualizeLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).
 			AddRow("task-1", "task-2", "blocks", []byte("{}")).
@@ -214,7 +214,7 @@ func TestGraphVisualizeCmd_IncludesIsolatedNodes(t *testing.T) {
 	// Create one task with no dependencies
 	mock.ExpectQuery(qVisualizeLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "Isolated Task", "task", "open", 1, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "Isolated Task", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qVisualizeLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()))
 
@@ -247,8 +247,8 @@ func TestGraphVisualizeCmd_ExcludesArchivedNodes(t *testing.T) {
 	// Create one active and one archived task
 	mock.ExpectQuery(qVisualizeLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "Active", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-2", "Archived", "task", "archived", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "Active", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-2", "Archived", "task", "archived", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qVisualizeLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()))
 

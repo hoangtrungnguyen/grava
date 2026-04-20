@@ -18,7 +18,7 @@ import (
 
 // Query patterns for blocked command tests.
 var (
-	qBlockedLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues")
+	qBlockedLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, updated_at, await_type, await_id, ephemeral, metadata FROM issues")
 	qBlockedLoadDeps   = regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")
 )
 
@@ -34,7 +34,7 @@ type BlockedInfo struct {
 
 // issueCols returns the column names for issues table mock.
 func issueCols() []string {
-	return []string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}
+	return []string{"id", "title", "issue_type", "status", "priority", "created_at", "updated_at", "await_type", "await_id", "ephemeral", "metadata"}
 }
 
 // depCols returns the column names for dependencies table mock.
@@ -58,8 +58,8 @@ func TestBlockedCmd_ShowsBlockedTasks(t *testing.T) {
 	// Load issues
 	mock.ExpectQuery(qBlockedLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-A", "Open Task", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-B", "Blocked by A", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("task-A", "Open Task", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-B", "Blocked by A", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 
 	// Load dependencies - task-A blocks task-B
 	mock.ExpectQuery(qBlockedLoadDeps).
@@ -94,8 +94,8 @@ func TestBlockedCmd_JSONOutput(t *testing.T) {
 
 	mock.ExpectQuery(qBlockedLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-A", "Blocker", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-B", "Blocked", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("task-A", "Blocker", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-B", "Blocked", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qBlockedLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).
 			AddRow("task-A", "task-B", "blocks", []byte("{}")))
@@ -133,9 +133,9 @@ func TestBlockedCmd_MultipleBlockedTasks(t *testing.T) {
 
 	mock.ExpectQuery(qBlockedLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-A", "Blocker", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-B", "Blocked 1", "task", "open", 2, time.Now(), nil, nil, 0, nil).
-			AddRow("task-C", "Blocked 2", "task", "open", 3, time.Now(), nil, nil, 0, nil))
+			AddRow("task-A", "Blocker", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-B", "Blocked 1", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-C", "Blocked 2", "task", "open", 3, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qBlockedLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).
 			AddRow("task-A", "task-B", "blocks", []byte("{}")).
@@ -177,7 +177,7 @@ func TestBlockedCmd_NoBlockers(t *testing.T) {
 
 	mock.ExpectQuery(qBlockedLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-A", "Unblocked", "task", "open", 1, time.Now(), nil, nil, 0, nil))
+			AddRow("task-A", "Unblocked", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qBlockedLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()))
 
@@ -208,8 +208,8 @@ func TestBlockedCmd_ShowsEphemeralTasks(t *testing.T) {
 
 	mock.ExpectQuery(qBlockedLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-A", "Blocker", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-B", "Ephemeral Blocked", "task", "open", 2, time.Now(), nil, nil, 1, nil))
+			AddRow("task-A", "Blocker", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-B", "Ephemeral Blocked", "task", "open", 2, time.Now(), time.Now(), nil, nil, 1, nil))
 	mock.ExpectQuery(qBlockedLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).
 			AddRow("task-A", "task-B", "blocks", []byte("{}")))

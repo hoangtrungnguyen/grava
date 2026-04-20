@@ -607,7 +607,7 @@ func TestIsWorktreeDirty(t *testing.T) {
 		t.Error("expected clean worktree, got dirty")
 	}
 
-	// Create untracked file — should be dirty
+	// Create untracked file — should NOT be dirty (untracked files are ignored)
 	if err := os.WriteFile(filepath.Join(wtDir, "new.txt"), []byte("y"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -615,8 +615,20 @@ func TestIsWorktreeDirty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IsWorktreeDirty (untracked): %v", err)
 	}
+	if dirty {
+		t.Error("expected clean worktree (untracked files should be ignored)")
+	}
+
+	// Modify tracked file — should be dirty
+	if err := os.WriteFile(filepath.Join(wtDir, "f.txt"), []byte("modified"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	dirty, err = IsWorktreeDirty(tmpdir, issueID)
+	if err != nil {
+		t.Fatalf("IsWorktreeDirty (modified): %v", err)
+	}
 	if !dirty {
-		t.Error("expected dirty worktree (untracked file)")
+		t.Error("expected dirty worktree (modified tracked file)")
 	}
 }
 

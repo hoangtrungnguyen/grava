@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	qDepLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")
+	qDepLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, updated_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")
 	qDepLoadDeps   = regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")
 	qDepLockIssues = regexp.QuoteMeta("SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE")
 	qDepInsert     = regexp.QuoteMeta("INSERT INTO dependencies")
@@ -79,8 +79,8 @@ func TestAddDependency_HappyPath(t *testing.T) {
 	// LoadGraphFromDB (blocking type)
 	mock.ExpectQuery(qDepLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("ISSUE-1", "Task 1", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("ISSUE-2", "Task 2", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("ISSUE-1", "Task 1", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("ISSUE-2", "Task 2", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qDepLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()))
 
@@ -114,8 +114,8 @@ func TestAddDependency_HappyPath_JSON(t *testing.T) {
 
 	mock.ExpectQuery(qDepLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("ISSUE-1", "Task 1", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("ISSUE-2", "Task 2", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("ISSUE-1", "Task 1", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("ISSUE-2", "Task 2", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qDepLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()))
 	mock.ExpectBegin()
@@ -154,7 +154,7 @@ func TestAddDependency_NodeNotFound(t *testing.T) {
 	// LoadGraphFromDB — only ISSUE-1 exists
 	mock.ExpectQuery(qDepLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("ISSUE-1", "Task 1", "task", "open", 1, time.Now(), nil, nil, 0, nil))
+			AddRow("ISSUE-1", "Task 1", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qDepLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()))
 
@@ -184,8 +184,8 @@ func TestAddDependency_CircularDependency(t *testing.T) {
 	// LoadGraphFromDB — both issues exist, ISSUE-2 already blocks ISSUE-1
 	mock.ExpectQuery(qDepLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("ISSUE-1", "Task 1", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("ISSUE-2", "Task 2", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("ISSUE-1", "Task 1", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("ISSUE-2", "Task 2", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qDepLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).
 			AddRow("ISSUE-2", "ISSUE-1", "blocks", nil)) // existing: 2→1

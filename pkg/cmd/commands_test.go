@@ -283,9 +283,9 @@ func TestUpdateCmd(t *testing.T) {
 			AddRow("Old Title", "desc", "task", 2, "open", ""))
 
 	// Phase 1: graph load for status propagation
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
-			AddRow("grava-1", "Old Title", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, updated_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "updated_at", "await_type", "await_id", "ephemeral", "metadata"}).
+			AddRow("grava-1", "Old Title", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
 		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}))
 
@@ -553,6 +553,10 @@ func TestCommentCmd_Message(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	// Pre-read: issue exists
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
@@ -581,6 +585,10 @@ func TestCommentCmd_Positional(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
 		WithArgs("grava-123").
@@ -606,10 +614,10 @@ func TestCommentCmd_IssueNotFound(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
+	// guardNotArchived returns ISSUE_NOT_FOUND before WithAuditedTx is entered
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
 		WithArgs("grava-999").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+		WillReturnRows(sqlmock.NewRows([]string{"status"})) // empty → sql.ErrNoRows
 
 	_, err = executeCommand(rootCmd, "comment", "grava-999", "--message", "text")
 	assert.Error(t, err)
@@ -623,6 +631,10 @@ func TestCommentCmd_JSON(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
 		WithArgs("grava-123").
@@ -651,10 +663,10 @@ func TestDepCmd(t *testing.T) {
 	Store = dolt.NewClientFromDB(db)
 
 	// Graph load for validation (happens first, only for blocking types like "blocks")
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata"}).
-			AddRow("grava-abc", "T1", "task", "open", 2, time.Now(), nil, nil, 0, nil).
-			AddRow("grava-def", "T2", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, updated_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "status", "priority", "created_at", "updated_at", "await_type", "await_id", "ephemeral", "metadata"}).
+			AddRow("grava-abc", "T1", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("grava-def", "T2", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")).
 		WillReturnRows(sqlmock.NewRows([]string{"from_id", "to_id", "type", "metadata"}))
 
@@ -729,6 +741,10 @@ func TestLabelCmd_Add(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	// Pre-read: issue exists
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
@@ -766,6 +782,10 @@ func TestLabelCmd_Remove(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
 		WithArgs("grava-123").
@@ -794,10 +814,10 @@ func TestLabelCmd_IssueNotFound(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
+	// guardNotArchived returns ISSUE_NOT_FOUND before WithAuditedTx is entered
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
 		WithArgs("grava-missing").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+		WillReturnRows(sqlmock.NewRows([]string{"status"})) // empty → sql.ErrNoRows
 
 	_, err = executeCommand(rootCmd, "label", "grava-missing", "--add", "bug")
 	assert.Error(t, err)
@@ -811,6 +831,10 @@ func TestLabelCmd_JSON(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM issues WHERE id = ?`)).
 		WithArgs("grava-123").
@@ -859,6 +883,10 @@ func TestAssignCmdUnassign(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// guardNotArchived runs before the assignee pre-read
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	// Pre-read current assignee
 	mock.ExpectQuery(`SELECT COALESCE\(assignee`).
 		WithArgs("grava-123").
@@ -887,6 +915,10 @@ func TestAssignCmd(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
+	// guardNotArchived runs before the assignee pre-read
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
+		WithArgs("grava-123").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	// Pre-read current assignee before WithAuditedTx
 	mock.ExpectQuery(`SELECT COALESCE\(assignee`).
 		WithArgs("grava-123").
@@ -915,10 +947,10 @@ func TestAssignCmdNotFound(t *testing.T) {
 	assert.NoError(t, err)
 	Store = dolt.NewClientFromDB(db)
 
-	// Pre-read returns ErrNoRows → ISSUE_NOT_FOUND
-	mock.ExpectQuery(`SELECT COALESCE\(assignee`).
+	// guardNotArchived returns ISSUE_NOT_FOUND before the assignee pre-read
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT status FROM issues WHERE id = ?`)).
 		WithArgs("grava-999").
-		WillReturnRows(sqlmock.NewRows([]string{}))
+		WillReturnRows(sqlmock.NewRows([]string{"status"})) // empty → sql.ErrNoRows
 
 	// No ExpectClose: RunE returns error so PersistentPostRunE is skipped
 	_, err = executeCommand(rootCmd, "assign", "grava-999", "--actor", "alice")

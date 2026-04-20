@@ -39,6 +39,10 @@ func assignIssue(ctx context.Context, store dolt.Store, params AssignParams) (As
 		newAssignee = ""
 	}
 
+	if err := guardNotArchived(store, params.ID); err != nil {
+		return AssignResult{}, err
+	}
+
 	// Pre-read current assignee for old value in audit event.
 	var currentAssignee string
 	row := store.QueryRow(

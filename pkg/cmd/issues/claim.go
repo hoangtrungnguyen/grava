@@ -93,10 +93,14 @@ func tryClaimIssue(ctx context.Context, store dolt.Store, issueID, actor, model 
 			}
 		}
 
-		if (currentStatus == "in_progress" && !isStale) || (currentAssignee.Valid && currentAssignee.String != "" && !isStale) {
+		if currentStatus == "in_progress" && !isStale {
+			claimedBy := currentAssignee.String
+			if claimedBy == "" {
+				claimedBy = "unknown"
+			}
 			return gravaerrors.New("ALREADY_CLAIMED",
-				fmt.Sprintf("Issue %s is already claimed by %s (last heartbeat: %v)",
-					issueID, currentAssignee.String, heartbeat.Time.Format(time.RFC3339)), nil)
+				fmt.Sprintf("Issue %s is already in progress (claimed by %s, last heartbeat: %v)",
+					issueID, claimedBy, heartbeat.Time.Format(time.RFC3339)), nil)
 		}
 		if currentStatus != "open" && !isStale {
 			return gravaerrors.New("INVALID_STATUS_TRANSITION",

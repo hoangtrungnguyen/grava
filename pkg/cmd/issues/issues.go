@@ -2,7 +2,9 @@
 package issues
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
+	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
 	"github.com/hoangtrungnguyen/grava/pkg/graph"
 	"github.com/spf13/cobra"
 )
@@ -166,7 +169,12 @@ func newShowCmd(d *cmddeps.Deps) *cobra.Command {
 
 			err := (*d.Store).QueryRow(query, id).Scan(&title, &desc, &iType, &priority, &status, &createdAt, &updatedAt, &createdBy, &updatedBy, &agentModelStr, &affectedFilesJSON, &assignee, &metadataJSON)
 			if err != nil {
-				return fmt.Errorf("failed to fetch issue %s: %w", id, err)
+				if errors.Is(err, sql.ErrNoRows) {
+					return gravaerrors.New("ISSUE_NOT_FOUND",
+						fmt.Sprintf("Issue %s not found", id), nil)
+				}
+				return gravaerrors.New("DB_UNREACHABLE",
+					fmt.Sprintf("failed to fetch issue %s", id), err)
 			}
 
 			pStr := "backlog"

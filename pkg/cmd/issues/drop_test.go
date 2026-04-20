@@ -51,12 +51,13 @@ func mockStoreForDropHappyPath(t *testing.T, issueID string, currentStatus strin
 	t.Cleanup(func() { _ = graphDB.Close() })
 
 	createdAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	updatedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	// LoadGraphFromDB: SELECT issues
+	// LoadGraphFromDB: SELECT issues (updated_at added to query in loader.go)
 	graphMock.ExpectQuery("SELECT id, title, issue_type, status, priority, created_at.*FROM issues").
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "title", "issue_type", "status", "priority", "created_at", "await_type", "await_id", "ephemeral", "metadata",
-		}).AddRow(issueID, "Test Issue", "task", currentStatus, 2, createdAt, nil, nil, false, nil))
+			"id", "title", "issue_type", "status", "priority", "created_at", "updated_at", "await_type", "await_id", "ephemeral", "metadata",
+		}).AddRow(issueID, "Test Issue", "task", currentStatus, 2, createdAt, updatedAt, nil, nil, false, nil))
 
 	// LoadGraphFromDB: SELECT dependencies
 	graphMock.ExpectQuery("SELECT from_id, to_id, type, metadata FROM dependencies").

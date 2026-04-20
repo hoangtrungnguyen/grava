@@ -34,12 +34,11 @@ var (
 func TestDeclareReservation_ExclusiveSuccess(t *testing.T) {
 	store, mock := newMock(t)
 
-	// No conflict found (glob-based: returns path_pattern column too).
+	// Transaction: BEGIN, conflict check, INSERT, COMMIT.
+	mock.ExpectBegin()
 	mock.ExpectQuery(qCheckConflict).
 		WithArgs("default", "agent-01").
 		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "path_pattern", "expires_ts"}))
-	// Transaction: BEGIN, INSERT, COMMIT.
-	mock.ExpectBegin()
 	mock.ExpectExec(qInsertReservation).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
@@ -73,10 +72,10 @@ func TestDeclareReservation_NonExclusiveNoConflictCheck(t *testing.T) {
 	store, mock := newMock(t)
 
 	// Non-exclusive: conflict check still runs (shared must respect existing exclusive).
+	mock.ExpectBegin()
 	mock.ExpectQuery(qCheckConflict).
 		WithArgs("default", "agent-02").
 		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "path_pattern", "expires_ts"}))
-	mock.ExpectBegin()
 	mock.ExpectExec(qInsertReservation).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
@@ -107,10 +106,12 @@ func TestDeclareReservation_ExclusiveConflict(t *testing.T) {
 	store, mock := newMock(t)
 
 	expiresAt := time.Now().Add(20 * time.Minute)
+	mock.ExpectBegin()
 	mock.ExpectQuery(qCheckConflict).
 		WithArgs("default", "agent-01").
 		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "path_pattern", "expires_ts"}).
 			AddRow("agent-99", "src/cmd/issues/*.go", expiresAt))
+	mock.ExpectRollback()
 
 	p := DeclareParams{
 		PathPattern: "src/cmd/issues/*.go",
@@ -132,9 +133,11 @@ func TestDeclareReservation_ExclusiveConflict(t *testing.T) {
 func TestDeclareReservation_ConflictCheckDBError(t *testing.T) {
 	store, mock := newMock(t)
 
+	mock.ExpectBegin()
 	mock.ExpectQuery(qCheckConflict).
 		WithArgs("default", "agent-01").
 		WillReturnError(assert.AnError)
+	mock.ExpectRollback()
 
 	p := DeclareParams{
 		PathPattern: "src/cmd/issues/*.go",
@@ -153,12 +156,11 @@ func TestDeclareReservation_ConflictCheckDBError(t *testing.T) {
 func TestDeclareReservation_InsertDBError(t *testing.T) {
 	store, mock := newMock(t)
 
-	// No conflict (glob-based).
+	// Transaction: BEGIN, conflict check (no conflict), INSERT fails.
+	mock.ExpectBegin()
 	mock.ExpectQuery(qCheckConflict).
 		WithArgs("default", "agent-01").
 		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "path_pattern", "expires_ts"}))
-	// Transaction: BEGIN, INSERT fails.
-	mock.ExpectBegin()
 	mock.ExpectExec(qInsertReservation).
 		WillReturnError(assert.AnError)
 

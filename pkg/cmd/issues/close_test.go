@@ -17,6 +17,8 @@ func TestIsInsideClaudeWorktree_Detection(t *testing.T) {
 }
 
 // TestCloseCmd_BlocksDirtyWorktree verifies AC#1 dirty check.
+// IsWorktreeDirty ignores untracked files (??), so dirty state requires a
+// tracked file that has been modified (or staged) without being committed.
 func TestCloseCmd_BlocksDirtyWorktree(t *testing.T) {
 	tmpdir := t.TempDir()
 
@@ -27,15 +29,27 @@ func TestCloseCmd_BlocksDirtyWorktree(t *testing.T) {
 		t.Fatalf("provision: %v", err)
 	}
 
-	// Make it dirty
+	// Make it dirty with a TRACKED modified file (not untracked).
+	// First add and commit the file, then modify it without committing.
 	wtDir := filepath.Join(tmpdir, ".worktree", issueID)
-	if err := os.WriteFile(filepath.Join(wtDir, "dirty.txt"), []byte("x"), 0644); err != nil {
+	trackedFile := filepath.Join(wtDir, "tracked.txt")
+	if err := os.WriteFile(trackedFile, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runTestCmd(wtDir, "git", "add", "tracked.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runTestCmd(wtDir, "git", "commit", "-m", "add tracked file"); err != nil {
+		t.Fatal(err)
+	}
+	// Now modify the tracked file — this produces a "M " or " M" porcelain line
+	if err := os.WriteFile(trackedFile, []byte("modified"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	dirty, err := utils.IsWorktreeDirty(tmpdir, issueID)
 	assert.NoError(t, err)
-	assert.True(t, dirty, "worktree should be dirty")
+	assert.True(t, dirty, "worktree should be dirty due to modified tracked file")
 }
 
 // TestCloseCmd_CleansUpSymlink verifies Claude symlink removal on close.

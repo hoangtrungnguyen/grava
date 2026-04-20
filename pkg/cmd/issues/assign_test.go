@@ -14,16 +14,25 @@ import (
 
 // mockStoreForAssign wires a MockStore so QueryRow returns the current assignee
 // and tx operations run through the given sqlmock db.
+// guardNotArchived calls QueryRow first (SELECT status), then assignIssue calls
+// QueryRow again (SELECT COALESCE(assignee...)). The fn routes by query prefix.
 func mockStoreForAssign(db *sql.DB, exists bool, currentAssignee string) *testutil.MockStore {
 	store := testutil.NewMockStore()
 	store.QueryRowFn = func(query string, args ...any) *sql.Row {
 		mockDB, mock, _ := sqlmock.New()
-		if exists {
+		if !exists {
+			// Issue not found — both guard and assignee read return ErrNoRows
+			mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{}))
+		} else if len(query) > 13 && query[:13] == "SELECT status" {
+			// guardNotArchived query
+			mock.ExpectQuery("SELECT").WillReturnRows(
+				sqlmock.NewRows([]string{"status"}).AddRow("open"),
+			)
+		} else {
+			// assignee pre-read query
 			mock.ExpectQuery("SELECT").WillReturnRows(
 				sqlmock.NewRows([]string{"assignee"}).AddRow(currentAssignee),
 			)
-		} else {
-			mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{})) // ErrNoRows
 		}
 		return mockDB.QueryRow("SELECT", args...)
 	}

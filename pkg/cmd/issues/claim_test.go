@@ -95,8 +95,9 @@ func TestClaimIssue_InvalidTransition(t *testing.T) {
 	assert.Equal(t, "INVALID_STATUS_TRANSITION", gravaErr.Code)
 }
 
-// TestClaimIssue_AlreadyClaimed_OpenWithAssignee covers the data-inconsistency edge case:
-// status is "open" but assignee is already set — should still reject as ALREADY_CLAIMED.
+// TestClaimIssue_AlreadyClaimed_OpenWithAssignee: status is "open" with an existing
+// assignee. Assignees no longer block claims — only in_progress status does.
+// An open issue with an assignee should be successfully claimed.
 func TestClaimIssue_AlreadyClaimed_OpenWithAssignee(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -106,14 +107,20 @@ func TestClaimIssue_AlreadyClaimed_OpenWithAssignee(t *testing.T) {
 	mock.ExpectQuery("SELECT status, assignee, wisp_heartbeat_at FROM issues WHERE id").
 		WithArgs("grava-abc123def456").
 		WillReturnRows(sqlmock.NewRows([]string{"status", "assignee", "wisp_heartbeat_at"}).AddRow("open", "sneaky-actor", nil))
-	mock.ExpectRollback()
+	mock.ExpectExec("UPDATE issues SET").
+		WithArgs("actor1", "model1", "actor1", "grava-abc123def456").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO events").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	store := dolt.NewClientFromDB(db)
-	_, err = claimIssue(context.Background(), store, "grava-abc123def456", "actor1", "model1")
-	require.Error(t, err)
-	var gravaErr *gravaerrors.GravaError
-	require.True(t, errors.As(err, &gravaErr))
-	assert.Equal(t, "ALREADY_CLAIMED", gravaErr.Code)
+	result, err := claimIssue(context.Background(), store, "grava-abc123def456", "actor1", "model1")
+	require.NoError(t, err)
+	assert.Equal(t, "grava-abc123def456", result.IssueID)
+	assert.Equal(t, "in_progress", result.Status)
+	assert.Equal(t, "actor1", result.Actor)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 

@@ -289,7 +289,8 @@ func LinkClaudeWorktree(cwd, issueID string) error {
 }
 
 // IsWorktreeDirty checks if the worktree at .worktree/<issueID> has uncommitted changes.
-// Returns true if there are staged, unstaged, or untracked files.
+// Returns true only if there are staged or unstaged changes to tracked files.
+// Untracked files (e.g. .claude/) are ignored — they are not uncommitted work.
 func IsWorktreeDirty(cwd, issueID string) (bool, error) {
 	worktreeDir := filepath.Join(cwd, ".worktree", issueID)
 	if _, err := os.Stat(worktreeDir); err != nil {
@@ -303,7 +304,13 @@ func IsWorktreeDirty(cwd, issueID string) (bool, error) {
 		return false, fmt.Errorf("failed to check worktree status: %w", err)
 	}
 
-	return len(strings.TrimSpace(string(output))) > 0, nil
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "?? ") {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // RemoveWorktreeOnly removes the worktree directory but keeps the branch intact.

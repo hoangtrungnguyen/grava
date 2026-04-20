@@ -73,6 +73,10 @@ func subtaskIssue(ctx context.Context, store dolt.Store, params SubtaskParams) (
 			fmt.Sprintf("Issue %s not found", params.ParentID), nil)
 	}
 
+	if err := guardNotArchived(store, params.ParentID); err != nil {
+		return SubtaskResult{}, err
+	}
+
 	// Generate child ID BEFORE opening the transaction — GenerateChildID opens its own
 	// internal transaction; nesting it inside WithAuditedTx causes conflicts with sqlmock.
 	generator := idgen.NewStandardGenerator(store)

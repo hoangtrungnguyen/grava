@@ -46,7 +46,10 @@ func TestUndoCmd_Dirty(t *testing.T) {
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// 4. Add Comment (Audited Tx)
+	// 4. Add Comment (Audited Tx) — guardNotArchived runs first, then the tx
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT status FROM issues WHERE id = ?")).
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ?")).
 		WithArgs(id).
@@ -102,7 +105,10 @@ func TestUndoCmd_Clean(t *testing.T) {
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// 4. Add Comment (Audited Tx)
+	// 4. Add Comment (Audited Tx) — guardNotArchived runs first, then the tx
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT status FROM issues WHERE id = ?")).
+		WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id = ?")).
 		WithArgs(id).

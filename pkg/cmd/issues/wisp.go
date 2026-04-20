@@ -41,6 +41,10 @@ type WispEntry struct {
 // wispWrite upserts a key-value pair into the wisp_entries table and updates
 // wisp_heartbeat_at on the issue row. Wrapped in WithAuditedTx for atomicity.
 func wispWrite(ctx context.Context, store dolt.Store, params WispWriteParams) (WispWriteResult, error) {
+	if err := guardNotArchived(store, params.IssueID); err != nil {
+		return WispWriteResult{}, err
+	}
+
 	err := dolt.WithAuditedTx(ctx, store, []dolt.AuditEvent{
 		{
 			IssueID:   params.IssueID,

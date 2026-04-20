@@ -109,6 +109,27 @@ func updateIssue(ctx context.Context, store dolt.Store, params UpdateParams) (Up
 		return UpdateResult{}, gravaerrors.New("DB_UNREACHABLE", "failed to read issue", err)
 	}
 
+	// Guard: archived/tombstone issues are read-only.
+	// Exception: status changes are allowed so users can un-archive via --status open.
+	if cur.status == "archived" || cur.status == "tombstone" {
+		if !changedSet["status"] || len(nonStatusFieldsIn(params.ChangedFields)) > 0 {
+			return UpdateResult{}, gravaerrors.New("ISSUE_READ_ONLY",
+				fmt.Sprintf("cannot modify issue %s: status is %s", params.ID, cur.status), nil)
+		}
+	}
+
+	// Guard: update --status must follow valid transitions.
+	if changedSet["status"] {
+		if params.Status == "in_progress" {
+			return UpdateResult{}, gravaerrors.New("INVALID_STATUS_TRANSITION",
+				fmt.Sprintf("cannot set status to in_progress via update; use 'grava start' or 'grava claim'"), nil)
+		}
+		if params.Status == "tombstone" {
+			return UpdateResult{}, gravaerrors.New("INVALID_STATUS_TRANSITION",
+				"cannot set status to tombstone via update; use 'grava drop'", nil)
+		}
+	}
+
 	// Handle status update via graph layer — dag.SetNodeStatus manages its own tx + audit.
 	if changedSet["status"] {
 		dag, err := graph.LoadGraphFromDB(store)
@@ -205,6 +226,17 @@ func updateIssue(ctx context.Context, store dolt.Store, params UpdateParams) (Up
 	}
 
 	return UpdateResult{ID: params.ID, Status: "updated"}, nil
+}
+
+// nonStatusFieldsIn returns changed fields excluding "status".
+func nonStatusFieldsIn(fields []string) []string {
+	var result []string
+	for _, f := range fields {
+		if f != "status" {
+			result = append(result, f)
+		}
+	}
+	return result
 }
 
 // newUpdateCmd builds the `grava update` cobra command.

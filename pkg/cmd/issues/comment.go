@@ -39,6 +39,10 @@ func commentIssue(ctx context.Context, store dolt.Store, params CommentParams) (
 			"--message is required", nil)
 	}
 
+	if err := guardNotArchived(store, params.ID); err != nil {
+		return CommentResult{}, err
+	}
+
 	now := time.Now()
 	var commentID int64
 

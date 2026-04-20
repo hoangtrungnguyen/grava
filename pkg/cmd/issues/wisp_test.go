@@ -20,6 +20,10 @@ func TestWispWrite_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery("SELECT status FROM issues WHERE id").
+		WithArgs("abc123def456").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT id FROM issues WHERE id").
 		WithArgs("abc123def456").
@@ -56,6 +60,10 @@ func TestWispWrite_Upsert(t *testing.T) {
 	defer db.Close() //nolint:errcheck
 
 	for i := 0; i < 2; i++ {
+		// guardNotArchived runs before WithAuditedTx
+		mock.ExpectQuery("SELECT status FROM issues WHERE id").
+			WithArgs("abc123def456").
+			WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 		mock.ExpectBegin()
 		mock.ExpectQuery("SELECT id FROM issues WHERE id").
 			WithArgs("abc123def456").
@@ -89,11 +97,10 @@ func TestWispWrite_IssueNotFound(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
-	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT id FROM issues WHERE id").
+	// guardNotArchived returns ISSUE_NOT_FOUND before WithAuditedTx is entered
+	mock.ExpectQuery("SELECT status FROM issues WHERE id").
 		WithArgs("nonexistent").
-		WillReturnRows(sqlmock.NewRows([]string{"id"})) // empty → ErrNoRows
-	mock.ExpectRollback()
+		WillReturnRows(sqlmock.NewRows([]string{"status"})) // empty → ErrNoRows
 
 	store := dolt.NewClientFromDB(db)
 	_, err = wispWrite(context.Background(), store, WispWriteParams{
@@ -115,6 +122,10 @@ func TestWispWrite_HeartbeatUpdated(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery("SELECT status FROM issues WHERE id").
+		WithArgs("abc123def456").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT id FROM issues WHERE id").
 		WithArgs("abc123def456").
@@ -146,6 +157,10 @@ func TestWispWrite_JSONResultStructure(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck
 
+	// guardNotArchived runs before WithAuditedTx
+	mock.ExpectQuery("SELECT status FROM issues WHERE id").
+		WithArgs("abc123def456").
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("open"))
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT id FROM issues WHERE id").
 		WithArgs("abc123def456").

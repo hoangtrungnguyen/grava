@@ -39,6 +39,10 @@ func labelIssue(ctx context.Context, store dolt.Store, params LabelParams) (Labe
 			"at least one --add or --remove flag is required", nil)
 	}
 
+	if err := guardNotArchived(store, params.ID); err != nil {
+		return LabelResult{}, err
+	}
+
 	var currentLabels []string
 
 	err := dolt.WithAuditedTx(ctx, store, []dolt.AuditEvent{

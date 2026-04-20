@@ -27,6 +27,7 @@ var (
 	batchFile     string
 	blockedDepth  int
 	searchWisp    bool
+	searchLabels  []string
 	statsDays     int
 	readyLimit    int
 	readyPriority int
@@ -36,6 +37,9 @@ var (
 
 // SearchWisp is exported for test access.
 var SearchWisp = &searchWisp
+
+// SearchLabels is exported for test access.
+var SearchLabels = &searchLabels
 
 // QuickVars exposes quick command vars for test resets.
 var StatsDays = &statsDays
@@ -104,9 +108,26 @@ Use the --remove flag to delete an existing relationship.`,
 	return cmd
 }
 
+// allowedDepTypes is the set of valid dependency type strings accepted by the dep command.
+var allowedDepTypes = map[string]bool{
+	"blocks": true, "blocked-by": true,
+	"relates-to": true, "duplicates": true, "duplicated-by": true,
+	"parent-child": true, "child-of": true,
+	"subtask-of": true, "has-subtask": true,
+	"waits-for": true, "depends-on": true,
+	"supersedes": true, "superseded-by": true,
+	"follows": true, "precedes": true,
+	"caused-by": true, "causes": true,
+	"fixes": true, "fixed-by": true,
+}
+
 func addDependency(cmd *cobra.Command, d *cmddeps.Deps, fromID, toID string) error {
 	if fromID == toID {
 		return fmt.Errorf("from_id and to_id must be different issues")
+	}
+
+	if !allowedDepTypes[depType] {
+		return fmt.Errorf("invalid dependency type %q; allowed: blocks, relates-to, duplicates, parent-child, subtask-of, etc.", depType)
 	}
 
 	// 1. Load graph for cycle detection (blocking types only)
@@ -393,6 +414,15 @@ func newGraphStatsCmd(d *cmddeps.Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if *d.OutputJSON {
+				result := map[string]any{"nodes": dag.NodeCount(), "edges": dag.EdgeCount()}
+				if dag.NodeCount() > 1 {
+					result["density"] = float64(dag.EdgeCount()) / float64(dag.NodeCount()*(dag.NodeCount()-1))
+				}
+				b, _ := json.MarshalIndent(result, "", "  ")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				return nil
+			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Nodes: %d\n", dag.NodeCount())
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Edges: %d\n", dag.EdgeCount())
 			if dag.NodeCount() > 1 {
@@ -417,6 +447,12 @@ func newGraphCycleCmd(d *cmddeps.Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if *d.OutputJSON {
+				result := map[string]any{"has_cycle": len(cycle) > 0, "cycle": cycle}
+				b, _ := json.MarshalIndent(result, "", "  ")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				return nil
+			}
 			if len(cycle) > 0 {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "❌ Cycle detected: %v\n", cycle)
 			} else {
@@ -436,15 +472,8 @@ func newGraphHealthCmd(d *cmddeps.Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Performing health check...")
 
 			cycle, _ := dag.DetectCycle()
-			if len(cycle) > 0 {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "- Cycles: ❌ Found (%v)\n", cycle)
-			} else {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "- Cycles: ✅ None")
-			}
-
 			orphans := 0
 			for _, node := range dag.GetAllNodes() {
 				out, _ := dag.GetOutgoingEdges(node.ID)
@@ -452,6 +481,24 @@ func newGraphHealthCmd(d *cmddeps.Deps) *cobra.Command {
 				if len(out) == 0 && len(in) == 0 {
 					orphans++
 				}
+			}
+
+			if *d.OutputJSON {
+				result := map[string]any{
+					"has_cycle": len(cycle) > 0,
+					"cycle":     cycle,
+					"orphans":   orphans,
+				}
+				b, _ := json.MarshalIndent(result, "", "  ")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				return nil
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Performing health check...")
+			if len(cycle) > 0 {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "- Cycles: ❌ Found (%v)\n", cycle)
+			} else {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "- Cycles: ✅ None")
 			}
 			if orphans > 0 {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "- Orphans: ⚠️ %d nodes have no dependencies\n", orphans)
@@ -477,6 +524,11 @@ Formats:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if graphFormat != "ascii" && graphFormat != "dot" && graphFormat != "json" {
 				return fmt.Errorf("unsupported format %q: must be \"ascii\", \"dot\", or \"json\"", graphFormat)
+			}
+
+			// Global --json flag overrides --format to json
+			if *d.OutputJSON {
+				graphFormat = "json"
 			}
 
 			dag, err := graph.LoadGraphFromDB(*d.Store)
@@ -780,18 +832,57 @@ func showAllBlockedTasks(cmd *cobra.Command, d *cmddeps.Deps) error {
 
 func newSearchCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "search <query>",
-		Short: "Search for issues matching a text query",
-		Args:  cobra.ExactArgs(1),
+		Use:   "search [query]",
+		Short: "Search for issues matching a text query or label",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			query := args[0]
-			if strings.TrimSpace(query) == "" {
-				return fmt.Errorf("search query must not be empty")
+			hasQuery := len(args) > 0 && strings.TrimSpace(args[0]) != ""
+			hasLabels := len(searchLabels) > 0
+
+			if !hasQuery && !hasLabels {
+				return fmt.Errorf("provide a search query or --label flag")
 			}
 
-			pattern := "%" + query + "%"
+			ephemeralVal := 0
+			if searchWisp {
+				ephemeralVal = 1
+			}
 
-			sql := `SELECT DISTINCT i.id, i.title, i.issue_type, i.priority, i.status, i.created_at
+			var sqlStr string
+			var sqlArgs []any
+
+			if hasLabels {
+				sqlStr = `SELECT DISTINCT i.id, i.title, i.issue_type, i.priority, i.status, i.created_at
+		        FROM issues i
+		        LEFT JOIN issue_comments c ON i.id = c.issue_id
+		        WHERE i.ephemeral = ?
+		          AND i.status != 'tombstone'
+		          AND i.status != 'archived'`
+				sqlArgs = []any{ephemeralVal}
+
+				if hasQuery {
+					pattern := "%" + args[0] + "%"
+					sqlStr += `
+		          AND (i.title LIKE ? OR i.description LIKE ? OR COALESCE(i.metadata,'') LIKE ? OR COALESCE(c.message,'') LIKE ?)`
+					sqlArgs = append(sqlArgs, pattern, pattern, pattern, pattern)
+				}
+
+				placeholders := strings.Repeat("?,", len(searchLabels)-1) + "?"
+				sqlStr += fmt.Sprintf(`
+		          AND i.id IN (SELECT issue_id FROM issue_labels WHERE label IN (%s) GROUP BY issue_id HAVING COUNT(DISTINCT label) = ?)`, placeholders)
+				for _, l := range searchLabels {
+					sqlArgs = append(sqlArgs, l)
+				}
+				sqlArgs = append(sqlArgs, len(searchLabels))
+				sqlStr += `
+		        ORDER BY i.priority ASC, i.created_at DESC`
+			} else {
+				query := args[0]
+				if strings.TrimSpace(query) == "" {
+					return fmt.Errorf("search query must not be empty")
+				}
+				pattern := "%" + query + "%"
+				sqlStr = `SELECT DISTINCT i.id, i.title, i.issue_type, i.priority, i.status, i.created_at
 		        FROM issues i
 		        LEFT JOIN issue_comments c ON i.id = c.issue_id
 		        WHERE i.ephemeral = ?
@@ -799,13 +890,10 @@ func newSearchCmd(d *cmddeps.Deps) *cobra.Command {
 		          AND i.status != 'archived'
 		          AND (i.title LIKE ? OR i.description LIKE ? OR COALESCE(i.metadata,'') LIKE ? OR COALESCE(c.message,'') LIKE ?)
 		        ORDER BY i.priority ASC, i.created_at DESC`
-
-			ephemeralVal := 0
-			if searchWisp {
-				ephemeralVal = 1
+				sqlArgs = []any{ephemeralVal, pattern, pattern, pattern, pattern}
 			}
 
-			rows, err := (*d.Store).Query(sql, ephemeralVal, pattern, pattern, pattern, pattern)
+			rows, err := (*d.Store).Query(sqlStr, sqlArgs...)
 			if err != nil {
 				return fmt.Errorf("search failed: %w", err)
 			}
@@ -853,10 +941,22 @@ func newSearchCmd(d *cmddeps.Deps) *cobra.Command {
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			} else {
 				w.Flush() //nolint:errcheck
+				displayQuery := ""
+				if hasQuery {
+					displayQuery = args[0]
+				}
+				if hasLabels {
+					labelStr := strings.Join(searchLabels, ", ")
+					if displayQuery != "" {
+						displayQuery += fmt.Sprintf(" (labels: %s)", labelStr)
+					} else {
+						displayQuery = fmt.Sprintf("labels: %s", labelStr)
+					}
+				}
 				if found == 0 {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No issues found matching %q\n", query)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No issues found matching %q\n", displayQuery)
 				} else {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n🔍 %d result(s) for %q\n", found, query)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n🔍 %d result(s) for %q\n", found, displayQuery)
 				}
 			}
 			return nil
@@ -864,6 +964,7 @@ func newSearchCmd(d *cmddeps.Deps) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&searchWisp, "wisp", false, "Include ephemeral Wisp issues in results")
+	cmd.Flags().StringSliceVar(&searchLabels, "label", nil, "Filter by label (repeatable, AND semantics)")
 	return cmd
 }
 

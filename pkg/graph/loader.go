@@ -13,7 +13,7 @@ func LoadGraphFromDB(store dolt.Store) (*AdjacencyDAG, error) {
 	dag.store = store
 
 	// Load all issues
-	rows, err := store.Query("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")
+	rows, err := store.Query("SELECT id, title, issue_type, status, priority, created_at, updated_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query issues: %w", err)
 	}
@@ -24,7 +24,7 @@ func LoadGraphFromDB(store dolt.Store) (*AdjacencyDAG, error) {
 		var prio int
 		var awaitType, awaitID *string
 		var metadataJSON []byte
-		if err := rows.Scan(&node.ID, &node.Title, &node.Type, &node.Status, &prio, &node.CreatedAt, &awaitType, &awaitID, &node.Ephemeral, &metadataJSON); err != nil {
+		if err := rows.Scan(&node.ID, &node.Title, &node.Type, &node.Status, &prio, &node.CreatedAt, &node.UpdatedAt, &awaitType, &awaitID, &node.Ephemeral, &metadataJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan issue: %w", err)
 		}
 		node.Priority = Priority(prio)

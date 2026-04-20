@@ -18,7 +18,7 @@ import (
 
 // Shared query patterns for ready tests.
 var (
-	qReadyLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status")
+	qReadyLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, updated_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status")
 	qReadyLoadDeps   = regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")
 )
 
@@ -82,8 +82,8 @@ func TestReadyCmd_IndependentTasks(t *testing.T) {
 	// LoadGraphFromDB: 2 open tasks, 0 deps
 	mock.ExpectQuery(qReadyLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "Task 1", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-2", "Task 2", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "Task 1", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-2", "Task 2", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qReadyLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()))
 
@@ -124,8 +124,8 @@ func TestReadyCmd_BlockedByDoneTask(t *testing.T) {
 	// task-1 is done, task-2 is open. task-1 blocks task-2. Since task-1 is done, task-2 is ready.
 	mock.ExpectQuery(qReadyLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "Done Task", "task", "closed", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-2", "Ready Task", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "Done Task", "task", "closed", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-2", "Ready Task", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qReadyLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).AddRow("task-1", "task-2", "blocks", []byte("{}")))
 
@@ -163,8 +163,8 @@ func TestReadyCmd_BlockedByOpenTask(t *testing.T) {
 	// task-1 is open, task-2 is open. task-1 blocks task-2. task-2 is NOT ready.
 	mock.ExpectQuery(qReadyLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "Blocker", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-2", "Blocked", "task", "open", 2, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "Blocker", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-2", "Blocked", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qReadyLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).AddRow("task-1", "task-2", "blocks", []byte("{}")))
 
@@ -204,8 +204,8 @@ func TestReadyCmd_EmptyStateJSON(t *testing.T) {
 	// All tasks are blocked
 	mock.ExpectQuery(qReadyLoadIssues).
 		WillReturnRows(sqlmock.NewRows(issueCols()).
-			AddRow("task-1", "Open", "task", "open", 1, time.Now(), nil, nil, 0, nil).
-			AddRow("task-2", "Open", "task", "open", 1, time.Now(), nil, nil, 0, nil))
+			AddRow("task-1", "Open", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+			AddRow("task-2", "Open", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil))
 	mock.ExpectQuery(qReadyLoadDeps).
 		WillReturnRows(sqlmock.NewRows(depCols()).
 			AddRow("task-1", "task-2", "blocks", []byte("{}")).
