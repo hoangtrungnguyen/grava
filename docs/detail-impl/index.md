@@ -29,6 +29,7 @@ This folder contains **detailed implementation documentation** for every Go pack
 | `pkg/orchestrator` | — | Background task orchestration (poller, pool, watchdog) |
 | `pkg/utils` | [pkg-utils.md](./pkg-utils.md) | Dolt binary resolution, git worktree orchestration, git version checking |
 | `pkg/validation` | [pkg-validation.md](./pkg-validation.md) | Input validators (type, status, priority, date range) |
+| `scripts/hooks` | [scripts-hooks.md](./scripts-hooks.md) | Claude Code agent team quality gate hooks (Phase 2) |
 
 ---
 

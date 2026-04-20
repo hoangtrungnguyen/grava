@@ -1,5 +1,44 @@
 {
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true
+  },
+  "worktree": {
+    "sparsePaths": [],
+    "symlinkDirectories": [
+      "node_modules",
+      ".cache"
+    ]
+  },
+  "hooks": {
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/hooks/validate-task-complete.sh"
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/hooks/check-teammate-idle.sh"
+          }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/hooks/review-loop-guard.sh"
+          }
+        ]
+      }
+    ]
   }
 }
