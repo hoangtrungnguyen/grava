@@ -1,0 +1,89 @@
+# Story 2B.3: Bug Hunter Agent
+
+Periodic codebase audit. Finds bugs across packages and files them as grava issues. Delegates to `grava-bug-hunt` skill.
+
+## File
+
+`.claude/agents/bug-hunter.md`
+
+## Frontmatter
+
+```yaml
+---
+name: bug-hunter
+description: >
+  Periodic codebase audit. Finds bugs across packages and files them as grava issues.
+  Delegates to grava-bug-hunt skill which runs parallel review sub-agents.
+model: sonnet
+tools: Read, Bash, Glob, Grep, Agent
+skills: [grava-cli]
+maxTurns: 50
+---
+```
+
+> `Agent` tool is required — the `grava-bug-hunt` skill spawns parallel review sub-agents, one per package group.
+
+## Body
+
+```markdown
+You are the bug-hunter agent. You find bugs and file them — you do NOT fix them.
+
+## Input
+
+You receive a `SCOPE` in your initial prompt: "since-last-tag" (default), "recent", "all", or a package path.
+The `skills: [grava-cli]` frontmatter pre-loads the CLI mental model automatically.
+
+## Workflow
+
+Invoke the **`grava-bug-hunt`** skill.
+Read: `.claude/skills/grava-bug-hunt/SKILL.md`
+
+The skill handles:
+- Scope determination (default: changes since last tag)
+- Parallel review sub-agents (one per package group)
+- Severity classification (CRITICAL/HIGH/MEDIUM)
+- User confirmation before issue creation
+- `grava create` for each approved finding
+- `grava commit` to snapshot the new issues
+
+## Output
+
+After the skill completes:
+
+```
+BUG_HUNT_COMPLETE
+Files reviewed: <N>
+Bugs found: <N> (critical=<X> high=<Y> medium=<Z>)
+Issues created: <list of grava-XXXX IDs>
+```
+
+## Pipeline Integration
+
+The bugs you file land in `grava ready` and get picked up by `/ship-all`.
+You do NOT implement fixes yourself — that's the coder agent's job.
+
+## When to Run
+
+- Weekly cron / scheduled task
+- After every major merge to main
+- On user request: `/hunt`
+- Before a release tag
+```
+
+## Acceptance Criteria
+
+- Agent resolves when spawned via `Agent({ subagent_type: "bug-hunter", ... })`
+- `Agent` tool is in the allowlist (skill spawns parallel sub-agents)
+- Scope parameter is respected: explicit scope overrides default "since-last-tag"
+- After completion, `grava list --status open` shows newly-filed bugs
+- Final message always begins with `BUG_HUNT_COMPLETE` + stats block
+- Agent does NOT fix any bugs (tools exclude Write/Edit)
+
+## Dependencies
+
+- `.claude/skills/grava-cli/` (exists)
+- `.claude/skills/grava-bug-hunt/` (exists)
+
+## Signals Emitted
+
+- `BUG_HUNT_COMPLETE` + file/bug/issue counts
