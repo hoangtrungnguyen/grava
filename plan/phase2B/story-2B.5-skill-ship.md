@@ -196,7 +196,7 @@ while true; do
     esac
   fi
 
-  sleep 30   # poll every 30 seconds
+  sleep 120  # poll every 2 minutes
 done
 ```
 
@@ -214,7 +214,7 @@ PIPELINE_RESULT="PIPELINE_COMPLETE: $ISSUE_ID"
 - `/ship <id>` runs end-to-end for a happy-path issue → `PIPELINE_COMPLETE`
 - Phase 2 review loop caps at 3 rounds → `PIPELINE_HALTED` with `needs-human` label
 - Phase 3 uses branch `grava/<id>` (not auto-detected) for `gh pr create`
-- Phase 4 polls every 30s, detects `MERGED` / `CLOSED` states
+- Phase 4 polls every 2 minutes, detects `MERGED` / `CLOSED` states
 - PR comment loop caps at `MAX_PR_FIX_ROUNDS=3` → halts cleanly
 - On final success: issue status = `closed`, worktree removed by `grava close`
 - All wisp writes snapshot via `grava commit`
