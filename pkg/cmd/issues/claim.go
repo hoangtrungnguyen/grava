@@ -138,18 +138,30 @@ func newClaimCmd(d *cmddeps.Deps) *cobra.Command {
 				return gravaerrors.New("CWD_UNREACHABLE", "failed to get working directory", err)
 			}
 
-			// Step 1: Check for worktree conflicts BEFORE attempting DB claim
-			if err := utils.CheckWorktreeConflict(cwd, issueID); err != nil {
-				return gravaerrors.New("WORKTREE_CONFLICT", err.Error(), err)
-			}
-
-			// Step 2: Attempt DB claim
+			// Step 1: Attempt DB claim first. The DB is the authoritative source
+			// of ownership — checking it before the filesystem means concurrent
+			// claimants see ALREADY_CLAIMED instead of WORKTREE_CONFLICT, which
+			// misrepresents the conflict as a local-state problem.
 			result, err := claimIssue(ctx, *d.Store, issueID, *d.Actor, *d.AgentModel)
 			if err != nil {
 				return err
 			}
 
-			// Step 3: DB claim succeeded, now provision worktree
+			// Step 2: DB claim succeeded. Check for stale local artifacts
+			// (dir/branch left behind by a prior crash). If found, roll the
+			// DB claim back and surface WORKTREE_CONFLICT so the caller can
+			// run `grava doctor --fix`.
+			if wtErr := utils.CheckWorktreeConflict(cwd, issueID); wtErr != nil {
+				rollbackErr := rollbackClaimDB(ctx, *d.Store, issueID)
+				if rollbackErr != nil {
+					return gravaerrors.New("ATOMIC_FAILURE",
+						fmt.Sprintf("worktree conflict (%v) and rollback failed (%v)", wtErr, rollbackErr),
+						wtErr)
+				}
+				return gravaerrors.New("WORKTREE_CONFLICT", wtErr.Error(), wtErr)
+			}
+
+			// Step 3: Provision worktree.
 			if provErr := utils.ProvisionWorktree(cwd, issueID); provErr != nil {
 				// Worktree provisioning failed, rollback DB state
 				rollbackErr := rollbackClaimDB(ctx, *d.Store, issueID)

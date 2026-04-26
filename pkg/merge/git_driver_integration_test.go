@@ -258,3 +258,227 @@ func TestMergeDriver_IdempotentInstall(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(attrs), "issues.jsonl merge=grava-merge")
 }
+
+// writeRawJSONL writes a preformatted JSONL string (one object per line) to path.
+// Use this when the test needs nested fields or heterogeneous value types that
+// don't fit into map[string]string.
+func writeRawJSONL(t *testing.T, path, content string) {
+	t.Helper()
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+}
+
+// gitMergeWithEnv runs `git -C dir merge --no-edit feat/a` with extra env vars.
+// Returns the combined output and any error from git merge itself.
+func gitMergeWithEnv(t *testing.T, dir string, env []string) ([]byte, error) {
+	t.Helper()
+	cmd := exec.Command("git", "-C", dir, "merge", "--no-edit", "feat/a")
+	cmd.Env = append(os.Environ(), env...)
+	return cmd.CombinedOutput()
+}
+
+// TestMergeDriver_DeleteVsModify_DeleteWins verifies that when one branch deletes
+// an issue and the other modifies it, the deletion wins (per ProcessMergeWithLWW
+// semantics) and git merge succeeds without conflict markers.
+//
+// This fills the gap flagged in FIX-REPORT-20260423.md §06 — the sandbox scenario
+// confirms the driver is installable but does not execute a real three-way merge
+// of delete-vs-modify.
+func TestMergeDriver_DeleteVsModify_DeleteWins(t *testing.T) {
+	gravaBin := sharedGravaBinary(t)
+	dir := initMergeDriverRepo(t, gravaBin)
+
+	issuePath := filepath.Join(dir, "issues.jsonl")
+
+	// Base commit: two issues. Only issue-keep will be touched by the branches;
+	// issue-vanishing is the one that will be deleted / modified.
+	writeRawJSONL(t, issuePath,
+		`{"id":"issue-keep","title":"Keep me","status":"open"}`+"\n"+
+			`{"id":"issue-vanishing","title":"Contested","status":"open","updated_at":"2026-04-20T10:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl", ".gitattributes")
+	gitRun(t, dir, "commit", "-m", "initial")
+
+	// Branch A: DELETE issue-vanishing (only issue-keep remains).
+	gitRun(t, dir, "checkout", "-b", "feat/a")
+	writeRawJSONL(t, issuePath,
+		`{"id":"issue-keep","title":"Keep me","status":"open"}`)
+	gitRun(t, dir, "add", "issues.jsonl")
+	gitRun(t, dir, "commit", "-m", "feat/a: delete issue-vanishing")
+
+	// Return to default branch and MODIFY issue-vanishing (newer timestamp).
+	gitRun(t, dir, "checkout", "-")
+	writeRawJSONL(t, issuePath,
+		`{"id":"issue-keep","title":"Keep me","status":"open"}`+"\n"+
+			`{"id":"issue-vanishing","title":"Contested — updated","status":"in_progress","updated_at":"2026-04-22T10:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl")
+	gitRun(t, dir, "commit", "-m", "main: modify issue-vanishing")
+
+	// Merge feat/a. Per merge semantics: delete wins deterministically, no git conflict.
+	out, err := exec.Command("git", "-C", dir, "merge", "--no-edit", "feat/a").CombinedOutput()
+	require.NoError(t, err,
+		"git merge should succeed: delete-vs-modify is deterministic (delete wins):\n%s", string(out))
+
+	// Assert: only issue-keep remains; the modified side's newer timestamp is
+	// NOT enough to override a delete.
+	issues := readIssues(t, issuePath)
+	require.Len(t, issues, 1, "delete should win — only issue-keep should remain")
+	assert.Equal(t, "issue-keep", issues[0]["id"])
+
+	merged, _ := os.ReadFile(issuePath)
+	assert.NotContains(t, string(merged), `"_conflict"`,
+		"delete-wins must not produce inline conflict markers")
+}
+
+// TestMergeDriver_ConcurrentEditsMultipleIssues_LWW verifies that when both
+// branches edit DIFFERENT issues (plus one shared issue resolved by LWW
+// timestamp), all edits appear in the merged result without conflicts.
+//
+// Fills the gap flagged in FIX-REPORT-20260423.md §07 — sandbox only confirms
+// the file_reservations table is queryable, not that concurrent-edit merges
+// actually compose correctly.
+func TestMergeDriver_ConcurrentEditsMultipleIssues_LWW(t *testing.T) {
+	gravaBin := sharedGravaBinary(t)
+	dir := initMergeDriverRepo(t, gravaBin)
+
+	issuePath := filepath.Join(dir, "issues.jsonl")
+
+	// Base: 3 issues, all open, same starting state.
+	writeRawJSONL(t, issuePath,
+		`{"id":"iss-1","status":"open","title":"One","updated_at":"2026-04-20T00:00:00Z"}`+"\n"+
+			`{"id":"iss-2","status":"open","title":"Two","updated_at":"2026-04-20T00:00:00Z"}`+"\n"+
+			`{"id":"iss-3","status":"open","title":"Three","updated_at":"2026-04-20T00:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl", ".gitattributes")
+	gitRun(t, dir, "commit", "-m", "initial")
+
+	// Branch A: close iss-1, update iss-3 title. iss-2 untouched.
+	// iss-3 has the EARLIER timestamp — LWW should pick main's version.
+	gitRun(t, dir, "checkout", "-b", "feat/a")
+	writeRawJSONL(t, issuePath,
+		`{"id":"iss-1","status":"closed","title":"One","updated_at":"2026-04-22T10:00:00Z"}`+"\n"+
+			`{"id":"iss-2","status":"open","title":"Two","updated_at":"2026-04-20T00:00:00Z"}`+"\n"+
+			`{"id":"iss-3","status":"open","title":"Three (A)","updated_at":"2026-04-22T09:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl")
+	gitRun(t, dir, "commit", "-m", "feat/a: close iss-1, rename iss-3")
+
+	// Main: update iss-2 status, update iss-3 title (NEWER timestamp → wins).
+	gitRun(t, dir, "checkout", "-")
+	writeRawJSONL(t, issuePath,
+		`{"id":"iss-1","status":"open","title":"One","updated_at":"2026-04-20T00:00:00Z"}`+"\n"+
+			`{"id":"iss-2","status":"in_progress","title":"Two","updated_at":"2026-04-22T11:00:00Z"}`+"\n"+
+			`{"id":"iss-3","status":"open","title":"Three (main)","updated_at":"2026-04-22T12:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl")
+	gitRun(t, dir, "commit", "-m", "main: progress iss-2, rename iss-3")
+
+	// Merge: all three issues should compose cleanly via LWW.
+	out, err := exec.Command("git", "-C", dir, "merge", "--no-edit", "feat/a").CombinedOutput()
+	require.NoError(t, err, "concurrent LWW-resolvable edits must merge cleanly:\n%s", string(out))
+
+	issues := readIssues(t, issuePath)
+	require.Len(t, issues, 3, "all 3 issues should be present in merged output")
+
+	byID := map[string]map[string]interface{}{}
+	for _, iss := range issues {
+		byID[iss["id"].(string)] = iss
+	}
+
+	// iss-1: only feat/a changed it — feat/a's closed wins (cleanly).
+	assert.Equal(t, "closed", byID["iss-1"]["status"], "iss-1: feat/a's close should win")
+	// iss-2: only main changed it — main wins.
+	assert.Equal(t, "in_progress", byID["iss-2"]["status"], "iss-2: main's in_progress should win")
+	// iss-3: both sides changed title; main's timestamp is newer → main wins.
+	assert.Equal(t, "Three (main)", byID["iss-3"]["title"],
+		"iss-3: main's newer timestamp should win LWW tiebreak")
+}
+
+// TestMergeDriver_EqualTimestamp_ProducesGitConflict verifies that when two
+// branches modify the same field with IDENTICAL updated_at timestamps, LWW
+// cannot resolve and git merge exits non-zero with conflict markers in the file.
+//
+// This exercises the HasGitConflict=true code path through a live git merge.
+func TestMergeDriver_EqualTimestamp_ProducesGitConflict(t *testing.T) {
+	gravaBin := sharedGravaBinary(t)
+	dir := initMergeDriverRepo(t, gravaBin)
+
+	issuePath := filepath.Join(dir, "issues.jsonl")
+
+	// Base: one issue with some updated_at.
+	writeRawJSONL(t, issuePath,
+		`{"id":"contested","title":"Start","status":"open","updated_at":"2026-04-20T00:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl", ".gitattributes")
+	gitRun(t, dir, "commit", "-m", "initial")
+
+	// Branch A: modify title, set updated_at to T.
+	gitRun(t, dir, "checkout", "-b", "feat/a")
+	writeRawJSONL(t, issuePath,
+		`{"id":"contested","title":"Alpha","status":"open","updated_at":"2026-04-22T12:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl")
+	gitRun(t, dir, "commit", "-m", "feat/a: rename to Alpha")
+
+	// Main: modify title, SAME updated_at → equal-timestamp conflict.
+	gitRun(t, dir, "checkout", "-")
+	writeRawJSONL(t, issuePath,
+		`{"id":"contested","title":"Beta","status":"open","updated_at":"2026-04-22T12:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl")
+	gitRun(t, dir, "commit", "-m", "main: rename to Beta")
+
+	// Merge — driver writes conflict markers and exits 1, so git merge fails.
+	out, err := exec.Command("git", "-C", dir, "merge", "--no-edit", "feat/a").CombinedOutput()
+	assert.Error(t, err, "equal-timestamp field conflict must surface as git merge failure:\n%s", string(out))
+
+	merged, readErr := os.ReadFile(issuePath)
+	require.NoError(t, readErr)
+	assert.Contains(t, string(merged), `"_conflict":true`,
+		"merged file must retain conflict markers when LWW can't resolve")
+}
+
+// TestMergeDriver_ConflictsJsonPersisted verifies that when conflicts are
+// detected AND a .grava directory is available (via GRAVA_DIR env), the driver
+// writes conflict records to <GRAVA_DIR>/conflicts.json so `grava resolve list`
+// can surface them post-merge.
+func TestMergeDriver_ConflictsJsonPersisted(t *testing.T) {
+	gravaBin := sharedGravaBinary(t)
+	dir := initMergeDriverRepo(t, gravaBin)
+
+	// Create a .grava directory in the test repo so ResolveGravaDir can find it.
+	gravaDir := filepath.Join(dir, ".grava")
+	require.NoError(t, os.MkdirAll(gravaDir, 0o755))
+
+	issuePath := filepath.Join(dir, "issues.jsonl")
+
+	// Base with one contested issue.
+	writeRawJSONL(t, issuePath,
+		`{"id":"contested","title":"Start","updated_at":"2026-04-20T00:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl", ".gitattributes")
+	gitRun(t, dir, "commit", "-m", "initial")
+
+	// Equal-timestamp conflict to force a conflict record.
+	gitRun(t, dir, "checkout", "-b", "feat/a")
+	writeRawJSONL(t, issuePath,
+		`{"id":"contested","title":"Alpha","updated_at":"2026-04-22T12:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl")
+	gitRun(t, dir, "commit", "-m", "feat/a")
+
+	gitRun(t, dir, "checkout", "-")
+	writeRawJSONL(t, issuePath,
+		`{"id":"contested","title":"Beta","updated_at":"2026-04-22T12:00:00Z"}`)
+	gitRun(t, dir, "add", "issues.jsonl")
+	gitRun(t, dir, "commit", "-m", "main")
+
+	// Invoke merge with GRAVA_DIR pointing at our test .grava so the driver
+	// writes conflicts.json there.
+	out, err := gitMergeWithEnv(t, dir, []string{"GRAVA_DIR=" + gravaDir})
+	assert.Error(t, err, "merge should fail on equal-timestamp conflict:\n%s", string(out))
+
+	// Verify conflicts.json was persisted.
+	conflictsPath := filepath.Join(gravaDir, "conflicts.json")
+	data, readErr := os.ReadFile(conflictsPath)
+	require.NoError(t, readErr, "driver should have written %s", conflictsPath)
+
+	var records []map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &records), "conflicts.json must be valid JSON array")
+	require.NotEmpty(t, records, "at least one conflict record expected")
+	assert.Equal(t, "contested", records[0]["issue_id"],
+		"conflict record must reference the contested issue")
+}

@@ -4,10 +4,12 @@ package maintenance
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -239,9 +241,56 @@ With --dry-run, doctor shows what --fix would change without executing any write
 				checks = append(checks, doctorCheck{"Wisp count", status, detail})
 			}
 
+			var fixResults []map[string]any // non-nil entries when --fix ran
+
+			// Check: ghost worktrees — issues marked in_progress whose .worktree/<id>
+			// directory has been removed (typical after a reaped container).
+			cwd, cwdErr := os.Getwd()
+			if cwdErr != nil {
+				checks = append(checks, doctorCheck{"Ghost worktrees", "WARN",
+					fmt.Sprintf("could not resolve working directory: %v", cwdErr)})
+			} else {
+				ghostIDs, ghostErr := queryGhostWorktrees(ctx, store, cwd)
+				switch {
+				case ghostErr != nil:
+					checks = append(checks, doctorCheck{"Ghost worktrees", "WARN",
+						fmt.Sprintf("could not check: %v", ghostErr)})
+				case len(ghostIDs) == 0:
+					checks = append(checks, doctorCheck{"Ghost worktrees", "PASS", "none found"})
+				case flagDryRun:
+					detail := fmt.Sprintf("%d ghost claim(s) would be released: %s",
+						len(ghostIDs), strings.Join(ghostIDs, ", "))
+					checks = append(checks, doctorCheck{"Ghost worktrees", "WARN", detail})
+				case flagFix:
+					healed, healErr := healGhostWorktrees(ctx, store, *d.Actor, *d.AgentModel, ghostIDs)
+					if healErr != nil {
+						checks = append(checks, doctorCheck{"Ghost worktrees", "FAIL",
+							fmt.Sprintf("auto-heal failed: %v", healErr)})
+						hasFailure = true
+						fixResults = append(fixResults, map[string]any{
+							"check":        "ghost_worktrees",
+							"status":       "error",
+							"action_taken": fmt.Sprintf("error during heal: %v", healErr),
+						})
+					} else {
+						checks = append(checks, doctorCheck{"Ghost worktrees", "PASS",
+							fmt.Sprintf("released %d ghost claim(s) (auto-fix)", healed)})
+						fixResults = append(fixResults, map[string]any{
+							"check":        "ghost_worktrees",
+							"status":       "fixed",
+							"action_taken": fmt.Sprintf("released %d ghost claim(s)", healed),
+							"ids":          ghostIDs,
+						})
+					}
+				default:
+					detail := fmt.Sprintf("%d ghost claim(s) detected — run `grava doctor --fix` to release",
+						len(ghostIDs))
+					checks = append(checks, doctorCheck{"Ghost worktrees", "WARN", detail})
+				}
+			}
+
 			// Check #12: expired file reservations (FR-ECS-1c).
 			expiredLeases, expiredCheckErr := queryExpiredLeases(ctx, store)
-			var fixResult map[string]any // non-nil when --fix ran
 			if expiredCheckErr != nil {
 				checks = append(checks, doctorCheck{"Expired file leases", "WARN",
 					fmt.Sprintf("could not check: %v", expiredCheckErr)})
@@ -259,19 +308,19 @@ With --dry-run, doctor shows what --fix would change without executing any write
 						checks = append(checks, doctorCheck{"Expired file leases", "FAIL",
 							fmt.Sprintf("auto-release failed: %v", fixErr)})
 						hasFailure = true
-						fixResult = map[string]any{
+						fixResults = append(fixResults, map[string]any{
 							"check":        "expired_file_reservations",
 							"status":       "error",
 							"action_taken": fmt.Sprintf("error during release: %v", fixErr),
-						}
+						})
 					} else {
 						checks = append(checks, doctorCheck{"Expired file leases", "PASS",
 							fmt.Sprintf("released %d expired lease(s) (auto-fix)", released)})
-						fixResult = map[string]any{
+						fixResults = append(fixResults, map[string]any{
 							"check":        "expired_file_reservations",
 							"status":       "fixed",
 							"action_taken": fmt.Sprintf("released %d expired lease(s)", released),
-						}
+						})
 					}
 				default:
 					detail := fmt.Sprintf("%d expired lease(s) not yet released — run `grava doctor --fix` to auto-release",
@@ -287,8 +336,15 @@ With --dry-run, doctor shows what --fix would change without executing any write
 				if hasFailure {
 					resp["status"] = "unhealthy"
 				}
-				if fixResult != nil {
-					resp["fix_result"] = fixResult
+				if len(fixResults) > 0 {
+					resp["fix_results"] = fixResults
+					// Preserve legacy single-result key for expired-lease callers.
+					for _, fr := range fixResults {
+						if fr["check"] == "expired_file_reservations" {
+							resp["fix_result"] = fr
+							break
+						}
+					}
 				}
 				b, _ := json.MarshalIndent(resp, "", "  ")
 				fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
@@ -357,6 +413,75 @@ func releaseExpiredLeases(ctx context.Context, store dolt.Store, ids []string) (
 		released += int(n)
 	}
 	return released, nil
+}
+
+// queryGhostWorktrees returns IDs of issues whose status is 'in_progress' but
+// whose on-disk worktree directory (<cwd>/.worktree/<id>) no longer exists.
+// A ghost is a claim that outlived its worktree — typically after a container
+// was reaped mid-flight. The DB still points at a phantom workspace.
+func queryGhostWorktrees(ctx context.Context, store dolt.Store, cwd string) ([]string, error) {
+	rows, err := store.QueryContext(ctx,
+		`SELECT id FROM issues WHERE status = 'in_progress'`)
+	if err != nil {
+		return nil, fmt.Errorf("query in_progress issues: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var ghosts []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan in_progress issue id: %w", err)
+		}
+		wt := filepath.Join(cwd, ".worktree", id)
+		if _, statErr := os.Stat(wt); os.IsNotExist(statErr) {
+			ghosts = append(ghosts, id)
+		}
+	}
+	return ghosts, rows.Err()
+}
+
+// healGhostWorktrees resets each ghost issue's status back to 'open' and
+// clears its assignee, emitting a "release" audit event per issue inside a
+// single transaction. Returns the number of rows actually reset.
+//
+// The Git branch grava/<id> is preserved — it may still hold partial work
+// that a future claim can revisit. Only the DB ownership record is cleared.
+func healGhostWorktrees(ctx context.Context, store dolt.Store, actor, model string, ids []string) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	events := make([]dolt.AuditEvent, 0, len(ids))
+	for _, id := range ids {
+		events = append(events, dolt.AuditEvent{
+			IssueID:   id,
+			EventType: dolt.EventRelease,
+			Actor:     actor,
+			Model:     model,
+			OldValue:  map[string]any{"status": "in_progress"},
+			NewValue:  map[string]any{"status": "open", "reason": "ghost_worktree"},
+		})
+	}
+
+	healed := 0
+	err := dolt.WithAuditedTx(ctx, store, events, func(tx *sql.Tx) error {
+		for _, id := range ids {
+			result, execErr := tx.ExecContext(ctx,
+				`UPDATE issues SET status='open', assignee=NULL, agent_model=NULL, updated_at=NOW(), updated_by=? WHERE id=? AND status='in_progress'`,
+				actor, id)
+			if execErr != nil {
+				return fmt.Errorf("heal ghost %s: %w", id, execErr)
+			}
+			n, _ := result.RowsAffected()
+			healed += int(n)
+		}
+		return nil
+	})
+	if err != nil {
+		return healed, err
+	}
+	return healed, nil
 }
 
 
