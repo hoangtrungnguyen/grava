@@ -14,19 +14,25 @@ This repository contains the documentation for **Grava**, an AI-native CLI issue
 - [Data Models](./data-models.md)
 - [Development Guide](./development-guide.md)
 
-### Detailed Components
-- [API Contracts](./api-contracts.md) _(To be generated)_
-- [Component Inventory](./component-inventory.md) _(To be generated)_
-- [Integration Architecture](./integration-architecture.md) _(To be generated)_
+### Detailed Implementation Reference
+Per-package documentation in [`detail-impl/`](./detail-impl/index.md):
+- CLI commands, dependency injection, persistence, graph engine, merge driver,
+  ID generation, migrations, validation, hooks.
 
-### Existing Documentation
+### Guides
+Operational and integration guides in [`guides/`](./guides):
+- [`AGENT_WORKFLOWS.md`](./guides/AGENT_WORKFLOWS.md) — agent collaboration patterns
+- [`CLI_REFERENCE.md`](./guides/CLI_REFERENCE.md) — full command reference
+- [`DOLT_SETUP.md`](./guides/DOLT_SETUP.md) — Dolt server configuration
+- [`RELEASE_PROCESS.md`](./guides/RELEASE_PROCESS.md) — release procedure
+- [`agent_instructions.md`](./guides/agent_instructions.md) — instructions consumed by AI agents
+- [`claude-worktree-integration.md`](./guides/claude-worktree-integration.md) — Claude Code worktree handoff
+
+### External References
 - [README.md](../README.md)
-- [Integration Test Execution Guide](../INTEGRATION-TEST-EXECUTION-GUIDE.md)
 - [Setup Local Environment](../SETUP-LOCAL-ENVIRONMENT.md)
-- [Testing Workflow Summary](../TESTING-WORKFLOW-SUMMARY.md)
-- [Conflict Resolution Details](./beads_conflict_resolution.md)
-- [Sandbox Validation Guide](../sandbox/SANDBOX_VALIDATION_GUIDE.md)
+- [Conflict Resolution Reference (Beads)](./beads_conflict_resolution.md) — design reference for a sibling system on Dolt
+- Sandbox validation lives in the external `gravav6-sandbox` repository.
 
 ---
-*Generated: 2026-04-08*
 *Master Index for AI-Assisted Development*

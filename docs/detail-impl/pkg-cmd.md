@@ -50,7 +50,7 @@
 |:---|:---|
 | `pkg/cmd/issues/` | Issue CRUD commands (create, show, update, claim, label, comment, etc.) |
 | `pkg/cmd/graph/` | Dependency graph commands (dep, ready, blocked, visualize, search, stats) |
-| `pkg/cmd/maintenance/` | Health commands (doctor, compact, cmd_history, clear-archived) |
+| `pkg/cmd/maintenance/` | Health commands (`doctor`, `compact`, `clear`, `cmd-history`). `doctor` checks DB connectivity, required tables, orphaned dependencies, untitled issues, Wisp count, **ghost worktrees** (in-progress issues whose `.worktree/<id>` is missing), and expired file leases. `--dry-run` previews; `--fix` releases ghost claims (audit `event_type=release`, `reason=ghost_worktree`) and auto-releases expired leases. |
 | `pkg/cmd/reserve/` | File reservation commands (reserve, enforce) |
 | `pkg/cmd/sandbox/` | Sandbox validation scenarios (TS-01 through TS-10) |
 | `pkg/cmd/sync/` | Export/import commands (export, import, sync) |

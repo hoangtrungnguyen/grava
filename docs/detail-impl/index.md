@@ -2,7 +2,7 @@
 
 This folder contains **detailed implementation documentation** for every Go package in the Grava project.
 
-> _Updated 2026-04-17 (comprehensive doc review)._
+> _Updated 2026-04-26 (refresh after H1/H2/H3 main-repo changes)._
 
 ---
 

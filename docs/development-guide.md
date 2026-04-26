@@ -1,55 +1,66 @@
 # Development Guide: Grava
 
 ## Prerequisites
-- **Go**: 1.24.0 or higher
+- **Go**: 1.24.0 or higher (per `go.mod`)
 - **Dolt**: 1.32.0 or higher
-- **Python**: 3.9+ (for sandbox integration tests)
-- **Make**: (optional) for task orchestration
+- **Git**: any modern version (worktree + merge driver support required)
+- **Make**: optional, for task orchestration
 
 ## Getting Started
 
-1. **Install Dependencies**:
+1. **Install Dependencies**
    ```bash
    go mod tidy
    ```
 
-2. **Initialize Database**:
+2. **Initialize a Project**
    ```bash
-   mkdir -p .grava/dolt
-   dolt init --data-dir .grava/dolt
+   ./grava init
    ```
+   `grava init` provisions `.grava/dolt`, runs migrations, registers the merge driver in `.git/config`, writes `.gitattributes`, and installs hook stubs.
 
-3. **Start Dolt Server**:
+3. **Start the Dolt Server (manual mode)**
    ```bash
    dolt --data-dir .grava/dolt sql-server &
    ```
-
-4. **Build CLI**:
+   Or use the bundled lifecycle commands:
    ```bash
-   go build -o grava cmd/grava/main.go
+   ./grava db-start
+   ./grava db-stop
+   ```
+
+4. **Build the CLI**
+   ```bash
+   go build -o grava ./cmd/grava
    ```
 
 ## Development Workflow
 
-### Commands
+### Common Commands
 - **Build**: `go build ./...`
-- **Unit Tests**: `go test ./...`
+- **Unit tests**: `go test ./...`
+- **Integration tests** (real `git merge` via the bundled binary): `go test -tags integration ./pkg/merge/...`
 - **Linter**: `golangci-lint run ./...`
-- **Run Locally**: `./grava [command] --config .grava.yaml`
+- **Run locally**: `./grava [command]`
 
 ### Database Migrations
-Goose is used for migrations. Migrations are situated in `pkg/migrate/migrations`.
-- **Apply migrations**: The CLI applies migrations automatically on startup via `pkg/migrate/migrate.go`.
+Migrations live in `pkg/migrate/migrations/` (`001_…` through `011_…`) and are embedded into the binary via `go:embed`. They are applied automatically on startup through `pkg/migrate/migrate.go` (Goose).
 
-### Testing
-- **Unit Tests**: Standards Go testing focusing on business logic and mocked DB states.
-- **Integration Tests (Sandbox)**:
-  - Located in `sandbox/`.
-  - Driven by Python scripts that execute the `grava` binary against a fresh Dolt instance.
-  - Run with: `python3 sandbox/run_scenarios.py`
+### Testing Layers
+- **Unit tests** (`*_test.go` colocated with code): pure-Go logic and mocked DB states (sqlmock).
+- **Integration tests** under `//go:build integration`: end-to-end flows that compile and exercise the binary (e.g., `pkg/merge/git_driver_integration_test.go` runs real `git merge` operations through the bundled `grava-merge` driver).
+- **Embedded sandbox scenarios**: `grava sandbox <ts01..ts10>` runs the in-binary validation suite against a live Dolt instance.
+- **External sandbox harness**: extended multi-agent orchestration scenarios live in the separate `gravav6-sandbox` repository (Python + shell harness).
 
-## Project Structure
-- `pkg/cmd/issues`: Add new CLI commands here.
-- `pkg/grava`: Core business logic and types.
-- `pkg/dolt`: SQL query logic.
-- `pkg/migrate`: Database schema evolution.
+### Useful Development Conventions
+- All write paths must go through `pkg/dolt.WithAuditedTx` so the corresponding `events` rows are recorded atomically.
+- Use `dolt.Event*` constants from `pkg/dolt/events.go`; never inline event-type string literals.
+- Surface user-facing errors via `pkg/errors.GravaError` with a stable error code; the JSON emitter relies on the code field.
+- New CLI commands belong in `pkg/cmd/` (or a sub-package such as `pkg/cmd/issues/`) and must be registered with the appropriate parent in `AddCommands`.
+
+## Project Structure (entry points for common changes)
+- **New issue command** → `pkg/cmd/issues/`
+- **New doctor check** → `pkg/cmd/maintenance/maintenance.go` (extend `newDoctorCmd`)
+- **New schema column or table** → add a migration in `pkg/migrate/migrations/` and update `docs/data-models.md`
+- **Merge driver behavior** → `pkg/merge/`; add an integration scenario to `pkg/merge/git_driver_integration_test.go`
+- **Git wiring** → `pkg/gitconfig`, `pkg/gitattributes`, `pkg/githooks`
