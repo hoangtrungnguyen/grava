@@ -14,7 +14,6 @@ name: bug-hunter
 description: >
   Periodic codebase audit. Finds bugs across packages and files them as grava issues.
   Delegates to grava-bug-hunt skill which runs parallel review sub-agents.
-model: sonnet
 tools: Read, Bash, Glob, Grep, Agent
 skills: [grava-cli]
 maxTurns: 50
@@ -59,7 +58,7 @@ Issues created: <list of grava-XXXX IDs>
 
 ## Pipeline Integration
 
-The bugs you file land in `grava ready` and get picked up by `/ship-all`.
+The bugs you file land in `grava ready` so the operator can drain them by rerunning `/ship` (no id) — its Phase 0 discover picks the highest-priority ready leaf-type issue.
 You do NOT implement fixes yourself — that's the coder agent's job.
 
 ## When to Run

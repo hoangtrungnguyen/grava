@@ -57,7 +57,7 @@ Wait for `BUG_HUNT_COMPLETE` in the returned result.
 ## Output
 
 ```
-HUNT_COMPLETE: Run /ship-all to fix the new bugs in priority order
+HUNT_COMPLETE: Run /ship (no id) to discover and fix the highest-priority ready bug
 ```
 
 ## Acceptance Criteria
@@ -66,7 +66,7 @@ HUNT_COMPLETE: Run /ship-all to fix the new bugs in priority order
 - Bug-hunter agent spawned with `subagent_type: "bug-hunter"` and the scope in prompt
 - Skill waits for `BUG_HUNT_COMPLETE` signal
 - New bug issues visible in `grava ready` after completion
-- Suggests `/ship-all` as next step
+- Suggests rerunning `/ship` (no id) as next step — Phase 0 picks the highest-priority ready bug
 
 ## Dependencies
 

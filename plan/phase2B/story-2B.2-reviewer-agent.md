@@ -14,7 +14,6 @@ name: reviewer
 description: >
   Reviews a grava issue's last_commit. Delegates to grava-code-review skill.
   Translates skill verdict into pipeline signal.
-model: sonnet
 tools: Read, Bash, Glob, Grep
 skills: [grava-cli]
 maxTurns: 30

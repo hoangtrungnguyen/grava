@@ -53,7 +53,7 @@ Wait for `PLANNER_DONE` in the returned result.
 
 On success:
 ```
-PLAN_COMPLETE: Run /ship-all to begin draining the new backlog
+PLAN_COMPLETE: Run /ship (no id) to discover and ship the next ready leaf-type issue from the new backlog
 ```
 
 On failure:
@@ -66,7 +66,7 @@ PLAN_FAILED: <reason>
 - `/plan <path>` validates path exists before spawning planner
 - Planner agent is spawned with `subagent_type: "planner"`
 - Skill waits for `PLANNER_DONE` signal from planner agent
-- On planner success, suggests next step (`/ship-all`)
+- On planner success, suggests next step: rerun `/ship` (no id) to drain the new backlog one issue at a time
 - On missing path, exits with `PLAN_FAILED: ...not found`
 - New issues visible in `grava ready` after completion
 
