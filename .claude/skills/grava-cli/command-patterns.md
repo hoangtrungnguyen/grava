@@ -4,6 +4,28 @@
 
 Grava commands follow a **discover → act → verify** pattern. Always confirm state after mutations.
 
+## Working Directory: Always Run From Repo Root
+
+`grava` resolves the Dolt database via the repo's `.grava/` config. Inside a worktree (e.g. `.worktree/grava-abc123/`), that config is missing or stale, so commands fail with "no dolt directory" or — worse — silently target the wrong DB.
+
+**Rule:** every `grava` invocation must run from the repo root, even when the agent's `cwd` is a worktree.
+
+```bash
+# WRONG — running from inside a worktree
+cd .worktree/grava-abc123
+grava wisp write grava-abc123 step "tests-written"   # may fail or hit wrong DB
+
+# RIGHT — subshell jumps back to repo root for the grava call
+cd .worktree/grava-abc123
+( cd "$REPO_ROOT" && grava wisp write grava-abc123 step "tests-written" )
+
+# Common pattern: capture root once, use everywhere
+REPO_ROOT=$(git rev-parse --show-toplevel)        # from inside the main repo, before cd-ing into worktree
+# …or, from inside a worktree: git rev-parse --git-common-dir gives the main repo's .git
+```
+
+When emitting signals (`CODER_DONE`, etc.) the working directory does not matter — those are stdout lines parsed by the orchestrator. Only the actual `grava ...` calls need to run from root.
+
 ## Pattern 1: Discovery → Claim
 
 Find unblocked work and take ownership.

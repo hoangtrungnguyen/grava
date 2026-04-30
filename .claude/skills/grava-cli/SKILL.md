@@ -30,6 +30,7 @@ Grava is a git-native issue tracker backed by Dolt (a SQL database with git-like
 - **`--actor` flag** identifies who is performing an action (defaults to `GRAVA_ACTOR` env var)
 - **Commands are atomic** — write operations use transactions with audit logging
 - **The dependency graph drives work selection** — `grava ready` surfaces only unblocked, high-priority tasks
+- **Always run `grava` from the repo root** — Dolt config lives in the main checkout's `.grava/`. From inside a worktree (`.worktree/<id>/`) wrap calls in a subshell: `( cd "$REPO_ROOT" && grava ... )`. Details in [command-patterns.md](command-patterns.md).
 
 ## When To Load This Skill
 

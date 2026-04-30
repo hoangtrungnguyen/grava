@@ -13,8 +13,11 @@ Repeat until no ready issues remain:
 
 ### 1. Discover
 
+The coder hand-off (`grava-dev-task`) only implements **leaf-type** issues (`task`, `bug`). `grava ready` does not have a `--type` flag, so filter client-side — otherwise autopilot can land on a `story` / `epic` and HALT immediately, eating into the consecutive-HALT stop budget.
+
 ```bash
-grava ready --limit 3 --json
+# Pull the priority-ordered ready queue, then keep only leaf types the dev skill can implement.
+grava ready --limit 10 --json | jq '[.[] | select(.Node.Type == "task" or .Node.Type == "bug")]'
 ```
 
 If results come back:
@@ -45,7 +48,7 @@ Follow the `/grava-claim` skill to claim the selected issue:
 - Read issue description, identify required services/dependencies
 - Verify each prerequisite is reachable
 - Run `grava claim <id>` atomically
-- Write initial wisp heartbeat: `grava wisp write <id> status claimed`
+- Write initial wisp: `grava wisp write <id> pipeline_phase claimed` — this is the canonical orchestrator-state key (matches the `sync-pipeline-status.sh` hook's phase order). Do NOT use `status` here; that key is unread by the hook.
 
 **Before claiming**, check for stale state:
 - If the issue has a `code_review` label or existing implementation comments, it may have been worked on previously. Run `grava show <id> --json` and check `comments` and `labels`. If it looks already-implemented, skip it and move to the next candidate.
@@ -55,7 +58,7 @@ If the claim fails (prerequisites not met, stale lock, already-implemented), try
 
 ### 3. Implement
 
-Follow the `/grava-dev-epic` workflow starting from **Step 2** (Load Context) — Step 1 is already done.
+Follow the `/grava-dev-task` workflow. The autopilot's discover (loop Step 1) and claim (loop Step 2) already handled the dev skill's Step 1 (Resolve ID) and the claim portion of Step 3. The dev skill enters at **Step 3 via the resume-detection branch** — it sees `status=in_progress` + `assignee=current-actor`, reads the wisp, and skips re-claim. Step 2's spec-presence gate still runs against the now-claimed issue; if it HALTs after this loop's claim, run `grava stop <id>` to roll the claim back before continuing.
 
 **Important:** Work in the issue's worktree directory if one was created by `grava claim`. Check with `grava show <id> --json` for worktree path info.
 
@@ -83,7 +86,7 @@ Print a brief transition line:
 The loop ends when any of these occur:
 - **Backlog empty** — `grava ready` returns nothing and no open issues remain (any type)
 - **All candidates blocked** — every ready issue fails prerequisite checks, has stale locks, or is already implemented
-- **HALT from grava-dev-epic** — implementation hits an unrecoverable blocker (missing deps, ambiguous requirements, 3 consecutive failures)
+- **HALT from grava-dev-task** — implementation hits an unrecoverable blocker (missing deps, ambiguous requirements, 3 consecutive failures, scope mismatch)
 - **User interrupts** — user stops the process manually
 
 When stopping, print a summary of the session:

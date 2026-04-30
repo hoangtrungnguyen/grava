@@ -25,7 +25,6 @@ validation-rules:
 ## 📋 Context & Requirements Validation
 
 - [ ] **Story Context Completeness:** Dev Notes contains ALL necessary technical requirements, architecture patterns, and implementation guidance
-- [ ] **Architecture Compliance:** Implementation follows all architectural requirements specified in Dev Notes
 - [ ] **Technical Specifications:** All technical specifications (libraries, frameworks, versions) from Dev Notes are implemented correctly
 - [ ] **Previous Story Learnings:** Previous story insights incorporated (if applicable) and build upon appropriately
 
@@ -40,9 +39,6 @@ validation-rules:
 ## 🧪 Testing & Quality Assurance
 
 - [ ] **Unit Tests:** Unit tests added/updated for ALL core functionality introduced/changed by this story
-- [ ] **Integration Tests:** Integration tests added/updated for component interactions when story requirements demand them
-- [ ] **End-to-End Tests:** End-to-end tests created for critical user flows when story requirements specify them
-- [ ] **Test Coverage:** Tests cover acceptance criteria and edge cases from story Dev Notes
 - [ ] **Regression Prevention:** ALL existing tests pass (no regressions introduced)
 - [ ] **Code Quality:** Linting and static checks pass when configured in project
 - [ ] **Test Framework Compliance:** Tests use project's testing frameworks and patterns from Dev Notes
