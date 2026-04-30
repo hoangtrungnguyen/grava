@@ -52,6 +52,18 @@ Four prereq gaps uncovered during the Phase 2B audit. Pipeline stories below ref
 | [2B.13](story-2B.13-pre-merge-check.md) | `scripts/pre-merge-check.sh` + `.github/workflows/pre-merge-check.yml` | Cross-branch regression catch (local probe + GH Action) |
 | [2B.15](story-2B.15-hunt-scheduling.md) | `.git/hooks/commit-msg` + `scripts/run-pending-hunts.sh` + cron | Bug-hunt triggers (commit token, hourly drain, nightly) |
 
+## Stories — Test Suites (`tests/`)
+
+| Story | File | Description |
+|-------|------|-------------|
+| [2B.16](story-2B.16-ship-test-suite.md) | `gravav6-sandbox/sandbox/ship/` (pytest) + sandbox-repo CI | Deterministic test suite for `/ship` hosted in the sandbox repo: pytest, stub agents, disposable Dolt, phase + re-entry + contention coverage |
+
+## Stories — Distribution (`plugins/`)
+
+| Story | File | Description |
+|-------|------|-------------|
+| [2B.17](story-2B.17-grava-plugin-install.md) | `.claude-plugin/marketplace.json` + `plugins/grava/` + `pkg/cmd/bootstrap.go` | Package grava as a Claude Code plugin (skills + agents + hooks bundled); `grava bootstrap` handles binary check, git hooks, cron print |
+
 ## Prerequisites
 
 - All 5 pipeline-active skills resolve: `grava-cli`, `grava-dev-task`, `grava-code-review`, `grava-bug-hunt`, `grava-gen-issues` (claim folded into `grava-dev-task` Step 3; discover folded into `/ship` Phase 0). `grava-next-issue` remains in the library for ad-hoc human use but is not invoked by the pipeline.
@@ -93,6 +105,7 @@ Four prereq gaps uncovered during the Phase 2B audit. Pipeline stories below ref
 | 14 | Stress: ≥2 terminals running `/ship` (no id) on same backlog → each picks a different candidate (start with N=2; rerun at N=4 once N=2 is green) | Claim contention via atomic `grava claim` |
 | 15 | Negative test: agent emits signal mid-output but unrelated last line → wisp NOT advanced | Fix 1 |
 | 16 | Negative test: re-spawn coder emits CODER_DONE after review_blocked → wisp NOT regressed | Fix 8 |
+| 17 | **Story 2B.16 — `/ship` test suite (bats + stub agents + disposable Dolt)** lands; `make test-ship` is required-status on PRs touching `/ship` path | Steps 9–16 become regression-gated, not manual-only |
 
 ## Key Design Decisions
 
