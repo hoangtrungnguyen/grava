@@ -72,3 +72,7 @@ skills-lock.json
 docs/.DS_Store
 .claude/worktrees/*grava_test_bin
 .worktree/
+
+plan/_bmad/
+plan/_bmad-output/
+plan/.claude/
