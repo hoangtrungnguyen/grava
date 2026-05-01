@@ -26,8 +26,6 @@ Operational and integration guides in [`guides/`](./guides):
 - [`CLI_REFERENCE.md`](./guides/CLI_REFERENCE.md) — full command reference
 - [`DOLT_SETUP.md`](./guides/DOLT_SETUP.md) — Dolt server configuration
 - [`RELEASE_PROCESS.md`](./guides/RELEASE_PROCESS.md) — release procedure
-- [`agent_instructions.md`](./guides/agent_instructions.md) — instructions consumed by AI agents
-- [`claude-worktree-integration.md`](./guides/claude-worktree-integration.md) — Claude Code worktree handoff
 
 ### External References
 - [README.md](../README.md)

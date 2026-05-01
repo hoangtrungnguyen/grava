@@ -100,15 +100,11 @@ Full reference: **[Agent Team Guide](docs/guides/AGENT_TEAM.md)**
 | `failed to connect to database` | Run `grava start` or `grava init` |
 | `port 3306 is already in use` | Check `.grava.yaml` for the configured port; `grava init` auto-picks a free port |
 
-## Core Modules
+## Architecture
 
-1. **[Storage Substrate](docs/epics/Epic_1_Storage_Substrate.md)** — Dolt init and schema
-2. **[Graph Mechanics](docs/epics/Epic_2_Graph_Mechanics.md)** — Dependency logic and topological sorting
-3. **[Git Merge Driver](docs/epics/Epic_3_Git_Merge_Driver.md)** — Schema-aware merging for `issues.jsonl`
-4. **[Flight Recorder](docs/epics/Epic_4_Log_Saver.md)** — Structured logging and session context
-5. **[Security](docs/epics/Epic_5_Security.md)** — mTLS and RBAC for agent safety
-6. **[MCP Integration](docs/epics/Epic_6_MCP_Integration.md)** — AI agent interface
-7. **[Advanced Analytics](docs/epics/Epic_7_Advanced_Analytics.md)** — PageRank and critical path analysis _(optional)_
+Grava is built on **Dolt** (version-controlled SQL) with layered components: CLI (Cobra), domain bootstrap, persistence with audited transactions, DAG graph engine, embedded migrations (Goose), schema-aware merge driver, file-reservation system, and a Claude Code agent team plugin.
+
+Full breakdown: **[Architecture](docs/architecture.md)** — 12 components, data flow, invariants, design decisions.
 
 ## Docs
 
