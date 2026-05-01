@@ -3,6 +3,8 @@
 ## Purpose
 Grava is an AI-native CLI issue tracker designed for high-performance agentic workflows. It leverages **Dolt**, a version-controlled SQL database, to provide atomic work claiming, ephemeral state management (Wisp), a context-aware dependency graph for issue discovery, and a schema-aware merge driver for `issues.jsonl`.
 
+It additionally ships a **Claude Code agent team** (`coder`, `reviewer`, `bug-hunter`, `planner`, `pr-creator`) bundled as a plugin, exposing `/ship`, `/plan`, `/hunt` slash-commands that drive issues end-to-end through code → review → PR → merge with last-line signal contracts and wisp-backed crash recovery. See [Agent Team Guide](./guides/AGENT_TEAM.md).
+
 ## Technology Stack
 | Category | Technology | Version | Description |
 | :--- | :--- | :--- | :--- |
@@ -20,7 +22,7 @@ Grava is an AI-native CLI issue tracker designed for high-performance agentic wo
 - **Primary Language:** Go
 
 ## Core Modules
-- **`pkg/cmd`**: CLI command definitions (root, init, install, hook, conflicts, resolve, merge-driver, merge-slot, orchestrate, sync-status, version, …) plus sub-packages: `issues`, `graph`, `maintenance`, `reserve`, `sandbox`, `sync`.
+- **`pkg/cmd`**: CLI command definitions (root, init, install, hook, conflicts, resolve, merge-driver, merge-slot, orchestrate, sync-status, version, **bootstrap** (agent-team plugin install helper), …) plus sub-packages: `issues`, `graph`, `maintenance`, `reserve`, `sandbox`, `sync`.
 - **`pkg/cmddeps`**: Shared CLI dependency container and JSON-aware error emitter.
 - **`pkg/grava`**: Domain bootstrap and `.grava/` directory resolution.
 - **`pkg/dolt`**: Database access layer, `WithAuditedTx` transaction wrapper, retry logic.

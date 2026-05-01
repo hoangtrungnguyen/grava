@@ -12,6 +12,7 @@ Grava is a next-generation issue tracking system designed specifically for auton
 
 *   **Dolt-Backed Storage**: Utilizes [Dolt](https://github.com/dolthub/dolt), a version-controlled SQL database, to enable `git`-like semantics (branch, merge, diff) for your issue tracker.
 *   **The Ready Engine**: A DAG-based (Directed Acyclic Graph) task selection engine that mathematically guarantees agents only work on unblocked, high-priority tasks.
+*   **Agent Team Pipeline**: Full Claude Code agent team (`coder`, `reviewer`, `bug-hunter`, `planner`, `pr-creator`) wired through `/ship`, `/plan`, `/hunt` skills — takes issues from spec → code → review → PR → merge. See [Agent Team Guide](docs/guides/AGENT_TEAM.md).
 *   **Agent-Native Interface**: Exposes a structured MCP (Model Context Protocol) server instead of a web UI, allowing agents to interact via strictly typed tools.
 *   **Distributed Synchronization**: Supports offline-first development with a background daemon that syncs state between local replicas and a central server.
 *   **Flight Recorder**: Comprehensive logging and artifact storage to debug agent decision-making processes ("vibe coding").
@@ -139,6 +140,30 @@ grava list
 | `grava compact` | Purge old ephemeral Wisps |
 
 See **[CLI Reference](docs/guides/CLI_REFERENCE.md)** for full documentation.
+
+## 🤖 Agent Team (Claude Code Pipeline)
+
+Grava ships a multi-agent pipeline as a Claude Code plugin. After installing the binary:
+
+```bash
+# In Claude Code session, inside any project:
+/plugin marketplace add hoangtrungnguyen/grava
+/plugin install grava@grava
+grava bootstrap                 # installs git hook, prints cron lines
+```
+
+You get 3 slash-commands + 5 agents + 13 skills + auto-registered hooks:
+
+| Command | Purpose |
+|---------|---------|
+| `/ship [id]` | Ship one issue end-to-end (code → review → PR → handoff) |
+| `/ship` (no id) | Auto-pick next ready `task`/`bug` from backlog |
+| `/plan <doc>` | Break a spec document into a grava issue hierarchy |
+| `/hunt [scope]` | Audit codebase for bugs, file as grava issues |
+
+Async PR-merge tracking via `scripts/pr-merge-watcher.sh` (cron). Hourly bug-hunt drain via `scripts/run-pending-hunts.sh`.
+
+Full reference: **[Agent Team Guide](docs/guides/AGENT_TEAM.md)** — phases, signals, wisp keys, recovery patterns.
 
 ## 🧩 Core Modules
 

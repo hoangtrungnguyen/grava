@@ -21,7 +21,8 @@ Per-package documentation in [`detail-impl/`](./detail-impl/index.md):
 
 ### Guides
 Operational and integration guides in [`guides/`](./guides):
-- [`AGENT_WORKFLOWS.md`](./guides/AGENT_WORKFLOWS.md) — agent collaboration patterns
+- [`AGENT_TEAM.md`](./guides/AGENT_TEAM.md) — **multi-agent pipeline (`/ship`, `/plan`, `/hunt`)**: phases, signals, wisps, recovery
+- [`AGENT_WORKFLOWS.md`](./guides/AGENT_WORKFLOWS.md) — single-agent workflows (`/are-u-ready`, `/landing-the-plane`)
 - [`CLI_REFERENCE.md`](./guides/CLI_REFERENCE.md) — full command reference
 - [`DOLT_SETUP.md`](./guides/DOLT_SETUP.md) — Dolt server configuration
 - [`RELEASE_PROCESS.md`](./guides/RELEASE_PROCESS.md) — release procedure
