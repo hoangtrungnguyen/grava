@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -76,7 +77,7 @@ func TestSchemaVersion_MatchesMigrationFileCount(t *testing.T) {
 	require.NoError(t, err, "could not read pkg/migrate/migrations/ directory")
 	migrationCount := 0
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
 			migrationCount++
 		}
 	}

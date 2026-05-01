@@ -1,0 +1,15 @@
+{
+  "name": "grava",
+  "description": "Grava plugin catalog",
+  "owner": { "name": "grava maintainers" },
+  "plugins": [
+    {
+      "name": "grava",
+      "source": "./plugins/grava",
+      "description": "Full grava pipeline: 12 skills, 5 agents, 2 hooks, 5 scripts.",
+      "version": "0.2.0",
+      "category": "workflow",
+      "tags": ["grava", "pipeline", "ci", "review", "issues"]
+    }
+  ]
+}

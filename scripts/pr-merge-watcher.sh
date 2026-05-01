@@ -1,0 +1,125 @@
+#!/bin/bash
+# scripts/pr-merge-watcher.sh — async PR merge tracker.
+# Run via cron every 5 min: */5 * * * * cd /path/to/repo && ./scripts/pr-merge-watcher.sh
+
+set -u
+
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+cd "$REPO_ROOT" || exit 1
+
+PIDFILE=".grava/pr-merge-watcher.pid"
+mkdir -p .grava
+if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+  exit 0    # previous run still active
+fi
+echo $$ > "$PIDFILE"
+trap 'rm -f "$PIDFILE"' EXIT
+
+MAX_PR_WAIT_HOURS=72
+NOW=$(date -u +%s)
+
+ISSUES=$(grava list --label pr-created --json 2>/dev/null)
+[ -n "$ISSUES" ] || exit 0
+
+echo "$ISSUES" | jq -r '.[].id' | while read -r ID; do
+  PR_NUMBER=$(grava wisp read "$ID" pr_number 2>/dev/null)
+  PR_URL=$(grava wisp read "$ID" pr_url 2>/dev/null)
+  [ -n "$PR_NUMBER" ] || continue
+
+  STATE=$(gh pr view "$PR_NUMBER" --json state -q '.state' 2>/dev/null)
+
+  case "$STATE" in
+    MERGED)
+      grava wisp write "$ID" pr_merged_at "$NOW"
+      grava wisp write "$ID" pipeline_phase pr_merged
+      grava label "$ID" --remove pr-created
+      grava close "$ID" --actor watcher
+      grava wisp write "$ID" pipeline_phase complete
+      grava commit -m "watcher: $ID merged + closed"
+      continue
+      ;;
+    CLOSED)
+      # First-time CLOSED detection — distil rejection reason + record on issue.
+      # Gated by pr_rejection_recorded wisp so re-runs don't double-write.
+      ALREADY_RECORDED=$(grava wisp read "$ID" pr_rejection_recorded 2>/dev/null)
+      if [ -z "$ALREADY_RECORDED" ]; then
+        REVIEWS_JSON=$(gh pr view "$PR_NUMBER" --json reviews,closedBy,author 2>/dev/null)
+        CHANGES_REQUESTED=$(echo "$REVIEWS_JSON" | jq -r '
+          [.reviews[]? | select(.state == "CHANGES_REQUESTED") | .body] | join("\n\n---\n\n")
+        ' | head -c 4096)
+        CLOSED_BY=$(echo "$REVIEWS_JSON" | jq -r '.closedBy.login // "unknown"')
+        AUTHOR=$(echo "$REVIEWS_JSON" | jq -r '.author.login // ""')
+        LAST_COMMENT=$(gh pr view "$PR_NUMBER" --json comments 2>/dev/null \
+          | jq -r '.comments[-1].body // ""' | head -c 1024)
+
+        if [ -n "$CHANGES_REQUESTED" ]; then
+          REASON="reviewer-rejected"
+        elif [ "$CLOSED_BY" = "$AUTHOR" ]; then
+          REASON="author-abandoned"
+        else
+          REASON="unknown"
+        fi
+
+        STAMP=$(date -u +%FT%TZ)
+        NOTES=$(cat <<EOF
+
+## PR Rejection Notes ($STAMP)
+
+PR: $PR_URL
+Closed by: $CLOSED_BY
+Reason category: $REASON
+
+### Reviewer feedback (CHANGES_REQUESTED bodies)
+${CHANGES_REQUESTED:-_none recorded_}
+
+### Closing comment
+${LAST_COMMENT:-_none_}
+EOF
+)
+
+        printf '%s\n' "$NOTES" | grava update "$ID" --description-append-from-stdin
+        grava comment "$ID" -m "PR closed without merge ($REASON). See description for full notes."
+
+        grava wisp write "$ID" pr_rejection_notes "$NOTES"
+        grava wisp write "$ID" pr_close_reason "$REASON"
+        grava wisp write "$ID" pr_closed_at "$NOW"
+        grava wisp write "$ID" pr_rejection_recorded "1"
+      fi
+
+      grava wisp write "$ID" pipeline_phase failed
+      grava label "$ID" --add pr-rejected
+      grava label "$ID" --remove pr-created
+      grava commit -m "watcher: $ID PR closed without merge"
+      continue
+      ;;
+  esac
+
+  # State is OPEN. Check stale cap.
+  SINCE=$(grava wisp read "$ID" pr_awaiting_merge_since 2>/dev/null || echo "$NOW")
+  AGE_HRS=$(( (NOW - SINCE) / 3600 ))
+  if [ "$AGE_HRS" -ge "$MAX_PR_WAIT_HOURS" ]; then
+    grava wisp write "$ID" pr_stale "true"
+    grava label "$ID" --add needs-human
+    grava commit -m "watcher: $ID stale (>${MAX_PR_WAIT_HOURS}h)"
+    continue
+  fi
+
+  # Check for new review comments + CHANGES_REQUESTED
+  COMMENTS_JSON=$(gh api "repos/{owner}/{repo}/pulls/$PR_NUMBER/comments" 2>/dev/null)
+  LAST_SEEN=$(grava wisp read "$ID" pr_last_seen_comment_id 2>/dev/null || echo 0)
+  NEW=$(echo "$COMMENTS_JSON" | jq -c --argjson last "$LAST_SEEN" '
+    [.[] | select(.in_reply_to_id == null) | select(.id > $last)]
+  ')
+  NEW_COUNT=$(echo "$NEW" | jq 'length')
+  REVIEW_DECISION=$(gh pr view "$PR_NUMBER" --json reviewDecision -q '.reviewDecision' 2>/dev/null)
+
+  if [ "$NEW_COUNT" -gt 0 ] || [ "$REVIEW_DECISION" = "CHANGES_REQUESTED" ]; then
+    HIGHEST=$(echo "$COMMENTS_JSON" | jq -r '[.[].id] | max // 0')
+    grava wisp write "$ID" pr_new_comments "$NEW"
+    grava wisp write "$ID" pr_last_seen_comment_id "$HIGHEST"
+    grava commit -m "watcher: $ID new PR comments ($NEW_COUNT)"
+    [ -x scripts/hooks/notify-pr-comments.sh ] && scripts/hooks/notify-pr-comments.sh "$ID" "$PR_URL"
+  fi
+done
+
+exit 0

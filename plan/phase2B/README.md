@@ -4,6 +4,8 @@ Multi-agent team that takes grava issues through code → review → PR → merg
 
 Source: split from `archive/agent-team-plan-v2.md` for manageability.
 
+> **Status:** All 20 stories below are **plan complete** (specs ready for implementation). Stories with caveats are flagged in the `Status` column. Implementation has not started — execution follows the order in the [Implementation Order](#implementation-order) table.
+
 ## Architecture
 
 | File | Scope |
@@ -14,55 +16,55 @@ Source: split from `archive/agent-team-plan-v2.md` for manageability.
 
 Four prereq gaps uncovered during the Phase 2B audit. Pipeline stories below reference CLI flags, subcommands, or skill workflow steps that don't exist yet. All must land **before** any agent / skill / hook story is implemented — otherwise the pipeline scripts crash on first call, or the heartbeat-stale alarm fires on every long Phase 1.
 
-| Story | File | Description |
-|-------|------|-------------|
-| [2B.0a](story-2B.0a-cli-list-label.md) | `pkg/cmd/list.go` | Add `--label` flag to `grava list` (AND semantics, repeatable). Required by watcher (2B.12) for `pr-created` discovery. |
-| [2B.0b](story-2B.0b-cli-wisp-delete.md) | `pkg/cmd/wisp.go` | Add `grava wisp delete <id> <key>` subcommand. Required by `/ship` Phase 4 resume (2B.5). The pending-hunt drain uses a file-based queue, not a wisp — wisp namespace is issue-scoped, no sentinel `_global`. |
-| [2B.0c](story-2B.0c-cli-description-append.md) | `pkg/cmd/update.go` | Add `--description-append` / `--description-append-from-stdin` flags to `grava update`. Required by watcher (2B.12) CLOSED branch to record PR rejection notes onto the issue description. |
-| [2B.0d](story-2B.0d-skill-heartbeat.md) | `.claude/skills/grava-dev-task/workflow.md` | Add `orchestrator_heartbeat` writes at each workflow checkpoint inside the skill. Without this, `grava doctor` flags every Phase 1 task >30 min as stale even when the coder is healthy. |
+| Story | File | Description | Status |
+|-------|------|-------------|--------|
+| [2B.0a](story-2B.0a-cli-list-label.md) | `pkg/cmd/list.go` | Add `--label` flag to `grava list` (AND semantics, repeatable). Required by watcher (2B.12) for `pr-created` discovery. | Plan complete |
+| [2B.0b](story-2B.0b-cli-wisp-delete.md) | `pkg/cmd/wisp.go` | Add `grava wisp delete <id> <key>` subcommand. Required by `/ship` Phase 4 resume (2B.5). The pending-hunt drain uses a file-based queue, not a wisp — wisp namespace is issue-scoped, no sentinel `_global`. | Plan complete |
+| [2B.0c](story-2B.0c-cli-description-append.md) | `pkg/cmd/update.go` | Add `--description-append` / `--description-append-from-stdin` flags to `grava update`. Required by watcher (2B.12) CLOSED branch to record PR rejection notes onto the issue description. | Plan complete |
+| [2B.0d](story-2B.0d-skill-heartbeat.md) | `.claude/skills/grava-dev-task/workflow.md` | Add `orchestrator_heartbeat` writes at each workflow checkpoint inside the skill. Without this, `grava doctor` flags every Phase 1 task >30 min as stale even when the coder is healthy. | Plan complete |
 
 ## Stories — Agents (`.claude/agents/`)
 
-| Story | File | Description |
-|-------|------|-------------|
-| [2B.1](story-2B.1-coder-agent.md) | `.claude/agents/coder.md` | Implement issue via `grava-dev-task` (skill claims atomically with pre-check) |
-| [2B.2](story-2B.2-reviewer-agent.md) | `.claude/agents/reviewer.md` | Review `last_commit` via `grava-code-review` |
-| [2B.3](story-2B.3-bug-hunter-agent.md) | `.claude/agents/bug-hunter.md` | Audit codebase via `grava-bug-hunt` |
-| [2B.4](story-2B.4-planner-agent.md) | `.claude/agents/planner.md` | Doc → issue hierarchy via `grava-gen-issues` |
-| [2B.14](story-2B.14-pr-creator-agent.md) | `.claude/agents/pr-creator.md` | Push branch + `gh pr create` with template |
+| Story | File | Description | Status |
+|-------|------|-------------|--------|
+| [2B.1](story-2B.1-coder-agent.md) | `.claude/agents/coder.md` | Implement issue via `grava-dev-task` (skill claims atomically with pre-check) | Plan complete |
+| [2B.2](story-2B.2-reviewer-agent.md) | `.claude/agents/reviewer.md` | Review `last_commit` via `grava-code-review` | Plan complete |
+| [2B.3](story-2B.3-bug-hunter-agent.md) | `.claude/agents/bug-hunter.md` | Audit codebase via `grava-bug-hunt` | Plan complete |
+| [2B.4](story-2B.4-planner-agent.md) | `.claude/agents/planner.md` | Doc → issue hierarchy via `grava-gen-issues` | Plan complete |
+| [2B.14](story-2B.14-pr-creator-agent.md) | `.claude/agents/pr-creator.md` | Push branch + `gh pr create` with template | Plan complete |
 
 ## Stories — Orchestrator Skills (`.claude/skills/`)
 
-| Story | File | Description |
-|-------|------|-------------|
-| [2B.5](story-2B.5-skill-ship.md) | `.claude/skills/ship/SKILL.md` | `/ship [id]` — single-issue pipeline (discover when no id → code → review → PR → handoff) |
-| [2B.7](story-2B.7-skill-plan.md) | `.claude/skills/plan/SKILL.md` | `/plan <doc>` — invoke planner agent |
-| [2B.8](story-2B.8-skill-hunt.md) | `.claude/skills/hunt/SKILL.md` | `/hunt [scope]` — invoke bug-hunter agent |
+| Story | File | Description | Status |
+|-------|------|-------------|--------|
+| [2B.5](story-2B.5-skill-ship.md) | `.claude/skills/ship/SKILL.md` | `/ship [id]` — single-issue pipeline (discover when no id → code → review → PR → handoff) | Plan complete — **Note:** needs one-line addendum re: shell-resolvable `Agent` invocation (per 2B.16 line 71) before implementation |
+| [2B.7](story-2B.7-skill-plan.md) | `.claude/skills/plan/SKILL.md` | `/plan <doc>` — invoke planner agent | Plan complete |
+| [2B.8](story-2B.8-skill-hunt.md) | `.claude/skills/hunt/SKILL.md` | `/hunt [scope]` — invoke bug-hunter agent | Plan complete |
 
 > **Backlog drain:** previously `/ship-all` autopilot. Archived (see `archive/story-2B.6-skill-ship-all.md`). Run `/ship` (no id) repeatedly — Phase 0 discovers the next ready leaf-type issue from the queue. The standalone `grava-next-issue` skill is no longer wired into the pipeline (kept available for ad-hoc terminal use only).
 
 ## Stories — Hooks & Async (`scripts/`)
 
-| Story | File | Description |
-|-------|------|-------------|
-| [2B.9](story-2B.9-hook-sync-pipeline-status.md) | `scripts/hooks/sync-pipeline-status.sh` | PostToolUse: parse pipeline signals (last-line, forward-only) → grava wisps |
-| [2B.10](story-2B.10-hook-warn-in-progress.md) | `scripts/hooks/warn-in-progress.sh` | Stop: warn on in-progress issues |
-| [2B.11](story-2B.11-settings-and-claude-md.md) | `.claude/settings.json` + `CLAUDE.md` | Register hooks; document agent team & cron setup |
-| [2B.12](story-2B.12-pr-merge-watcher.md) | `scripts/pr-merge-watcher.sh` | Async (cron) PR merge tracker — owns Phase 4 outside Claude Code |
-| [2B.13](story-2B.13-pre-merge-check.md) | `scripts/pre-merge-check.sh` + `.github/workflows/pre-merge-check.yml` | Cross-branch regression catch (local probe + GH Action) |
-| [2B.15](story-2B.15-hunt-scheduling.md) | `.git/hooks/commit-msg` + `scripts/run-pending-hunts.sh` + cron | Bug-hunt triggers (commit token, hourly drain, nightly) |
+| Story | File | Description | Status |
+|-------|------|-------------|--------|
+| [2B.9](story-2B.9-hook-sync-pipeline-status.md) | `scripts/hooks/sync-pipeline-status.sh` | PostToolUse: parse pipeline signals (last-line, forward-only) → grava wisps | Plan complete |
+| [2B.10](story-2B.10-hook-warn-in-progress.md) | `scripts/hooks/warn-in-progress.sh` | Stop: warn on in-progress issues | Plan complete |
+| [2B.11](story-2B.11-settings-and-claude-md.md) | `.claude/settings.json` + `CLAUDE.md` | Register hooks; document agent team & cron setup | Plan complete |
+| [2B.12](story-2B.12-pr-merge-watcher.md) | `scripts/pr-merge-watcher.sh` | Async (cron) PR merge tracker — owns Phase 4 outside Claude Code | Plan complete |
+| [2B.13](story-2B.13-pre-merge-check.md) | `scripts/pre-merge-check.sh` + `.github/workflows/pre-merge-check.yml` | Cross-branch regression catch (local probe + GH Action) | Plan complete |
+| [2B.15](story-2B.15-hunt-scheduling.md) | `.git/hooks/commit-msg` + `scripts/run-pending-hunts.sh` + cron | Bug-hunt triggers (commit token, hourly drain, nightly) | Plan complete |
 
 ## Stories — Test Suites (`tests/`)
 
-| Story | File | Description |
-|-------|------|-------------|
-| [2B.16](story-2B.16-ship-test-suite.md) | `gravav6-sandbox/sandbox/ship/` (pytest) + sandbox-repo CI | Deterministic test suite for `/ship` hosted in the sandbox repo: pytest, stub agents, disposable Dolt, phase + re-entry + contention coverage |
+| Story | File | Description | Status |
+|-------|------|-------------|--------|
+| [2B.16](story-2B.16-ship-test-suite.md) | `gravav6-sandbox/sandbox/ship/` (pytest) + sandbox-repo CI | Deterministic test suite for `/ship` hosted in the sandbox repo: pytest, stub agents, disposable Dolt, phase + re-entry + contention coverage | Plan complete — module-scoped Dolt fixture relies on unique `grava-test-*` ids to avoid cross-test bleed |
 
 ## Stories — Distribution (`plugins/`)
 
-| Story | File | Description |
-|-------|------|-------------|
-| [2B.17](story-2B.17-grava-plugin-install.md) | `.claude-plugin/marketplace.json` + `plugins/grava/` + `pkg/cmd/bootstrap.go` | Package grava as a Claude Code plugin (skills + agents + hooks bundled); `grava bootstrap` handles binary check, git hooks, cron print |
+| Story | File | Description | Status |
+|-------|------|-------------|--------|
+| [2B.17](story-2B.17-grava-plugin-install.md) | `.claude-plugin/marketplace.json` + `plugins/grava/` + `pkg/cmd/bootstrap.go` | Package grava as a Claude Code plugin (skills + agents + hooks bundled); `grava bootstrap` handles binary check, git hooks, cron print | Plan complete — **Note:** confirm marketplace name `grava` unreserved before first publish; fallback to `grava-pipeline` |
 
 ## Prerequisites
 

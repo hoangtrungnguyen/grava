@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
@@ -228,6 +229,49 @@ func updateIssue(ctx context.Context, store dolt.Store, params UpdateParams) (Up
 	return UpdateResult{ID: params.ID, Status: "updated"}, nil
 }
 
+// DescriptionAppendResult is the JSON output model for description-append operations.
+type DescriptionAppendResult struct {
+	Updated           bool `json:"updated"`
+	DescriptionLength int  `json:"description_length"`
+}
+
+// appendDescription appends text to an issue's description with a "\n\n" separator.
+// An empty appendText is a no-op (returns Updated=false with current length).
+func appendDescription(ctx context.Context, store dolt.Store, issueID, appendText, actor, model string) (DescriptionAppendResult, error) {
+	var currentDesc string
+	row := store.QueryRow("SELECT COALESCE(description, '') FROM issues WHERE id = ?", issueID)
+	if err := row.Scan(&currentDesc); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return DescriptionAppendResult{}, gravaerrors.New("ISSUE_NOT_FOUND",
+				fmt.Sprintf("issue %s not found", issueID), nil)
+		}
+		return DescriptionAppendResult{}, gravaerrors.New("DB_UNREACHABLE", "failed to read issue", err)
+	}
+
+	if appendText == "" {
+		return DescriptionAppendResult{Updated: false, DescriptionLength: len(currentDesc)}, nil
+	}
+
+	var newDesc string
+	if currentDesc == "" {
+		newDesc = appendText
+	} else {
+		newDesc = currentDesc + "\n\n" + appendText
+	}
+
+	_, err := updateIssue(ctx, store, UpdateParams{
+		ID:            issueID,
+		Description:   newDesc,
+		Actor:         actor,
+		Model:         model,
+		ChangedFields: []string{"desc"},
+	})
+	if err != nil {
+		return DescriptionAppendResult{}, err
+	}
+	return DescriptionAppendResult{Updated: true, DescriptionLength: len(newDesc)}, nil
+}
+
 // nonStatusFieldsIn returns changed fields excluding "status".
 func nonStatusFieldsIn(fields []string) []string {
 	var result []string
@@ -250,6 +294,41 @@ Only the flags provided will be updated.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
+
+			// Handle --description-append and --description-append-from-stdin before other flags.
+			// These are pure-append operations independent of the main update path.
+			descAppendChanged := cmd.Flags().Changed("description-append")
+			descAppendStdin, _ := cmd.Flags().GetBool("description-append-from-stdin")
+
+			if descAppendChanged || descAppendStdin {
+				var appendText string
+				if descAppendStdin {
+					data, err := io.ReadAll(cmd.InOrStdin())
+					if err != nil {
+						return fmt.Errorf("failed to read stdin: %w", err)
+					}
+					appendText = string(data)
+				} else {
+					appendText, _ = cmd.Flags().GetString("description-append")
+				}
+
+				result, err := appendDescription(cmd.Context(), *d.Store, id, appendText, *d.Actor, *d.AgentModel)
+				if err != nil {
+					if *d.OutputJSON {
+						return writeJSONError(cmd, err)
+					}
+					return err
+				}
+				if *d.OutputJSON {
+					b, _ := json.MarshalIndent(result, "", "  ") //nolint:errcheck
+					fmt.Fprintln(cmd.OutOrStdout(), string(b))   //nolint:errcheck
+					return nil
+				}
+				if result.Updated {
+					fmt.Fprintf(cmd.OutOrStdout(), "✅ Description appended to %s (%d chars)\n", id, result.DescriptionLength) //nolint:errcheck
+				}
+				return nil
+			}
 
 			// Collect which fields were explicitly set by the caller
 			var changedFields []string
@@ -345,5 +424,7 @@ Only the flags provided will be updated.`,
 	cmd.Flags().StringP("status", "s", "", "Update status")
 	cmd.Flags().StringSliceVar(&UpdateAffectedFiles, "files", []string{}, "Update affected files")
 	cmd.Flags().String("last-commit", "", "Store the last session's commit hash")
+	cmd.Flags().String("description-append", "", "Append text to issue description (uses \\n\\n separator; empty string is a no-op)")
+	cmd.Flags().Bool("description-append-from-stdin", false, "Append stdin content to issue description")
 	return cmd
 }

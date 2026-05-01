@@ -1,0 +1,17 @@
+{
+  "PostToolUse": [
+    {
+      "matcher": "Bash",
+      "hooks": [
+        { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/sync-pipeline-status.sh" }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [
+        { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/warn-in-progress.sh" }
+      ]
+    }
+  ]
+}

@@ -429,6 +429,7 @@ You can filter by status or type, and sort by various criteria.`,
 			listWisp, _ := cmd.Flags().GetBool("wisp")
 			listSort, _ := cmd.Flags().GetString("sort")
 			includeArchived, _ := cmd.Flags().GetBool("include-archived")
+			listLabels, _ := cmd.Flags().GetStringSlice("label")
 
 			query := "SELECT id, title, issue_type, priority, status, created_at FROM issues"
 			var params []any
@@ -463,6 +464,20 @@ You can filter by status or type, and sort by various criteria.`,
 			if listAssignee != "" {
 				whereParts = append(whereParts, "assignee = ?")
 				params = append(params, listAssignee)
+			}
+			if len(listLabels) > 0 {
+				placeholders := make([]string, len(listLabels))
+				for i := range placeholders {
+					placeholders[i] = "?"
+				}
+				whereParts = append(whereParts, fmt.Sprintf(
+					"id IN (SELECT issue_id FROM issue_labels WHERE label IN (%s) GROUP BY issue_id HAVING COUNT(DISTINCT label) = %d)",
+					strings.Join(placeholders, ", "),
+					len(listLabels),
+				))
+				for _, l := range listLabels {
+					params = append(params, l)
+				}
 			}
 
 			if len(whereParts) > 0 {
@@ -544,6 +559,7 @@ You can filter by status or type, and sort by various criteria.`,
 	cmd.Flags().Bool("wisp", false, "Show only ephemeral Wisp issues")
 	cmd.Flags().String("sort", "", "Sort by fields (e.g. priority:asc,created:desc)")
 	cmd.Flags().Bool("include-archived", false, "Include archived issues in results")
+	cmd.Flags().StringSliceP("label", "L", nil, "Filter by label (AND semantics when repeated: --label foo --label bar returns issues with both)")
 	return cmd
 }
 

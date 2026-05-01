@@ -158,7 +158,34 @@ func wispRead(ctx context.Context, store dolt.Store, issueID, key string) (any, 
 	return entries, nil
 }
 
-// newWispCmd builds the `grava wisp` parent command with write and read subcommands.
+// WispDeleteResult is the JSON output for a wisp delete operation.
+type WispDeleteResult struct {
+	Deleted bool   `json:"deleted"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// wispDelete removes a key from the wisp store.
+// Returns (true, nil) if the row was deleted, (false, nil) if not found (idempotent).
+// Missing issue is treated as "key not found" — no error.
+func wispDelete(ctx context.Context, store dolt.Store, issueID, key string) (WispDeleteResult, error) {
+	result, err := store.Exec(
+		"DELETE FROM wisp_entries WHERE issue_id = ? AND key_name = ?",
+		issueID, key,
+	)
+	if err != nil {
+		return WispDeleteResult{}, gravaerrors.New("DB_UNREACHABLE", "failed to delete wisp entry", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return WispDeleteResult{}, gravaerrors.New("DB_UNREACHABLE", "failed to read rows affected", err)
+	}
+	if n > 0 {
+		return WispDeleteResult{Deleted: true}, nil
+	}
+	return WispDeleteResult{Deleted: false, Reason: "key not found"}, nil
+}
+
+// newWispCmd builds the `grava wisp` parent command with write, read, and delete subcommands.
 func newWispCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "wisp",
@@ -167,6 +194,7 @@ func newWispCmd(d *cmddeps.Deps) *cobra.Command {
 	}
 	cmd.AddCommand(newWispWriteCmd(d))
 	cmd.AddCommand(newWispReadCmd(d))
+	cmd.AddCommand(newWispDeleteCmd(d))
 	return cmd
 }
 
@@ -229,8 +257,7 @@ func newWispReadCmd(d *cmddeps.Deps) *cobra.Command {
 			}
 			switch v := result.(type) {
 			case *WispEntry:
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[%s] %s = %q (by %s at %s)\n",
-					issueID, v.Key, v.Value, v.WrittenBy, v.WrittenAt.Format(time.RFC3339))
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), v.Value)
 			case []WispEntry:
 				if len(v) == 0 {
 					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "(no wisp entries)")
@@ -240,6 +267,35 @@ func newWispReadCmd(d *cmddeps.Deps) *cobra.Command {
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s = %q (by %s at %s)\n",
 						e.Key, e.Value, e.WrittenBy, e.WrittenAt.Format(time.RFC3339))
 				}
+			}
+			return nil
+		},
+	}
+}
+
+func newWispDeleteCmd(d *cmddeps.Deps) *cobra.Command {
+	return &cobra.Command{
+		Use:     "delete <issue-id> <key>",
+		Aliases: []string{"rm", "del"},
+		Short:   "Delete a wisp key for an issue (idempotent — missing key is a no-op)",
+		Long: `Remove a key-value pair from an issue's wisp store.
+Deleting a non-existent key is a graceful no-op (exit 0).
+Missing issue is also treated as "key not found" (no error).`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			result, err := wispDelete(ctx, *d.Store, args[0], args[1])
+			if err != nil {
+				if *d.OutputJSON {
+					return writeJSONError(cmd, err)
+				}
+				return err
+			}
+			if *d.OutputJSON {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+			}
+			if result.Deleted {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Wisp deleted: %s[%s]\n", args[0], args[1])
 			}
 			return nil
 		},

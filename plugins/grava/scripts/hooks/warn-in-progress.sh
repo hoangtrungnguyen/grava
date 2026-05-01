@@ -1,0 +1,1 @@
+../../../../scripts/hooks/warn-in-progress.sh

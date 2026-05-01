@@ -1,0 +1,1 @@
+../../../scripts/pre-merge-check.sh

@@ -1,0 +1,10 @@
+{
+  "name": "grava",
+  "version": "0.2.0",
+  "description": "Grava issue-tracking pipeline: skills, agents, hooks, and watchers for the code → review → PR → merge loop.",
+  "author": { "name": "grava" },
+  "homepage": "https://github.com/hoangtrungnguyen/grava",
+  "repository": "https://github.com/hoangtrungnguyen/grava",
+  "license": "MIT",
+  "keywords": ["grava", "pipeline", "issues", "tdd", "code-review"]
+}

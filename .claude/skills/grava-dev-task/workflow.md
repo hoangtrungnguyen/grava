@@ -95,6 +95,7 @@ If `.status` is `in_progress` and assigned to someone else, HALT.
 ```bash
 grava claim <issue-id>
 grava wisp write <issue-id> step "claimed"
+grava wisp write <issue-id> orchestrator_heartbeat "$(date -u +%s)"
 ```
 
 **Worktree heads-up.** `grava claim` may auto-provision a git worktree at `.worktree/<issue-id>` and switch the active branch there. Implementation work (RED/GREEN/REFACTOR, scoped tests, the `git commit`) happens **inside the worktree**. But all `grava ...` subcommands must be invoked from the **repo root**, not the worktree — running them inside the worktree fails with *"failed to connect to database"* because the dolt config sits at the root. Pattern:
@@ -136,6 +137,7 @@ If comments contain prior review feedback or `code_review` was previously added 
 
 ```bash
 grava wisp write <issue-id> step "context-loaded"
+grava wisp write <issue-id> orchestrator_heartbeat "$(date -u +%s)"
 ```
 
 Output a brief summary:
@@ -156,9 +158,14 @@ A task is one logical unit. Do NOT decompose into subtasks — if it feels big e
 
 ```bash
 grava wisp write <issue-id> current_task "<short description>"
+grava wisp write <issue-id> orchestrator_heartbeat "$(date -u +%s)"
 ```
 
 ### RED — failing test first
+
+```bash
+grava wisp write <issue-id> orchestrator_heartbeat "$(date -u +%s)"
+```
 
 - Write test(s) covering the behavior the task adds/changes.
 - Run **only** the new test(s); confirm they fail.
@@ -169,11 +176,19 @@ grava wisp write <issue-id> current_task "<short description>"
 
 ### GREEN — minimal implementation
 
+```bash
+grava wisp write <issue-id> orchestrator_heartbeat "$(date -u +%s)"
+```
+
 - Minimum code to pass the test.
 - Re-run the new test(s); confirm pass.
 - Handle error/edge cases stated in the task.
 
 ### REFACTOR
+
+```bash
+grava wisp write <issue-id> orchestrator_heartbeat "$(date -u +%s)"
+```
 
 - Improve structure while keeping tests green.
 - Match project conventions.
@@ -237,6 +252,7 @@ Re-read the task description. Every AC must be satisfied. If not, return to Step
 
 ```bash
 grava wisp write <issue-id> step "validated"
+grava wisp write <issue-id> orchestrator_heartbeat "$(date -u +%s)"
 ```
 
 ---
@@ -294,6 +310,7 @@ Note: the comment + the grava commit message are intentional duplication. The co
 
 ```bash
 grava wisp write <issue-id> step "complete"
+grava wisp write <issue-id> orchestrator_heartbeat "$(date -u +%s)"
 ```
 
 ---
