@@ -242,7 +242,10 @@ func auxiliaryKey(kind SignalKind) string {
 // resolveIssueIDFromCwd extracts the issue id from a path matching
 // `.worktree/<id>` so agents inside their worktree can call `grava signal X`
 // without re-passing --issue. Returns "" when the cwd does not match.
-var worktreeRE = regexp.MustCompile(`/\.worktree/([a-zA-Z0-9_-]+)(/|$)`)
+//
+// The id character class includes `.` to match dotted subtask IDs like
+// `grava-abc.1.2` (subtask-of-subtask), not just top-level `grava-abc`.
+var worktreeRE = regexp.MustCompile(`/\.worktree/([a-zA-Z0-9_.-]+)(/|$)`)
 
 func resolveIssueIDFromCwd() string {
 	cwd, err := os.Getwd()

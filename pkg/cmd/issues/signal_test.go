@@ -17,6 +17,37 @@ import (
 func sqlMock_ErrNoRows() error { return sql.ErrNoRows }
 func nowStub() time.Time       { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
 
+// ─── worktreeRE: cwd path → issue id extraction ───────────────────────────
+
+func TestWorktreeRE_ExtractsIssueID(t *testing.T) {
+	cases := []struct {
+		path string
+		want string
+	}{
+		// Top-level issue id (no dots).
+		{"/Users/x/repo/.worktree/grava-abc123/sub/dir", "grava-abc123"},
+		{"/repo/.worktree/grava-abc123", "grava-abc123"},
+		{"/repo/.worktree/grava-abc123/", "grava-abc123"},
+		// Dotted subtask ids — must NOT be truncated at the first dot.
+		{"/repo/.worktree/grava-3a8d.1/", "grava-3a8d.1"},
+		{"/repo/.worktree/grava-3a8d.1.1", "grava-3a8d.1.1"},
+		{"/repo/.worktree/grava-3a8d.1.1/foo/bar", "grava-3a8d.1.1"},
+		// Underscore + hyphen still work.
+		{"/repo/.worktree/grava-foo_bar-1", "grava-foo_bar-1"},
+		// Non-matches.
+		{"/repo/some/other/dir", ""},
+		{"/repo/.worktree/", ""}, // empty id
+	}
+	for _, c := range cases {
+		m := worktreeRE.FindStringSubmatch(c.path)
+		got := ""
+		if len(m) >= 2 {
+			got = m[1]
+		}
+		assert.Equal(t, c.want, got, "path=%q", c.path)
+	}
+}
+
 // ─── resolveTargetPhase: pure-function table-driven tests ──────────────────
 
 func TestResolveTargetPhase_ForwardOnly(t *testing.T) {
