@@ -48,7 +48,7 @@ Follow the `/grava-claim` skill to claim the selected issue:
 - Read issue description, identify required services/dependencies
 - Verify each prerequisite is reachable
 - Run `grava claim <id>` atomically
-- Write initial wisp: `grava wisp write <id> pipeline_phase claimed` — this is the canonical orchestrator-state key (matches the `sync-pipeline-status.sh` hook's phase order). Do NOT use `status` here; that key is unread by the hook.
+- Mark the orchestrator phase: `grava signal ISSUE_CLAIMED --issue <id> --actor next-issue` — this writes the canonical `pipeline_phase=claimed` wisp atomically through the typed signal CLI (Phase 5 of the structured-signals migration). Do NOT use `grava wisp write … pipeline_phase` directly; the signal CLI is the single entry point so audits, forward-only enforcement, and validation match the rest of the pipeline.
 
 **Before claiming**, check for stale state:
 - If the issue has a `code_review` label or existing implementation comments, it may have been worked on previously. Run `grava show <id> --json` and check `comments` and `labels`. If it looks already-implemented, skip it and move to the next candidate.

@@ -344,7 +344,7 @@ fi
 ## Phase 1: Code
 
 ```bash
-grava wisp write "$ISSUE_ID" pipeline_phase claimed
+grava signal ISSUE_CLAIMED --issue "$ISSUE_ID" --actor orchestrator
 
 # Spawn coder agent (via Agent tool)
 Agent({
@@ -458,7 +458,7 @@ NAME="${PARSED%%|*}"; TAIL="${PARSED#*|}"
 case "$NAME" in
   PR_CREATED)
     PR_URL="$TAIL"
-    grava wisp write "$ISSUE_ID" pipeline_phase pr_awaiting_merge
+    grava signal PR_AWAITING_MERGE --issue "$ISSUE_ID" --actor orchestrator
     ;;
   PR_FAILED)
     grava label "$ISSUE_ID" --add pr-failed
@@ -552,7 +552,7 @@ case "$NAME" in
       grava wisp write "$ISSUE_ID" pr_last_seen_comment_id "$HIGHEST_COMMENT_ID"
     fi
     grava wisp write "$ISSUE_ID" pr_comments_resolved "round $FIX_ROUND"
-    grava wisp write "$ISSUE_ID" pipeline_phase pr_awaiting_merge
+    grava signal PR_AWAITING_MERGE --issue "$ISSUE_ID" --actor orchestrator
     grava wisp delete "$ISSUE_ID" pr_new_comments
     echo "PR_COMMENTS_RESOLVED: $FIX_ROUND"
     echo "PIPELINE_HANDOFF: $ISSUE_ID re-armed — watcher will re-track."
@@ -588,7 +588,7 @@ RETRY_FEEDBACK=$(grava wisp read "$ISSUE_ID" pr_rejection_notes 2>/dev/null)
 PR_CLOSE_REASON=$(grava wisp read "$ISSUE_ID" pr_close_reason 2>/dev/null)
 
 grava label "$ISSUE_ID" --remove pr-rejected
-grava wisp write "$ISSUE_ID" pipeline_phase claimed
+grava signal ISSUE_CLAIMED --issue "$ISSUE_ID" --actor orchestrator
 grava wisp write "$ISSUE_ID" orchestrator_heartbeat "$(date -u +%s)"
 
 if [ "$REBASE_ONLY" = "1" ]; then
