@@ -31,10 +31,10 @@ echo "$ISSUES" | jq -r '.[].id' | while read -r ID; do
   case "$STATE" in
     MERGED)
       grava wisp write "$ID" pr_merged_at "$NOW"
-      grava wisp write "$ID" pipeline_phase pr_merged
+      grava signal PR_MERGED --issue "$ID" --actor watcher
       grava label "$ID" --remove pr-created
       grava close "$ID" --actor watcher
-      grava wisp write "$ID" pipeline_phase complete
+      grava signal PIPELINE_COMPLETE --issue "$ID" --payload "$ID" --actor watcher
       grava commit -m "watcher: $ID merged + closed"
       continue
       ;;
@@ -80,13 +80,22 @@ EOF
         printf '%s\n' "$NOTES" | grava update "$ID" --description-append-from-stdin
         grava comment "$ID" -m "PR closed without merge ($REASON). See description for full notes."
 
+        # Bookkeeping wisps (non-phase): rejection notes blob, close timestamp,
+        # idempotency gate. pr_close_reason is intentionally NOT written here
+        # — `grava signal PR_CLOSED --payload "$REASON"` below records it
+        # atomically alongside pipeline_phase=failed.
         grava wisp write "$ID" pr_rejection_notes "$NOTES"
-        grava wisp write "$ID" pr_close_reason "$REASON"
         grava wisp write "$ID" pr_closed_at "$NOW"
         grava wisp write "$ID" pr_rejection_recorded "1"
+
+        # Atomic: pipeline_phase=failed + pr_close_reason aux wisp in one tx.
+        # Scoped inside the first-time block so re-runs (ALREADY_RECORDED=1)
+        # don't re-emit the signal with a blank payload, which would overwrite
+        # pr_close_reason with "". Phase is already terminal `failed` after the
+        # first emission; subsequent watcher iterations are correctly no-op.
+        grava signal PR_CLOSED --issue "$ID" --payload "$REASON" --actor watcher
       fi
 
-      grava wisp write "$ID" pipeline_phase failed
       grava label "$ID" --add pr-rejected
       grava label "$ID" --remove pr-created
       grava commit -m "watcher: $ID PR closed without merge"
