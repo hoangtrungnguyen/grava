@@ -13,7 +13,7 @@ to `scripts/pr-merge-watcher.sh`; `/ship` exits.
 ## Usage
 
 ```
-/ship [issue-id] [--retry] [--rebase-only] [--force]
+/ship [issue-id] [--retry] [--rebase-only] [--force] [--dry-run]
 ```
 
 Examples:
@@ -22,6 +22,7 @@ Examples:
 - `/ship grava-abc123 --retry` — retry a previously rejected PR
 - `/ship grava-abc123 --retry --rebase-only` — rebase-only retry (branch went stale)
 - `/ship grava-abc123 --force` — bypass precondition gate
+- `/ship grava-abc123 --dry-run` — print the wisp-state /ship would read at each phase, without spawning agents or mutating state
 
 ## Setup
 
@@ -31,11 +32,13 @@ ISSUE_ID=""
 RETRY=0
 REBASE_ONLY=0
 FORCE=0
+DRY_RUN=0
 for arg in $ARGUMENTS; do
   case "$arg" in
     --retry)        RETRY=1 ;;
     --rebase-only)  REBASE_ONLY=1 ;;
     --force)        FORCE=1 ;;
+    --dry-run)      DRY_RUN=1 ;;
     --*)            echo "PIPELINE_FAILED: unknown flag $arg"; exit 1 ;;
     *)              [ -z "$ISSUE_ID" ] && ISSUE_ID="$arg" ;;
   esac
@@ -62,10 +65,19 @@ if [ -n "$ISSUE_ID" ]; then
 fi
 ```
 
-## Helper — last-line signal parse
+## Helpers — signal state resolution
 
-Used by every Phase below. Matches signals only when they are the final non-empty
-line of the agent result.
+Per the structured-signals migration (see `docs/guides/STRUCTURED_SIGNALS_MIGRATION.md`),
+agents now write `pipeline_phase` and auxiliary wisps via `grava signal` BEFORE
+returning. Canonical signal state therefore lives in the DB, not in agent stdout.
+
+`read_signal_state` is the new primary resolver: it reads the DB and returns the
+same `<NAME>|<TAIL>` shape `parse_signal` produced, so existing callers don't
+change shape — only their data source. `parse_signal` + `last_line` are retained
+as a fallback path:
+
+- Triggered automatically when `pipeline_phase` is unset (legacy / un-migrated agent)
+- Forced when `SHIP_LEGACY_PARSER=1` is set in the environment (regression flag)
 
 ```bash
 last_line() {
@@ -73,7 +85,7 @@ last_line() {
 }
 
 parse_signal() {
-  # Echoes "<NAME>|<TAIL>" or "INVALID|<reason>"
+  # Legacy fallback: echoes "<NAME>|<TAIL>" or "INVALID|<reason>"
   local line="$1"
   case "$line" in
     "CODER_DONE: "*)            echo "CODER_DONE|${line#CODER_DONE: }" ;;
@@ -86,6 +98,127 @@ parse_signal() {
     *)                          echo "INVALID|no signal in last line" ;;
   esac
 }
+
+# read_signal_state: canonical state resolver. Reads pipeline_phase + auxiliary
+# wisps written by `grava signal` (run by the agent) and translates them back
+# into the legacy "<NAME>|<TAIL>" shape used by every call site below.
+#
+# Args:
+#   $1 — agent_result (raw stdout from Agent({...}); used only for fallback)
+#   $2 — issue_id
+#   $3 — class: "coder" | "reviewer" | "pr" — limits which phases we accept
+#        per call site so e.g. a stale PR_CREATED wisp doesn't satisfy a
+#        Phase-1 coder read.
+read_signal_state() {
+  local agent_result="$1"
+  local issue_id="$2"
+  local class="$3"
+
+  # Forced legacy path — used by regression suites to verify the fallback still
+  # works end-to-end before Phase 8 retires the bash parser entirely.
+  if [ "${SHIP_LEGACY_PARSER:-0}" = "1" ]; then
+    parse_signal "$(last_line "$agent_result")"
+    return
+  fi
+
+  local phase
+  phase=$(grava wisp read "$issue_id" pipeline_phase 2>/dev/null)
+
+  case "$class:$phase" in
+    coder:coding_complete)
+      local sha
+      sha=$(grava show "$issue_id" --json 2>/dev/null | jq -r '.last_commit // ""')
+      echo "CODER_DONE|$sha"
+      return
+      ;;
+    coder:coding_halted)
+      local reason
+      reason=$(grava wisp read "$issue_id" coder_halted 2>/dev/null)
+      echo "CODER_HALTED|$reason"
+      return
+      ;;
+    reviewer:review_approved)
+      echo "REVIEWER_APPROVED|"
+      return
+      ;;
+    reviewer:review_blocked)
+      local findings
+      findings=$(grava wisp read "$issue_id" reviewer_findings 2>/dev/null)
+      echo "REVIEWER_BLOCKED|$findings"
+      return
+      ;;
+    pr:pr_created|pr:pr_awaiting_merge)
+      local url
+      url=$(grava wisp read "$issue_id" pr_url 2>/dev/null)
+      echo "PR_CREATED|$url"
+      return
+      ;;
+    pr:failed)
+      local reason
+      reason=$(grava wisp read "$issue_id" pr_failed_reason 2>/dev/null)
+      echo "PR_FAILED|$reason"
+      return
+      ;;
+  esac
+
+  # Wisp absent / phase doesn't match expected class → fall back to last-line
+  # parsing of the agent's stdout. This covers (a) unmigrated agents that still
+  # only echo the legacy line, and (b) agents that crashed before calling
+  # `grava signal`. The fallback path is observable in the operator log:
+  echo "PIPELINE_INFO: read_signal_state — pipeline_phase=${phase:-<unset>} did not match class=$class; falling back to legacy parser" >&2
+  parse_signal "$(last_line "$agent_result")"
+}
+```
+
+### `--dry-run` short-circuit
+
+**What it does:** prints the wisp/DB state `/ship` would consult at each phase
+boundary for the given issue, then exits **without** spawning agents,
+claiming the issue, writing wisps, opening worktrees, or making any other
+mutation. Read-only inspection — safe to run on any issue at any time,
+including issues mid-flight in another terminal.
+
+**Why it exists:** before Phase 3, the only way to see "what does the
+orchestrator think about this issue right now?" was to actually run `/ship`
+and observe side effects. With wisps as the canonical source of truth, the
+state is fully introspectable; `--dry-run` exposes that introspection
+directly. Three concrete uses:
+
+1. **Debugging stuck pipelines** — issue stuck at `claimed`? Dry-run shows
+   whether `last_commit` is set, whether `coder_halted` was written, etc.
+   Resolves "is the agent broken or is `/ship` not seeing its output?" in
+   one command.
+2. **Pre-flight check before resume** — confirm what phase `/ship` will
+   re-enter at on a partially-complete issue, before committing to the run.
+3. **Phase 3 acceptance gate** — proves `/ship` can resolve canonical state
+   from wisps alone, no agent stdout required.
+
+**Output:** the resolved values for `pipeline_phase`, `last_commit`,
+`coder_halted`, `reviewer_findings`, `pr_url`, `pr_failed_reason`, and the
+current `SHIP_LEGACY_PARSER` setting. Each line shows `<unset>` / `<none>`
+when the wisp/field is absent, so an empty pipeline state is distinguishable
+from a missing read.
+
+**Implementation:** runs after Setup but before Phase 0 spawns anything.
+Requires an explicit `<issue-id>` (no auto-discovery); errors otherwise.
+
+```bash
+if [ "$DRY_RUN" = "1" ]; then
+  if [ -z "$ISSUE_ID" ]; then
+    echo "PIPELINE_INFO: --dry-run requires an explicit <issue-id>"
+    exit 0
+  fi
+  echo "DRY_RUN: $ISSUE_ID — would read the following wisp state at each phase boundary:"
+  echo "  pipeline_phase   = $(grava wisp read "$ISSUE_ID" pipeline_phase 2>/dev/null || echo '<unset>')"
+  echo "  last_commit      = $(grava show "$ISSUE_ID" --json 2>/dev/null | jq -r '.last_commit // "<none>"')"
+  echo "  coder_halted     = $(grava wisp read "$ISSUE_ID" coder_halted 2>/dev/null || echo '<none>')"
+  echo "  reviewer_findings= $(grava wisp read "$ISSUE_ID" reviewer_findings 2>/dev/null | head -c 80 || echo '<none>')"
+  echo "  pr_url           = $(grava wisp read "$ISSUE_ID" pr_url 2>/dev/null || echo '<none>')"
+  echo "  pr_failed_reason = $(grava wisp read "$ISSUE_ID" pr_failed_reason 2>/dev/null || echo '<none>')"
+  echo "  legacy_parser    = ${SHIP_LEGACY_PARSER:-0} (set SHIP_LEGACY_PARSER=1 to force)"
+  echo "PIPELINE_INFO: dry-run complete — no agents spawned, no wisps written"
+  exit 0
+fi
 ```
 
 ## Heartbeat
@@ -223,10 +356,12 @@ Agent({
 })
 ```
 
-Parse result with `parse_signal "$(last_line "$AGENT_RESULT")"`:
+Resolve result via `read_signal_state "$AGENT_RESULT" "$ISSUE_ID" coder`:
 - `CODER_DONE|<sha>` → save SHA, proceed to Phase 2
 - `CODER_HALTED|<reason>` → `PIPELINE_HALTED: coder — <reason>`, exit
 - `INVALID|<reason>` → `PIPELINE_FAILED: signal parse failed in Phase 1 — <reason>`, exit
+
+The resolver reads `pipeline_phase` (set atomically by the agent's `grava signal CODER_DONE`) and pulls the SHA from `metadata.last_commit`. Falls back to last-line stdout parse when the wisp is unset (legacy / un-migrated agent) or when `SHIP_LEGACY_PARSER=1`.
 
 **No `isolation` param** — `grava-dev-task` Step 3 calls `grava claim`, which auto-provisions `.worktree/$ISSUE_ID`.
 
@@ -246,7 +381,7 @@ for ROUND in $(seq 1 $MAX_REVIEW_ROUNDS); do
              Output REVIEWER_APPROVED or REVIEWER_BLOCKED: <findings> as the LAST non-empty line."
   })
 
-  PARSED=$(parse_signal "$(last_line "$REVIEWER_RESULT")")
+  PARSED=$(read_signal_state "$REVIEWER_RESULT" "$ISSUE_ID" reviewer)
   NAME="${PARSED%%|*}"; TAIL="${PARSED#*|}"
 
   case "$NAME" in
@@ -281,7 +416,7 @@ for ROUND in $(seq 1 $MAX_REVIEW_ROUNDS); do
           Output CODER_DONE: <sha> or CODER_HALTED: <reason> as the LAST non-empty line."
       })
 
-      PARSED=$(parse_signal "$(last_line "$CODER_RESULT")")
+      PARSED=$(read_signal_state "$CODER_RESULT" "$ISSUE_ID" coder)
       NAME="${PARSED%%|*}"; TAIL="${PARSED#*|}"
       case "$NAME" in
         CODER_DONE)   LAST_SHA="$TAIL"; continue ;;
@@ -318,7 +453,7 @@ Agent({
     Output PR_CREATED: <url> or PR_FAILED: <reason> as the LAST non-empty line."
 })
 
-PARSED=$(parse_signal "$(last_line "$PR_RESULT")")
+PARSED=$(read_signal_state "$PR_RESULT" "$ISSUE_ID" pr)
 NAME="${PARSED%%|*}"; TAIL="${PARSED#*|}"
 case "$NAME" in
   PR_CREATED)
@@ -399,7 +534,7 @@ Agent({
     Output CODER_DONE: <sha> or CODER_HALTED: <reason> as the LAST non-empty line."
 })
 
-PARSED=$(parse_signal "$(last_line "$CODER_RESULT")")
+PARSED=$(read_signal_state "$CODER_RESULT" "$ISSUE_ID" coder)
 NAME="${PARSED%%|*}"; TAIL="${PARSED#*|}"
 case "$NAME" in
   CODER_DONE)
@@ -492,7 +627,7 @@ else
   })
 fi
 
-PARSED=$(parse_signal "$(last_line "$CODER_RESULT")")
+PARSED=$(read_signal_state "$CODER_RESULT" "$ISSUE_ID" coder)
 NAME="${PARSED%%|*}"; TAIL="${PARSED#*|}"
 case "$NAME" in
   CODER_DONE)
