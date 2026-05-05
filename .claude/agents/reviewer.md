@@ -22,7 +22,7 @@ Verify the issue has a `last_commit` recorded:
 ```bash
 LAST_COMMIT=$(grava show $ISSUE_ID --json | jq -r '.last_commit // empty')
 if [ -z "$LAST_COMMIT" ]; then
-  echo "REVIEWER_BLOCKED: no last_commit recorded on $ISSUE_ID"
+  grava signal REVIEWER_BLOCKED --issue "$ISSUE_ID" --payload "no last_commit recorded on $ISSUE_ID"
   exit 1
 fi
 ```
@@ -51,21 +51,30 @@ VERDICT=$(grava show $ISSUE_ID --json | \
   grep -oE 'Verdict: (APPROVED|CHANGES_REQUESTED)' | awk '{print $2}')
 ```
 
-Then output one of:
-- `REVIEWER_APPROVED` — if verdict is APPROVED
-- `REVIEWER_BLOCKED` — if verdict is CHANGES_REQUESTED
-
-When BLOCKED, also extract and emit the CRITICAL/HIGH findings so the coder agent
-can act on them in the next round:
+Then call **`grava signal`** — the CLI updates `pipeline_phase` atomically (forward-only),
+records `reviewer_findings` for BLOCKED verdicts, and prints the legacy `<KIND>: <payload>`
+line as the final stdout line so existing last-line parsers continue to work.
 
 ```bash
-grava show $ISSUE_ID --json | \
-  jq -r '.comments | map(select(.message | startswith("[CRITICAL]") or startswith("[HIGH]"))) | .[].message'
+if [ "$VERDICT" = "APPROVED" ]; then
+  grava signal REVIEWER_APPROVED --issue "$ISSUE_ID"
+else
+  # Collect CRITICAL/HIGH findings into a single payload for the next coder round.
+  FINDINGS=$(grava show $ISSUE_ID --json | \
+    jq -r '.comments | map(select(.message | startswith("[CRITICAL]") or startswith("[HIGH]"))) | .[].message' | \
+    head -c 1024)
+  grava signal REVIEWER_BLOCKED --issue "$ISSUE_ID" --payload "$FINDINGS"
+fi
 ```
+
+> If the findings exceed 2 KB, the orchestrator writes them to `.worktree/$ISSUE_ID/.review-round-N.md`
+> and re-spawns the coder with `FINDINGS_PATH`. In that case pass the file path as the
+> signal payload instead of inlining: `--payload ".review-round-1.md"`.
 
 ## Anti-Patterns
 
 - Do NOT re-implement the severity classification — `grava-code-review` owns it
 - Do NOT post review comments directly — the skill posts them in the correct format
 - Do NOT approve when CRITICAL or HIGH findings exist (the skill enforces this)
+- Do NOT hand-craft the signal line with `echo` — call `grava signal REVIEWER_APPROVED|REVIEWER_BLOCKED ...` so `pipeline_phase` and the auxiliary `reviewer_findings` wisp are written atomically. The CLI's own stdout produces the `<KIND>: <payload>` last line that orchestrators parse.
 - Your FINAL message MUST contain exactly one signal: `REVIEWER_APPROVED` or `REVIEWER_BLOCKED: <findings>`

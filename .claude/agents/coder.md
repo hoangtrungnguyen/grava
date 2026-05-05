@@ -72,9 +72,21 @@ The leading-edge case (round 1 / fresh implementation) follows `grava-dev-task`'
 
 Once `grava-dev-task` completes Step 7 (commit + label `code_review`):
 - Read the recorded commit hash: `grava show $ISSUE_ID --json | jq -r '.last_commit'`
-- Your FINAL message must end with the signal as the last non-empty line (the orchestrator and the `sync-pipeline-status` hook both parse last-line-only — Fix 1):
-  - `CODER_DONE: <commit-sha>` on success
-  - `CODER_HALTED: <reason>` on blocker
+- Emit the signal via the **`grava signal`** subcommand. It writes `pipeline_phase` atomically (forward-only), records auxiliary triage state when relevant (e.g. `coder_halted` reason), and prints the legacy `<KIND>: <payload>` line as the final stdout line so existing last-line parsers (orchestrator + `sync-pipeline-status` hook) keep working.
+
+  Run from the **repo root** (signal needs DB access — same dolt-config rule as every other `grava` call):
+
+  ```bash
+  # Success
+  ( cd /path/to/repo-root && grava signal CODER_DONE --issue "$ISSUE_ID" --payload "$LAST_COMMIT" )
+
+  # Blocker
+  ( cd /path/to/repo-root && grava signal CODER_HALTED --issue "$ISSUE_ID" --payload "<specific reason>" )
+  ```
+
+  When invoked from inside `.worktree/$ISSUE_ID/` you may omit `--issue`; the CLI auto-detects it from the cwd. But signal **must** still run from a context with DB access (i.e. the repo root cwd via the subshell pattern), otherwise it fails with the dolt-config error.
+
+  The CLI's stdout naturally ends with the `CODER_DONE: <sha>` / `CODER_HALTED: <reason>` line — let it flow into your final message rather than duplicating it manually.
 
 ## HALT Conditions
 
@@ -82,11 +94,11 @@ Once `grava-dev-task` completes Step 7 (commit + label `code_review`):
 
 - **Pre-claim HALT** (Step 2 spec/scope failure): nothing was claimed. The skill exits with a HALT message; you forward it as `CODER_HALTED: <reason>` and stop. Do NOT call `grava stop` — there's nothing to stop.
 - **Post-claim HALT** (any failure after Step 3): the skill itself runs `grava stop $ISSUE_ID` to roll the claim back (per workflow Step 3 contract). All `grava ...` calls in your HALT path MUST use the subshell-to-root pattern documented above; running them from the worktree directory will silently fail with the dolt-config error.
-- After either HALT, write a triage wisp from the repo root:
+- After either HALT, emit the signal from the repo root — the `grava signal CODER_HALTED` call below records the `coder_halted` triage wisp atomically AND writes `pipeline_phase=coding_halted`, replacing the previous two-step (manual `wisp write` + `echo`) sequence:
   ```bash
-  ( cd /path/to/repo-root && grava wisp write $ISSUE_ID coder_halted "<specific reason>" )
+  ( cd /path/to/repo-root && grava signal CODER_HALTED --issue "$ISSUE_ID" --payload "<specific reason>" )
   ```
-- Output: `CODER_HALTED: <reason>` as the last non-empty line. Stop.
+- The CLI's stdout ends with `CODER_HALTED: <reason>` — that line flows into your final message as the last non-empty line. Stop.
 
 ## Anti-Patterns
 
@@ -96,4 +108,5 @@ Once `grava-dev-task` completes Step 7 (commit + label `code_review`):
 - Do NOT bundle multiple tasks into one PR — one task = one PR
 - Do NOT close the issue yourself — leave it `in_progress` with `code_review` label
 - Do NOT remove `.worktree/$ISSUE_ID/` on HALT — humans need it for triage
+- Do NOT hand-craft the signal line with `echo` — call `grava signal CODER_DONE|CODER_HALTED ...` so `pipeline_phase` and the auxiliary triage wisps are written atomically. The CLI's own stdout produces the `<KIND>: <payload>` last line that orchestrators parse.
 - Your FINAL message MUST end with exactly one signal as the **last non-empty line**: `CODER_DONE: <sha>` or `CODER_HALTED: <reason>`

@@ -1,6 +1,19 @@
 #!/bin/bash
-# PostToolUse hook — captures pipeline signals in Bash output and
-# syncs them to grava wisps for crash recovery.
+# PostToolUse hook — fallback signal sync.
+#
+# As of the structured-signal migration, agents call `grava signal <KIND> ...`
+# which writes `pipeline_phase` (and any auxiliary triage wisps) atomically
+# inside the CLI itself. This hook is now the safety net — it only fires
+# when an agent emits the legacy text signal without going through the CLI
+# (e.g. an old plan, a hand-typed `echo`, or a future agent we haven't
+# migrated yet).
+#
+# Because `grava signal`'s own forward-only logic is identical to this
+# script's, the typical path is: CLI writes the phase first, this hook
+# observes the same output, computes the same target, and finds the wisp
+# already at-or-beyond it — so the second write is suppressed (idempotent,
+# no double audit entry).
+#
 # Last-line-only parse + forward-only phase order (terminal states overwrite).
 
 INPUT=$(cat)

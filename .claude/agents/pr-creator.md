@@ -25,13 +25,16 @@ You receive in your initial prompt:
 # repo-relative scripts expect cwd = repo root, not the worktree subdir.
 REPO_ROOT="$(pwd)"
 WORKTREE=".worktree/$ISSUE_ID"
-[ -d "$WORKTREE" ] || { echo "PR_FAILED: no worktree for $ISSUE_ID"; exit 1; }
+[ -d "$WORKTREE" ] || {
+  ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "no worktree for $ISSUE_ID" )
+  exit 1
+}
 cd "$WORKTREE"
 
 # Verify the branch exists with the approved SHA at HEAD
 HEAD_SHA=$(git rev-parse HEAD)
 [ "$HEAD_SHA" = "$APPROVED_SHA" ] || {
-  echo "PR_FAILED: HEAD ($HEAD_SHA) != approved SHA ($APPROVED_SHA)"
+  ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "HEAD ($HEAD_SHA) != approved SHA ($APPROVED_SHA)" )
   exit 1
 }
 ```
@@ -43,7 +46,7 @@ If `scripts/pre-merge-check.sh` exists (story 2B.13), run it before opening the 
 ```bash
 if [ -x "$REPO_ROOT/scripts/pre-merge-check.sh" ]; then
   ( cd "$REPO_ROOT" && ./scripts/pre-merge-check.sh "$ISSUE_ID" ) || {
-    echo "PR_FAILED: pre-merge check failed"
+    ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "pre-merge check failed" )
     exit 1
   }
 fi
@@ -53,7 +56,10 @@ fi
 
 ```bash
 FEATURE_BRANCH="grava/$ISSUE_ID"
-git push -u origin "$FEATURE_BRANCH" || { echo "PR_FAILED: git push"; exit 1; }
+git push -u origin "$FEATURE_BRANCH" || {
+  ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "git push" )
+  exit 1
+}
 ```
 
 ### 4. Build PR title / body
@@ -92,7 +98,10 @@ gh pr create \
   --title "$TITLE" \
   --body "$BODY" \
   --label "grava-pipeline" \
-  || { echo "PR_FAILED: gh pr create"; exit 1; }
+  || {
+    ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "gh pr create" )
+    exit 1
+  }
 
 PR_URL=$(gh pr view "$FEATURE_BRANCH" --json url -q '.url')
 PR_NUMBER=$(gh pr view "$FEATURE_BRANCH" --json number -q '.number')
@@ -100,29 +109,38 @@ PR_NUMBER=$(gh pr view "$FEATURE_BRANCH" --json number -q '.number')
 
 ### 6. Record state
 
+The `grava signal PR_CREATED` call in step 7 records `pr_url` automatically as
+its auxiliary wisp. The two extra wisps (`pr_number`, `pr_awaiting_merge_since`)
+are still written here because the watcher needs them and `signal` only owns
+`pr_url`.
+
 ```bash
 NOW=$(date -u +%s)
-grava comment "$ISSUE_ID" -m "PR created: $PR_URL"
-grava label  "$ISSUE_ID" --add pr-created
-grava wisp write "$ISSUE_ID" pr_url "$PR_URL"
-grava wisp write "$ISSUE_ID" pr_number "$PR_NUMBER"
-grava wisp write "$ISSUE_ID" pr_awaiting_merge_since "$NOW"
-grava commit -m "pr created for $ISSUE_ID"
+( cd "$REPO_ROOT" && grava comment "$ISSUE_ID" -m "PR created: $PR_URL" )
+( cd "$REPO_ROOT" && grava label   "$ISSUE_ID" --add pr-created )
+( cd "$REPO_ROOT" && grava wisp write "$ISSUE_ID" pr_number "$PR_NUMBER" )
+( cd "$REPO_ROOT" && grava wisp write "$ISSUE_ID" pr_awaiting_merge_since "$NOW" )
+( cd "$REPO_ROOT" && grava commit -m "pr created for $ISSUE_ID" )
 ```
 
 ### 7. Signal
 
-Output as the **last non-empty line**:
+Call `grava signal` from the repo root — it advances `pipeline_phase` to
+`pr_created`, records `pr_url`, and prints `PR_CREATED: <url>` as the final
+stdout line so existing last-line parsers continue to work:
 
-```
-PR_CREATED: <url>
+```bash
+( cd "$REPO_ROOT" && grava signal PR_CREATED --issue "$ISSUE_ID" --payload "$PR_URL" )
 ```
 
-On any failure path, the **last non-empty line** must be:
+On any failure path the equivalent call is:
 
+```bash
+( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "<one-line reason>" )
 ```
-PR_FAILED: <one-line reason>
-```
+
+The CLI's stdout naturally produces the legacy `PR_CREATED: <url>` /
+`PR_FAILED: <reason>` line as the final line of your message.
 
 ## Anti-Patterns
 
@@ -130,3 +148,4 @@ PR_FAILED: <one-line reason>
 - Do NOT skip the pre-merge probe when the script exists (story 2B.13).
 - Do NOT label without `pr-created` — the watcher (story 2B.12) discovers awaiting-merge issues by that label.
 - Do NOT close the issue. Issue stays `in_progress` until the watcher detects merge.
+- Do NOT hand-craft the signal line with `echo` — call `grava signal PR_CREATED|PR_FAILED ...` so `pipeline_phase` and the auxiliary `pr_url` / `pr_failed_reason` wisps are written atomically.

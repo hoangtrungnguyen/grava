@@ -141,6 +141,7 @@ func AddCommands(root *cobra.Command, d *cmddeps.Deps) {
 	root.AddCommand(newWispCmd(d))
 	root.AddCommand(newHistoryCmd(d))
 	root.AddCommand(newUndoCmd(d))
+	root.AddCommand(newSignalCmd(d))
 }
 
 func newShowCmd(d *cmddeps.Deps) *cobra.Command {

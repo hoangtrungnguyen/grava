@@ -49,7 +49,17 @@ If the operator declines to fill an essential gap (says "I don't know yet" or "s
 1. Collect the open questions into a single block.
 2. Label the source doc / parent epic `planner-needs-input`.
 3. Skip issue creation entirely.
-4. Emit `PLANNER_NEEDS_INPUT: <one-line summary of what's missing>` as the **last non-empty line** of your final message and exit.
+4. Emit the deferral signal via `grava signal` against the labelled parent epic so `pipeline_phase=planner_needs_input` and the `planner_needs_input_summary` wisp are written atomically:
+   ```bash
+   grava signal PLANNER_NEEDS_INPUT --issue "$PARENT_EPIC_ID" --payload "<one-line summary of what's missing>"
+   ```
+   The CLI prints `PLANNER_NEEDS_INPUT: <summary>` as the final stdout line so existing last-line parsers (orchestrator + `sync-pipeline-status` hook) continue to work.
+
+   When no parent epic exists yet (e.g. the doc itself is the entry point), fall back to plain text emission as the last non-empty line:
+   ```
+   PLANNER_NEEDS_INPUT: <doc-path> missing <count> items (services/APIs/...)
+   ```
+   In that fallback case `pipeline_phase` cannot be written (there's no issue to key it on); the operator finds stalled docs via the `planner-needs-input` label.
 
 Default behavior is to ask inline — only emit the signal when the operator chooses to defer.
 
