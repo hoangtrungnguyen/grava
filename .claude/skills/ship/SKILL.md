@@ -172,9 +172,35 @@ read_signal_state() {
 
 ### `--dry-run` short-circuit
 
-Run after Setup but before Phase 0 spawns anything. Prints what each phase
-would read from the DB without invoking agents or writing wisps. Useful for
-debugging stuck pipelines and for the Phase 3 acceptance gate.
+**What it does:** prints the wisp/DB state `/ship` would consult at each phase
+boundary for the given issue, then exits **without** spawning agents,
+claiming the issue, writing wisps, opening worktrees, or making any other
+mutation. Read-only inspection — safe to run on any issue at any time,
+including issues mid-flight in another terminal.
+
+**Why it exists:** before Phase 3, the only way to see "what does the
+orchestrator think about this issue right now?" was to actually run `/ship`
+and observe side effects. With wisps as the canonical source of truth, the
+state is fully introspectable; `--dry-run` exposes that introspection
+directly. Three concrete uses:
+
+1. **Debugging stuck pipelines** — issue stuck at `claimed`? Dry-run shows
+   whether `last_commit` is set, whether `coder_halted` was written, etc.
+   Resolves "is the agent broken or is `/ship` not seeing its output?" in
+   one command.
+2. **Pre-flight check before resume** — confirm what phase `/ship` will
+   re-enter at on a partially-complete issue, before committing to the run.
+3. **Phase 3 acceptance gate** — proves `/ship` can resolve canonical state
+   from wisps alone, no agent stdout required.
+
+**Output:** the resolved values for `pipeline_phase`, `last_commit`,
+`coder_halted`, `reviewer_findings`, `pr_url`, `pr_failed_reason`, and the
+current `SHIP_LEGACY_PARSER` setting. Each line shows `<unset>` / `<none>`
+when the wisp/field is absent, so an empty pipeline state is distinguishable
+from a missing read.
+
+**Implementation:** runs after Setup but before Phase 0 spawns anything.
+Requires an explicit `<issue-id>` (no auto-discovery); errors otherwise.
 
 ```bash
 if [ "$DRY_RUN" = "1" ]; then
