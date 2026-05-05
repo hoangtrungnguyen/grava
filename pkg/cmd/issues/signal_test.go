@@ -130,6 +130,20 @@ func TestResolveTargetPhase_ForwardOnly(t *testing.T) {
 			wantWrite: true,
 		},
 		{
+			name:      "terminal: PR_CLOSED overrides pr_awaiting_merge",
+			current:   "pr_awaiting_merge",
+			kind:      SignalPRClosed,
+			wantPhase: "failed",
+			wantWrite: true,
+		},
+		{
+			name:      "terminal: PR_CLOSED overrides pr_merged (rare race, but recoverable)",
+			current:   "pr_merged",
+			kind:      SignalPRClosed,
+			wantPhase: "failed",
+			wantWrite: true,
+		},
+		{
 			name:      "bookkeeping: PLANNER_DONE has no phase",
 			current:   "",
 			kind:      SignalPlannerDone,
@@ -181,6 +195,7 @@ func TestAuxiliaryKey(t *testing.T) {
 		SignalReviewerBlocked:    "reviewer_findings",
 		SignalPRCreated:          "pr_url",
 		SignalPRFailed:           "pr_failed_reason",
+		SignalPRClosed:           "pr_close_reason",
 		SignalPipelineHalted:     "pipeline_halted_reason",
 		SignalPipelineFailed:     "pipeline_failed_reason",
 		SignalPlannerNeedsInput:  "planner_needs_input_summary",
@@ -210,6 +225,8 @@ func TestLegacyTextLine(t *testing.T) {
 		{string(SignalReviewerBlocked), "", "REVIEWER_BLOCKED"},
 		{string(SignalPRMerged), "anything", "PR_MERGED"},
 		{string(SignalPRCreated), "https://x/y/pr/1", "PR_CREATED: https://x/y/pr/1"},
+		{string(SignalPRClosed), "reviewer-rejected", "PR_CLOSED: reviewer-rejected"},
+		{string(SignalPRClosed), "", "PR_CLOSED"},
 		{string(SignalPlannerDone), "ignored", "PLANNER_DONE"},
 		{string(SignalBugHuntComplete), "ignored", "BUG_HUNT_COMPLETE"},
 	}
@@ -306,6 +323,42 @@ func TestSignalRun_CoderHalted_AlsoWritesAuxiliary(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "coding_halted", res.Phase)
+	assert.True(t, res.PhaseWrote)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSignalRun_PRClosed_OverridesAwaitingMerge(t *testing.T) {
+	// Simulates what pr-merge-watcher.sh emits when GitHub reports CLOSED
+	// without a merge: pipeline_phase moves from pr_awaiting_merge → failed,
+	// pr_close_reason auxiliary wisp captures the rejection category.
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	const issueID = "abc123def456"
+
+	mock.ExpectQuery("SELECT id FROM issues WHERE id").
+		WithArgs(issueID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(issueID))
+	mock.ExpectQuery("SELECT key_name, value, written_by, written_at").
+		WithArgs(issueID, "pipeline_phase").
+		WillReturnRows(sqlmock.NewRows([]string{"key_name", "value", "written_by", "written_at"}).
+			AddRow("pipeline_phase", "pr_awaiting_merge", "watcher", nowStub()))
+
+	// Phase write: failed (terminal — overrides forward-only).
+	expectWispWrite(mock, issueID, "pipeline_phase", "failed", "watcher")
+	// Auxiliary: pr_close_reason = "<category>".
+	expectWispWrite(mock, issueID, "pr_close_reason", "reviewer-rejected", "watcher")
+
+	store := dolt.NewClientFromDB(db)
+	res, err := signalRun(context.Background(), store, SignalParams{
+		IssueID: issueID,
+		Kind:    SignalPRClosed,
+		Payload: "reviewer-rejected",
+		Actor:   "watcher",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "failed", res.Phase)
 	assert.True(t, res.PhaseWrote)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -28,6 +28,13 @@ const (
 	SignalPRFailed            SignalKind = "PR_FAILED"
 	SignalPRCommentsResolved  SignalKind = "PR_COMMENTS_RESOLVED"
 	SignalPRMerged            SignalKind = "PR_MERGED"
+	// SignalPRClosed is emitted by pr-merge-watcher.sh when the GitHub PR was
+	// closed without being merged. Distinct from SignalPRFailed (which the
+	// pr-creator agent emits when it can't open a PR in the first place).
+	// Both target pipeline_phase=failed but record different auxiliary wisps:
+	// pr_close_reason (rejection category) here, pr_failed_reason (open-time
+	// error) for SignalPRFailed.
+	SignalPRClosed            SignalKind = "PR_CLOSED"
 	SignalPipelineComplete    SignalKind = "PIPELINE_COMPLETE"
 	SignalPipelineHalted      SignalKind = "PIPELINE_HALTED"
 	SignalPipelineFailed      SignalKind = "PIPELINE_FAILED"
@@ -46,6 +53,7 @@ var signalKindIndex = map[SignalKind]struct{}{
 	SignalPRFailed:           {},
 	SignalPRCommentsResolved: {},
 	SignalPRMerged:           {},
+	SignalPRClosed:           {},
 	SignalPipelineComplete:   {},
 	SignalPipelineHalted:     {},
 	SignalPipelineFailed:     {},
@@ -81,6 +89,7 @@ var signalToPhase = map[SignalKind]string{
 	SignalPRFailed:           "failed",
 	SignalPRCommentsResolved: "pr_comments_resolved",
 	SignalPRMerged:           "pr_merged",
+	SignalPRClosed:           "failed",
 	SignalPipelineComplete:   "complete",
 	SignalPipelineHalted:     "halted_human_needed",
 	SignalPipelineFailed:     "failed",
@@ -229,6 +238,8 @@ func auxiliaryKey(kind SignalKind) string {
 		return "pr_url"
 	case SignalPRFailed:
 		return "pr_failed_reason"
+	case SignalPRClosed:
+		return "pr_close_reason"
 	case SignalPipelineHalted:
 		return "pipeline_halted_reason"
 	case SignalPipelineFailed:
@@ -268,7 +279,7 @@ func newSignalCmd(d *cmddeps.Deps) *cobra.Command {
 Kinds:
   CODER_DONE, CODER_HALTED,
   REVIEWER_APPROVED, REVIEWER_BLOCKED,
-  PR_CREATED, PR_FAILED, PR_COMMENTS_RESOLVED, PR_MERGED,
+  PR_CREATED, PR_FAILED, PR_COMMENTS_RESOLVED, PR_MERGED, PR_CLOSED,
   PIPELINE_COMPLETE, PIPELINE_HALTED, PIPELINE_FAILED,
   PLANNER_NEEDS_INPUT, PLANNER_DONE, BUG_HUNT_COMPLETE
 
