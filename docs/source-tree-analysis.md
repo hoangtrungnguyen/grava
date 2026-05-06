@@ -49,7 +49,7 @@ grava/
 ├── plugins/
 │   └── grava/                  # Plugin distribution: skills + agents + hooks bundled
 ├── scripts/
-│   ├── hooks/                  # PostToolUse + Stop hooks (sync-pipeline-status, warn-in-progress, …)
+│   ├── hooks/                  # Stop + TaskCompleted/Created + TeammateIdle hooks (warn-in-progress, validate-task-complete, …)
 │   ├── git-hooks/              # commit-msg hook (bug-hunt token enqueue)
 │   ├── pr-merge-watcher.sh     # cron — async PR merge tracking (Phase 4)
 │   ├── pre-merge-check.sh      # pre-PR cross-branch regression probe
@@ -90,6 +90,6 @@ grava/
 - **Dolt / MySQL** — persistence layer (default port `3306`, sandbox uses `3315`).
 - **Git** — worktrees, merge driver, hook stubs (incl. `commit-msg` for bug-hunt token enqueue).
 - **GitHub** — via `pkg/notify` + `pkg/cmd/sync` for issue tracker exchange; `gh` CLI for PR create/poll (used by pr-creator agent + watcher).
-- **Claude Code** — `.claude/settings.json` registers `PostToolUse` (sync-pipeline-status), `Stop` (warn-in-progress), `TaskCompleted` / `TeammateIdle` / `TaskCreated` hooks. Plugin distribution via `.claude-plugin/marketplace.json` + `plugins/grava/`.
+- **Claude Code** — `.claude/settings.json` registers `Stop` (warn-in-progress), `TaskCompleted` (validate-task-complete), `TaskCreated` (review-loop-guard), `TeammateIdle` (check-teammate-idle) hooks. Plugin distribution via `.claude-plugin/marketplace.json` + `plugins/grava/`. (Pipeline-phase writes go through `grava signal` directly — no PostToolUse hook needed.)
 - **Cron** — `scripts/pr-merge-watcher.sh` (every 5 min), `scripts/run-pending-hunts.sh` (hourly), nightly `claude -p "/hunt since-last-tag"`.
 - **BMAD** — agentic workflow orchestration definitions under `_bmad/` and outputs in `_bmad-output/`.

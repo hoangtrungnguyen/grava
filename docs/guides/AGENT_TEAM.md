@@ -351,7 +351,7 @@ You can run multiple issues in parallel — one terminal per issue:
 /ship grava-def456
 ```
 
-The `sync-pipeline-status` hook (PostToolUse/Bash) resolves the issue from the worktree path (`cwd`) — signals in different terminals update different wisps. The Stop hook warns on exit if any issues are still in-progress.
+Signals in different terminals update different wisps because each `grava signal` call passes `--issue $ISSUE_ID` (or auto-detects it from the `.worktree/<id>/` cwd). The Stop hook warns on exit if any issues are still in-progress.
 
 ---
 

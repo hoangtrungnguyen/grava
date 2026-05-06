@@ -61,7 +61,7 @@ This project uses Dolt as its database substrate. The database directory is `.gr
 
 ## Pipeline Signals (agent ↔ orchestrator contract)
 
-> **Signal protocol version: v1.** Last-line-only parse — orchestrator and the `sync-pipeline-status` hook reject signals that don't appear as the final non-empty line of an agent result.
+> **Signal protocol version: v2.** Agents call `grava signal <KIND> --issue $ID [--payload $V]` which writes `pipeline_phase` and any auxiliary triage wisps atomically inside one transaction. The orchestrator (`/ship`) reads canonical state via `grava wisp read` / `grava show --json`. The CLI also prints `<KIND>: <payload>` as its final stdout line so the orchestrator's stdout-fallback parser still resolves the kind in case of a wisp-write failure.
 
 | Signal | Emitter | Meaning |
 |--------|---------|---------|
@@ -86,7 +86,7 @@ This project uses Dolt as its database substrate. The database directory is `.gr
 
 | Key | Owner | Values | Read By |
 |-----|-------|--------|---------|
-| `pipeline_phase` | orchestrator (`/ship`) + `sync-pipeline-status.sh` hook | `claimed` → `coding_complete` → `review_blocked` → `review_approved` → `pr_created` → `pr_awaiting_merge` → `pr_comments_resolved` → `pr_merged` → `complete`. Terminal: `halted_human_needed`, `coding_halted`, `planner_needs_input`. Recoverable: `failed` | `/ship` re-entry, `pr-merge-watcher.sh`, `grava doctor` |
+| `pipeline_phase` | `grava signal` CLI (sole writer — orchestrator, agents, watcher all route through it) | `claimed` → `coding_complete` → `review_blocked` → `review_approved` → `pr_created` → `pr_awaiting_merge` → `pr_comments_resolved` → `pr_merged` → `complete`. Terminal: `halted_human_needed`, `coding_halted`, `planner_needs_input`. Recoverable: `failed` | `/ship` re-entry, `pr-merge-watcher.sh`, `grava doctor` |
 | `step` | `grava-dev-task` workflow checkpoints | `claimed`, `context-loaded`, `validated`, `complete` (skill-internal) | The skill itself on resume |
 | `orchestrator_heartbeat` | `/ship` (seeds + phase iterations) AND `grava-dev-task` (every workflow checkpoint) | UTC unix timestamp | `grava doctor` (stale-detection: >30 min while `pipeline_phase` non-terminal) |
 | `pr_url`, `pr_number`, `pr_new_comments`, `pr_fix_round`, `pr_off_scope`, `pr_ci_log` | `pr-merge-watcher.sh`, `/ship` Phase 4 | URL / int / JSON / counter / paths / log | `/ship` re-entry |

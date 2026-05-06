@@ -4,9 +4,15 @@ Replace the legacy "echo a magic string + parse the last line" signal protocol
 with a typed `grava signal` CLI command. Phased rollout, every step
 independently reversible, no pipeline downtime.
 
-> **Status:** Phases 1–2 landed. Phases 3+ pending.
+> **Status: COMPLETE.** All phases landed (PRs #25–#29 merged); Phase 6 telemetry
+> + Phase 7 docs were skipped on the basis that `grava` has a single deployment
+> (this repo) and the typed-CLI adoption was assumed at 100% rather than measured
+> over a soak window. Phase 8 retired the legacy bash hook regex parser
+> immediately. The `sync-pipeline-status.sh` PostToolUse hook is **gone** —
+> every `pipeline_phase` write across the system now flows through `grava signal`.
+>
 > **Owner:** pipeline maintainers
-> **Tracking:** `.grava/dolt` (open `infra` epic — TBD)
+> **Tracking:** `.grava/dolt` epic `grava-3a8d` (story 6 = telemetry skipped, story 8 = hook retired)
 
 ---
 

@@ -53,7 +53,7 @@ If the operator declines to fill an essential gap (says "I don't know yet" or "s
    ```bash
    grava signal PLANNER_NEEDS_INPUT --issue "$PARENT_EPIC_ID" --payload "<one-line summary of what's missing>"
    ```
-   The CLI prints `PLANNER_NEEDS_INPUT: <summary>` as the final stdout line so existing last-line parsers (orchestrator + `sync-pipeline-status` hook) continue to work.
+   The CLI prints `PLANNER_NEEDS_INPUT: <summary>` as the final stdout line so the orchestrator's stdout-fallback parser still resolves the kind in case the wisp write somehow failed.
 
    When no parent epic exists yet (e.g. the doc itself is the entry point), fall back to plain text emission as the last non-empty line:
    ```

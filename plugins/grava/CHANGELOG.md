@@ -9,7 +9,7 @@ Initial public plugin release. Packages the full Phase 2B agent-team pipeline.
 - **5 pipeline agents**: `coder`, `reviewer`, `bug-hunter`, `planner`, `pr-creator`
 - **3 user-invocable skills**: `/ship`, `/plan`, `/hunt`
 - **9 grava-* skills**: `grava-cli`, `grava-dev-task`, `grava-code-review`, `grava-bug-hunt`, `grava-gen-issues`, `grava-claim`, `grava-complete-dev-story`, `grava-dev-epic`, `grava-next-issue`
-- **2 pipeline hooks**: `PostToolUse` (sync-pipeline-status), `Stop` (warn-in-progress)
+- **1 pipeline hook**: `Stop` (warn-in-progress). Pipeline-phase writes go through the typed `grava signal` CLI atomically, so no `PostToolUse` text-parsing hook is needed.
 - **5 scripts**: `pr-merge-watcher.sh`, `pre-merge-check.sh`, `run-pending-hunts.sh`, `preflight-gh.sh`, `install-git-hooks.sh`
 - **`grava bootstrap`** subcommand for post-install setup
 - Plugin marketplace manifest at `.claude-plugin/marketplace.json`
