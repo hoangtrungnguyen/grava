@@ -54,12 +54,65 @@ fi
 
 ### 3. Push
 
+Before pushing, source the agent-bot helper. When a bot identity is
+configured (`scripts/setup-agent-bot.sh` was run at install time), this
+exports `GRAVA_AGENT_BOT_{TOKEN,USER,EMAIL}`. When not configured, the
+vars stay unset and the agent transparently falls back to the operator's
+`gh` auth + `git config` — same behaviour as before this feature landed.
+
+When bot identity IS configured, rewrite the author of every commit on
+this branch since `origin/main` to the bot. We do this via
+`git rebase --exec` with `-c user.{name,email}` overrides so the bot
+shows up on every commit line in the PR — not just the HEAD commit. The
+rewrite is a no-op if all commits already match the bot author.
+
 ```bash
+# Source helper — sets GRAVA_AGENT_BOT_TOKEN/USER/EMAIL if configured.
+# shellcheck source=/dev/null
+. "$REPO_ROOT/scripts/agent-bot-token.sh" 2>/dev/null || true
+
 FEATURE_BRANCH="grava/$ISSUE_ID"
-git push -u origin "$FEATURE_BRANCH" || {
-  ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "git push" )
-  exit 1
-}
+
+# Rewrite commit authors to the bot when configured.
+if [ -n "${GRAVA_AGENT_BOT_USER:-}" ] && [ -n "${GRAVA_AGENT_BOT_EMAIL:-}" ]; then
+  MERGE_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
+  if [ -n "$MERGE_BASE" ]; then
+    git -c user.name="$GRAVA_AGENT_BOT_USER" \
+        -c user.email="$GRAVA_AGENT_BOT_EMAIL" \
+        rebase --exec 'git commit --amend --no-edit --reset-author' \
+        "$MERGE_BASE" || {
+          ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "author rewrite failed" )
+          exit 1
+        }
+  fi
+fi
+
+# Push — use bot's PAT when configured, otherwise let git use the user's auth.
+if [ -n "${GRAVA_AGENT_BOT_TOKEN:-}" ]; then
+  # Inject bot creds via askpass helper. Persists only for this push.
+  GIT_ASKPASS_TMP=$(mktemp)
+  cat > "$GIT_ASKPASS_TMP" <<'ASKPASS'
+#!/usr/bin/env bash
+case "$1" in
+  Username*) echo "$GRAVA_AGENT_BOT_USER" ;;
+  Password*) echo "$GRAVA_AGENT_BOT_TOKEN" ;;
+esac
+ASKPASS
+  chmod +x "$GIT_ASKPASS_TMP"
+  GIT_ASKPASS="$GIT_ASKPASS_TMP" GIT_TERMINAL_PROMPT=0 \
+    git push -u origin "$FEATURE_BRANCH"
+  push_rc=$?
+  rm -f "$GIT_ASKPASS_TMP"
+  if [ "$push_rc" -ne 0 ]; then
+    ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "git push (bot auth)" )
+    exit 1
+  fi
+else
+  git push -u origin "$FEATURE_BRANCH" || {
+    ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "git push" )
+    exit 1
+  }
+fi
 ```
 
 ### 4. Build PR title / body
@@ -92,8 +145,18 @@ EOF
 
 ### 5. Open PR
 
+When the bot is configured, run `gh pr create` under `GH_TOKEN=$GRAVA_AGENT_BOT_TOKEN`
+so the PR's "opened by" attribution on GitHub points at the bot. When not configured,
+the user's existing `gh` auth is used (transparent fallback).
+
 ```bash
-gh pr create \
+if [ -n "${GRAVA_AGENT_BOT_TOKEN:-}" ]; then
+  GH_TOKEN_FOR_PR="$GRAVA_AGENT_BOT_TOKEN"
+else
+  GH_TOKEN_FOR_PR="${GH_TOKEN:-}"   # let gh fall back to its own auth chain
+fi
+
+GH_TOKEN="$GH_TOKEN_FOR_PR" gh pr create \
   --head "$FEATURE_BRANCH" \
   --title "$TITLE" \
   --body "$BODY" \
@@ -103,8 +166,8 @@ gh pr create \
     exit 1
   }
 
-PR_URL=$(gh pr view "$FEATURE_BRANCH" --json url -q '.url')
-PR_NUMBER=$(gh pr view "$FEATURE_BRANCH" --json number -q '.number')
+PR_URL=$(GH_TOKEN="$GH_TOKEN_FOR_PR" gh pr view "$FEATURE_BRANCH" --json url -q '.url')
+PR_NUMBER=$(GH_TOKEN="$GH_TOKEN_FOR_PR" gh pr view "$FEATURE_BRANCH" --json number -q '.number')
 ```
 
 ### 6. Record state

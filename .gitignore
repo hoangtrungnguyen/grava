@@ -40,6 +40,8 @@ go.work.sum
 .grava/*.log
 .grava/schema_version
 .grava/conflicts.json
+# Agent-bot author identity (token + username + email) — local-only
+.grava/agent-bot.*
 
 # Binaries
 /grava
