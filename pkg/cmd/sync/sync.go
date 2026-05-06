@@ -14,9 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/cmd/maintenance"
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
+	gravelog "github.com/hoangtrungnguyen/grava/pkg/log"
 	"github.com/spf13/cobra"
 )
 
@@ -96,16 +98,27 @@ func newCommitCmd(d *cmddeps.Deps) *cobra.Command {
 				return fmt.Errorf("commit message is required (use -m)")
 			}
 
-			_, err := (*d.Store).Exec("CALL DOLT_ADD('-A')")
-			if err != nil {
+			store := *d.Store
+
+			// Step 1: stage and commit the user's changes.
+			if _, err := store.Exec("CALL DOLT_ADD('-A')"); err != nil {
 				return fmt.Errorf("failed to stage changes: %w", err)
 			}
 
 			var hash string
-			err = (*d.Store).QueryRow("CALL DOLT_COMMIT('-m', ?)", commitMessage).Scan(&hash)
-			if err != nil {
+			if err := store.QueryRow("CALL DOLT_COMMIT('-m', ?)", commitMessage).Scan(&hash); err != nil {
 				return fmt.Errorf("failed to commit: %w", err)
 			}
+
+			// Step 2: record the commit's own audit row, then fold cmd_audit_log
+			// into history with a follow-up commit. Without this, cmd_audit_log
+			// is left perpetually dirty after every grava command (root.go's
+			// PersistentPostRunE inserts an audit row AFTER RunE returns), which
+			// breaks `grava import`'s Dual-Safety Check (FR24). See grava-ff4b.
+			//
+			// We swallow audit errors: the user's commit already succeeded, and
+			// an audit hiccup must not surface as a user-facing failure.
+			recordSelfAuditAndCommit(cmd.Context(), store, cmd.CommandPath(), *d.Actor)
 
 			cmd.Printf("✅ Committed changes. Hash: %s\n", hash)
 			return nil
@@ -115,6 +128,39 @@ func newCommitCmd(d *cmddeps.Deps) *cobra.Command {
 	cmd.Flags().StringVarP(&commitMessage, "message", "m", "", "Commit message")
 	_ = cmd.MarkFlagRequired("message")
 	return cmd
+}
+
+// recordSelfAuditAndCommit inserts the audit row for the `grava commit`
+// command itself, then folds cmd_audit_log into Dolt history with a
+// dedicated follow-up commit. This is what makes `dolt status` clean after
+// `grava commit` returns — and is paired with a corresponding skip in
+// root.go's PersistentPostRunE so the same audit row is never recorded
+// twice.
+//
+// Errors are intentionally swallowed (only logged): the user's commit has
+// already succeeded by the time this runs, and audit-trail bookkeeping must
+// never bubble up as a user-facing failure.
+func recordSelfAuditAndCommit(ctx context.Context, store dolt.Store, command, actor string) {
+	argsBytes, _ := json.Marshal(os.Args[1:])
+	maintenance.RecordCommand(ctx, store, command, actor, string(argsBytes), 0)
+
+	if _, err := store.ExecContext(ctx, "CALL DOLT_ADD('cmd_audit_log')"); err != nil {
+		gravelog.Logger.Debug().Err(err).Msg("commit: failed to stage cmd_audit_log for audit follow-up")
+		return
+	}
+
+	var auditHash string
+	if err := store.QueryRowContext(ctx,
+		"CALL DOLT_COMMIT('-m', ?)",
+		"audit: "+command,
+	).Scan(&auditHash); err != nil {
+		gravelog.Logger.Debug().Err(err).Msg("commit: failed to commit cmd_audit_log audit follow-up")
+		return
+	}
+
+	gravelog.Logger.Debug().
+		Str("audit_hash", auditHash).
+		Msg("commit: folded cmd_audit_log into Dolt history")
 }
 
 // resolveDefaultExportPath returns the path to issues.jsonl in the git repo root.
