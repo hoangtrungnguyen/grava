@@ -20,6 +20,13 @@ import (
 type SignalKind string
 
 const (
+	// SignalIssueClaimed marks an issue as claimed by the orchestrator.
+	// Orchestrator-internal phase write (no agent emission): /ship Phase 1
+	// prologue, grava-next-issue skill, and Phase 5 retry use it to mark
+	// "I'm taking responsibility for this issue now." Routed through grava
+	// signal so atomicity, validation, forward-only logic, and audit logging
+	// match every other phase write.
+	SignalIssueClaimed        SignalKind = "ISSUE_CLAIMED"
 	SignalCoderDone           SignalKind = "CODER_DONE"
 	SignalCoderHalted         SignalKind = "CODER_HALTED"
 	SignalReviewerApproved    SignalKind = "REVIEWER_APPROVED"
@@ -27,6 +34,11 @@ const (
 	SignalPRCreated           SignalKind = "PR_CREATED"
 	SignalPRFailed            SignalKind = "PR_FAILED"
 	SignalPRCommentsResolved  SignalKind = "PR_COMMENTS_RESOLVED"
+	// SignalPRAwaitingMerge marks the transition from "PR opened" to "PR
+	// awaiting merge." Orchestrator-internal: /ship Phase 3 emits it after
+	// pr-creator returns success, and Phase 4 resume re-emits after a
+	// successful comment-fix round.
+	SignalPRAwaitingMerge     SignalKind = "PR_AWAITING_MERGE"
 	SignalPRMerged            SignalKind = "PR_MERGED"
 	// SignalPRClosed is emitted by pr-merge-watcher.sh when the GitHub PR was
 	// closed without being merged. Distinct from SignalPRFailed (which the
@@ -45,6 +57,7 @@ const (
 
 // signalKindIndex is built once at init for O(1) validation.
 var signalKindIndex = map[SignalKind]struct{}{
+	SignalIssueClaimed:       {},
 	SignalCoderDone:          {},
 	SignalCoderHalted:        {},
 	SignalReviewerApproved:   {},
@@ -52,6 +65,7 @@ var signalKindIndex = map[SignalKind]struct{}{
 	SignalPRCreated:          {},
 	SignalPRFailed:           {},
 	SignalPRCommentsResolved: {},
+	SignalPRAwaitingMerge:    {},
 	SignalPRMerged:           {},
 	SignalPRClosed:           {},
 	SignalPipelineComplete:   {},
@@ -81,6 +95,7 @@ var phaseOrder = []string{
 // A blank value means the signal does not drive pipeline_phase (e.g.
 // PLANNER_DONE, BUG_HUNT_COMPLETE — bookkeeping signals only).
 var signalToPhase = map[SignalKind]string{
+	SignalIssueClaimed:       "claimed",
 	SignalCoderDone:          "coding_complete",
 	SignalCoderHalted:        "coding_halted",
 	SignalReviewerApproved:   "review_approved",
@@ -88,6 +103,7 @@ var signalToPhase = map[SignalKind]string{
 	SignalPRCreated:          "pr_created",
 	SignalPRFailed:           "failed",
 	SignalPRCommentsResolved: "pr_comments_resolved",
+	SignalPRAwaitingMerge:    "pr_awaiting_merge",
 	SignalPRMerged:           "pr_merged",
 	SignalPRClosed:           "failed",
 	SignalPipelineComplete:   "complete",
@@ -96,13 +112,28 @@ var signalToPhase = map[SignalKind]string{
 	SignalPlannerNeedsInput:  "planner_needs_input",
 }
 
-// terminalPhases overwrite any prior phase regardless of position. They mirror
-// the bash script's case `failed|halted_human_needed|coding_halted|planner_needs_input`.
+// terminalPhases overwrite any prior phase regardless of position. Three
+// classes of phases live here:
+//
+//  1. True terminals — failed, halted_human_needed, coding_halted,
+//     planner_needs_input. Pipeline ends; writes always allowed.
+//  2. Rearm marker — pr_awaiting_merge. /ship Phase 4 re-emits this after a
+//     successful PR-comment-fix round to tell the watcher "look at this PR
+//     again." That transition is pr_comments_resolved → pr_awaiting_merge,
+//     which is BACKWARDS in phaseOrder (idx 6 → 5). Forward-only would
+//     suppress it; allowing overwrite preserves the original direct-wisp-
+//     write semantic in skills (.claude/skills/ship/SKILL.md Phase 4).
+//
+// The pr_merged → pr_awaiting_merge case (a regression from terminal
+// success) is unreachable in practice: watcher writes pr_merged AFTER
+// GitHub confirms merge, then closes the issue. /ship Phase 4 doesn't
+// re-fire after that.
 var terminalPhases = map[string]struct{}{
-	"failed":                {},
-	"halted_human_needed":   {},
-	"coding_halted":         {},
-	"planner_needs_input":   {},
+	"failed":              {},
+	"halted_human_needed": {},
+	"coding_halted":       {},
+	"planner_needs_input": {},
+	"pr_awaiting_merge":   {},
 }
 
 // resolveTargetPhase returns (newPhase, shouldWrite) for a given current phase
@@ -277,9 +308,11 @@ func newSignalCmd(d *cmddeps.Deps) *cobra.Command {
 		Long: `Emit a typed pipeline signal that updates pipeline_phase atomically.
 
 Kinds:
+  ISSUE_CLAIMED,
   CODER_DONE, CODER_HALTED,
   REVIEWER_APPROVED, REVIEWER_BLOCKED,
-  PR_CREATED, PR_FAILED, PR_COMMENTS_RESOLVED, PR_MERGED, PR_CLOSED,
+  PR_CREATED, PR_FAILED, PR_COMMENTS_RESOLVED,
+  PR_AWAITING_MERGE, PR_MERGED, PR_CLOSED,
   PIPELINE_COMPLETE, PIPELINE_HALTED, PIPELINE_FAILED,
   PLANNER_NEEDS_INPUT, PLANNER_DONE, BUG_HUNT_COMPLETE
 
