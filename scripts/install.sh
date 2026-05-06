@@ -144,3 +144,27 @@ case ":${PATH}:" in
 esac
 
 echo "🚀 Run '${BINARY} version' to verify, then '${BINARY} help' to get started!"
+
+# ─── Optional: agent-bot author setup ──────────────────────────────────────
+# Offered ONLY when the install runs from a grava repo checkout (so the
+# setup script is on disk). The downloadable installer hits release assets
+# without cloning, so the prompt is skipped silently.
+SETUP_BOT="$(dirname "$0")/setup-agent-bot.sh"
+if [ -x "$SETUP_BOT" ]; then
+  echo ""
+  echo "─── Optional: agent-bot author identity ──────────────────────────"
+  echo "  When /ship opens PRs, attribute them to a separate GitHub user"
+  echo "  (e.g. 'grava-agent-bot') instead of you. Useful for tagging"
+  echo "  pipeline-generated PRs vs human-authored work."
+  echo "  Skip this if you'd rather PRs land under your own identity."
+  echo ""
+  if [ -t 0 ]; then
+    read -r -p "Configure agent-bot now? [y/N]: " bot_answer
+    case "$bot_answer" in
+      y|Y|yes|YES) "$SETUP_BOT" ;;
+      *) echo "Skipped. Run $SETUP_BOT later if you change your mind." ;;
+    esac
+  else
+    echo "  Non-interactive shell — skipping. Run $SETUP_BOT manually if wanted."
+  fi
+fi
