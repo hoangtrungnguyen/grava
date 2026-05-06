@@ -15,8 +15,10 @@ import (
 
 // SignalKind is the typed pipeline signal an agent emits to the orchestrator.
 // Each kind maps deterministically to a `pipeline_phase` wisp value via
-// resolveTargetPhase, replacing the regex / last-line text parsing previously
-// done by scripts/hooks/sync-pipeline-status.sh.
+// resolveTargetPhase. This typed CLI is the sole writer of `pipeline_phase`
+// across grava — agents, the /ship orchestrator, the pr-merge-watcher, and
+// supporting skills all route through `grava signal` for atomic phase +
+// auxiliary-wisp writes.
 type SignalKind string
 
 const (
@@ -76,9 +78,9 @@ var signalKindIndex = map[SignalKind]struct{}{
 	SignalBugHuntComplete:    {},
 }
 
-// phaseOrder mirrors the forward-only progression in sync-pipeline-status.sh.
+// phaseOrder defines the forward-only progression of pipeline_phase values.
 // Phases not in this list (terminal / out-of-band) are handled separately in
-// resolveTargetPhase via shouldOverwrite().
+// resolveTargetPhase via the terminalPhases set.
 var phaseOrder = []string{
 	"claimed",
 	"coding_complete",
@@ -319,9 +321,10 @@ Kinds:
 The issue id is auto-resolved from the current working directory when run
 from inside a grava worktree (.worktree/<id>/...). Pass --issue to override.
 
-The command also prints the legacy "<KIND>: <payload>" line as the final
-line of stdout for backward compatibility with the sync-pipeline-status hook
-and any orchestrator that still parses last-line output.`,
+The command also prints the canonical "<KIND>: <payload>" line as the final
+line of stdout. /ship's read_signal_state resolver primarily reads canonical
+state from wisps but falls back to last-line stdout parsing if the wisp
+write failed for any reason.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -384,10 +387,10 @@ and any orchestrator that still parses last-line output.`,
 	return cmd
 }
 
-// legacyTextLine renders the canonical last-line signal string used by the
-// existing scripts/hooks/sync-pipeline-status.sh and /ship orchestrator.
-// Bookkeeping signals (PLANNER_DONE, BUG_HUNT_COMPLETE) never carried payloads
-// and are emitted bare.
+// legacyTextLine renders the canonical last-line signal string. Printed by
+// `grava signal` to stdout so /ship's read_signal_state can fall back to
+// last-line parsing if the wisp write failed. Bookkeeping signals
+// (PLANNER_DONE, BUG_HUNT_COMPLETE) never carry payloads and emit bare.
 func legacyTextLine(kind, payload string) string {
 	switch SignalKind(kind) {
 	case SignalReviewerApproved, SignalPRMerged, SignalPlannerDone, SignalBugHuntComplete:

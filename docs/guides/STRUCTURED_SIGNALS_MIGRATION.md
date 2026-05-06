@@ -4,15 +4,16 @@ Replace the legacy "echo a magic string + parse the last line" signal protocol
 with a typed `grava signal` CLI command. Phased rollout, every step
 independently reversible, no pipeline downtime.
 
-> **Status: COMPLETE.** All phases landed (PRs #25–#29 merged); Phase 6 telemetry
-> + Phase 7 docs were skipped on the basis that `grava` has a single deployment
-> (this repo) and the typed-CLI adoption was assumed at 100% rather than measured
-> over a soak window. Phase 8 retired the legacy bash hook regex parser
-> immediately. The `sync-pipeline-status.sh` PostToolUse hook is **gone** —
-> every `pipeline_phase` write across the system now flows through `grava signal`.
+> **Status: COMPLETE.** Phases 1–5 + 7 + 8 landed (PRs #25–#28 + #31).
+> Phase 6 (telemetry) was skipped on the basis that `grava` has a single
+> deployment (this repo) and typed-CLI adoption was assumed at ~100% rather
+> than measured over a 4-week soak window — closing the soak-gate that Phase 8
+> would otherwise wait on. Phase 7 (docs) was rolled into Phase 8 (PR #31).
+> The legacy `sync-pipeline-status.sh` PostToolUse hook is **gone** — every
+> `pipeline_phase` write across the system now flows through `grava signal`.
 >
 > **Owner:** pipeline maintainers
-> **Tracking:** `.grava/dolt` epic `grava-3a8d` (story 6 = telemetry skipped, story 8 = hook retired)
+> **Tracking:** `.grava/dolt` epic `grava-3a8d` (story 5 = telemetry skipped, story 7 = hook retired)
 
 ---
 
@@ -212,7 +213,7 @@ deprecating fallbacks.
    {"ts": "...", "issue_id": "...", "kind": "...", "phase_wrote": true, "source": "cli"}
    ```
 2. Modify
-   [`scripts/hooks/sync-pipeline-status.sh`](../../scripts/hooks/sync-pipeline-status.sh)
+   `scripts/hooks/sync-pipeline-status.sh` (deleted in Phase 8)
    to emit:
    ```json
    {"ts": "...", "issue_id": "...", "kind": "...", "phase_wrote": true, "source": "hook-fallback"}
@@ -234,7 +235,7 @@ After 1 week of pipeline runs, `source: "cli"` should be ≥99% of writes.
 | [`CLAUDE.md`](../../CLAUDE.md) (root) | "Pipeline Signals" table — flip the **Emitter** column from "agent text output" to "agent calls `grava signal`" |
 | [`CLAUDE.md`](../../CLAUDE.md) (root) | Add "Signal CLI" subsection with the schema |
 | [`.claude/agents/*.md`](../../.claude/agents/) | Verify Phase 2 work (all references use `grava signal`, not `echo`) |
-| [`scripts/hooks/sync-pipeline-status.sh`](../../scripts/hooks/sync-pipeline-status.sh) | Header already updated; verify still accurate |
+| `scripts/hooks/sync-pipeline-status.sh` (deleted in Phase 8) | Header already updated; verify still accurate |
 | **NEW:** `docs/architecture/signals.md` | Single source of truth — vocabulary, ordering, terminal phases, auxiliary keys |
 
 **Exit gate:** a new contributor can read `docs/architecture/signals.md`
@@ -248,7 +249,7 @@ Once telemetry shows fallback usage at 0%, retire the regex parser.
 
 ### Steps
 1. Replace
-   [`scripts/hooks/sync-pipeline-status.sh`](../../scripts/hooks/sync-pipeline-status.sh)'s
+   `scripts/hooks/sync-pipeline-status.sh`'s
    parsing logic with telemetry-only:
    ```bash
    # Hook is now observability-only — CLI writes the phase directly.

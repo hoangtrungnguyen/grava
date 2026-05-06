@@ -76,8 +76,11 @@ same `<NAME>|<TAIL>` shape `parse_signal` produced, so existing callers don't
 change shape — only their data source. `parse_signal` + `last_line` are retained
 as a fallback path:
 
-- Triggered automatically when `pipeline_phase` is unset (legacy / un-migrated agent)
-- Forced when `SHIP_LEGACY_PARSER=1` is set in the environment (regression flag)
+- Triggered automatically when `pipeline_phase` is unset after the agent
+  returned — the wisp write inside `grava signal` failed for some reason
+  (DB transient, network blip during multi-host setups, agent killed mid-call)
+- Forced when `SHIP_LEGACY_PARSER=1` is set in the environment (regression flag,
+  preserved for emergency rollback to text-only protocol)
 
 ```bash
 last_line() {
