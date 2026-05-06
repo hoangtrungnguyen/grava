@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
@@ -186,6 +188,53 @@ type SignalParams struct {
 	Actor   string
 }
 
+// signalLogEvent is the JSON line shape written to .grava/signal-source.jsonl.
+// One line per `grava signal` invocation. Phase 6 of the structured-signals
+// migration uses this to compare CLI traffic vs hook-fallback traffic over a
+// soak window; once the CLI accounts for ≥99% of writes, Phase 8 retires the
+// hook regex.
+type signalLogEvent struct {
+	TS         string `json:"ts"`           // RFC3339Nano UTC
+	IssueID    string `json:"issue_id"`
+	Kind       string `json:"kind"`
+	Phase      string `json:"phase,omitempty"`
+	PhaseWrote bool   `json:"phase_wrote"`
+	Source     string `json:"source"`       // "cli" here; "hook-fallback" in sync-pipeline-status.sh
+	Actor      string `json:"actor,omitempty"`
+	Err        string `json:"err,omitempty"`
+}
+
+// signalLogPath returns the JSONL log file path. Override with the
+// GRAVA_SIGNAL_LOG_PATH env var (set to empty to disable).
+func signalLogPath() string {
+	if v, ok := os.LookupEnv("GRAVA_SIGNAL_LOG_PATH"); ok {
+		return v
+	}
+	return ".grava/signal-source.jsonl"
+}
+
+// logSignalEvent appends a single JSON line to the signal-source log. Best
+// effort — any failure (path unwritable, dir missing, encoding error) is
+// silently swallowed so observability never breaks the underlying signal.
+// Exposed for testing via the package-level emitSignalLog function variable
+// so tests can capture events without touching disk.
+var emitSignalLog = func(ev signalLogEvent) {
+	path := signalLogPath()
+	if path == "" {
+		return // observability explicitly disabled
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close() //nolint:errcheck
+	enc := json.NewEncoder(f)
+	_ = enc.Encode(ev) //nolint:errcheck — observability is best-effort
+}
+
 // SignalResult is the JSON output for a successful signal.
 type SignalResult struct {
 	IssueID    string `json:"issue_id"`
@@ -198,10 +247,26 @@ type SignalResult struct {
 // signalRun executes a signal: writes pipeline_phase (when applicable) and any
 // auxiliary wisps documented per signal type. Returns the resolved phase and
 // whether it was written so the caller can present accurate stdout output.
+//
+// Phase 6 telemetry: emits one JSON line to .grava/signal-source.jsonl per
+// invocation, including failures. The hook-fallback path emits the same shape
+// from sync-pipeline-status.sh with source="hook-fallback", letting operators
+// compute the cli-vs-hook ratio over a soak window.
 func signalRun(ctx context.Context, store dolt.Store, params SignalParams) (SignalResult, error) {
+	logEvent := signalLogEvent{
+		TS:      time.Now().UTC().Format(time.RFC3339Nano),
+		IssueID: params.IssueID,
+		Kind:    string(params.Kind),
+		Source:  "cli",
+		Actor:   params.Actor,
+	}
+
 	if _, ok := signalKindIndex[params.Kind]; !ok {
-		return SignalResult{}, gravaerrors.New("INVALID_SIGNAL",
+		err := gravaerrors.New("INVALID_SIGNAL",
 			fmt.Sprintf("unknown signal kind %q", params.Kind), nil)
+		logEvent.Err = err.Error()
+		emitSignalLog(logEvent)
+		return SignalResult{}, err
 	}
 
 	// Read current phase to apply forward-only logic.
@@ -213,14 +278,21 @@ func signalRun(ctx context.Context, store dolt.Store, params SignalParams) (Sign
 	} else if gerr, ok := err.(*gravaerrors.GravaError); ok {
 		// ISSUE_NOT_FOUND is fatal; WISP_NOT_FOUND just means no prior phase.
 		if gerr.Code == "ISSUE_NOT_FOUND" {
+			logEvent.Err = err.Error()
+			emitSignalLog(logEvent)
 			return SignalResult{}, err
 		}
 	}
 
 	target, writePhase, err := resolveTargetPhase(current, params.Kind)
 	if err != nil {
-		return SignalResult{}, gravaerrors.New("INVALID_SIGNAL", err.Error(), err)
+		gerr := gravaerrors.New("INVALID_SIGNAL", err.Error(), err)
+		logEvent.Err = gerr.Error()
+		emitSignalLog(logEvent)
+		return SignalResult{}, gerr
 	}
+	logEvent.Phase = target
+	logEvent.PhaseWrote = writePhase
 
 	if writePhase {
 		if _, err := wispWrite(ctx, store, WispWriteParams{
@@ -229,6 +301,8 @@ func signalRun(ctx context.Context, store dolt.Store, params SignalParams) (Sign
 			Value:   target,
 			Actor:   params.Actor,
 		}); err != nil {
+			logEvent.Err = err.Error()
+			emitSignalLog(logEvent)
 			return SignalResult{}, err
 		}
 	}
@@ -242,10 +316,13 @@ func signalRun(ctx context.Context, store dolt.Store, params SignalParams) (Sign
 			Value:   params.Payload,
 			Actor:   params.Actor,
 		}); err != nil {
+			logEvent.Err = err.Error()
+			emitSignalLog(logEvent)
 			return SignalResult{}, err
 		}
 	}
 
+	emitSignalLog(logEvent)
 	return SignalResult{
 		IssueID:    params.IssueID,
 		Kind:       string(params.Kind),
@@ -381,6 +458,117 @@ and any orchestrator that still parses last-line output.`,
 	cmd.Flags().String("issue", "", "Issue id (auto-detected from .worktree/<id> cwd when omitted)")
 	cmd.Flags().String("payload", "", "Optional payload — sha, url, reason, findings path, etc.")
 	cmd.Flags().String("actor", "", "Override the actor identity for this signal")
+	return cmd
+}
+
+// SignalStats summarizes a soak window of the signal-source.jsonl log.
+// Used by `grava signal-stats` to surface the cli-vs-hook ratio Phase 6
+// requires before Phase 8 retires the bash hook.
+type SignalStats struct {
+	WindowStart   string         `json:"window_start"`     // earliest event TS
+	WindowEnd     string         `json:"window_end"`       // latest event TS
+	Total         int            `json:"total"`
+	BySource      map[string]int `json:"by_source"`        // {"cli": N, "hook-fallback": M}
+	CLIRatio      float64        `json:"cli_ratio"`        // 0.0..1.0
+	ParseErrors   int            `json:"parse_errors"`     // malformed lines (skipped)
+	UniqueIssues  int            `json:"unique_issues"`
+}
+
+// computeSignalStats reads the signal-source log line-by-line and aggregates
+// counts. Returns zero-value SignalStats if the log doesn't exist (no error —
+// that just means no traffic yet).
+func computeSignalStats(path string) (SignalStats, error) {
+	stats := SignalStats{BySource: map[string]int{}}
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return stats, nil
+		}
+		return stats, err
+	}
+	defer f.Close() //nolint:errcheck
+
+	dec := json.NewDecoder(f)
+	dec.UseNumber()
+	issues := map[string]struct{}{}
+	for dec.More() {
+		var ev signalLogEvent
+		if err := dec.Decode(&ev); err != nil {
+			stats.ParseErrors++
+			continue
+		}
+		stats.Total++
+		stats.BySource[ev.Source]++
+		if ev.IssueID != "" {
+			issues[ev.IssueID] = struct{}{}
+		}
+		if ev.TS != "" {
+			if stats.WindowStart == "" || ev.TS < stats.WindowStart {
+				stats.WindowStart = ev.TS
+			}
+			if ev.TS > stats.WindowEnd {
+				stats.WindowEnd = ev.TS
+			}
+		}
+	}
+	stats.UniqueIssues = len(issues)
+	if stats.Total > 0 {
+		stats.CLIRatio = float64(stats.BySource["cli"]) / float64(stats.Total)
+	}
+	return stats, nil
+}
+
+func newSignalStatsCmd(d *cmddeps.Deps) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "signal-stats",
+		Short: "Report cli vs hook-fallback ratio from .grava/signal-source.jsonl",
+		Long: `Aggregate the signal-source log to compute migration adoption.
+
+Reads .grava/signal-source.jsonl (override with GRAVA_SIGNAL_LOG_PATH) and
+prints how many phase-writes came through the typed CLI ("cli") vs the
+legacy regex hook ("hook-fallback"). Phase 8 of the structured-signals
+migration retires the hook regex once cli_ratio is ≥ 0.99 over a one-week
+soak window — this command provides the gate.
+
+Use --json for the raw aggregate, otherwise a human-readable summary.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := signalLogPath()
+			stats, err := computeSignalStats(path)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", path, err)
+			}
+			if *d.OutputJSON {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(stats)
+			}
+			w := cmd.OutOrStdout()
+			_, _ = fmt.Fprintf(w, "Signal source telemetry — %s\n", path)
+			_, _ = fmt.Fprintln(w, "----------------------------------------")
+			if stats.Total == 0 {
+				_, _ = fmt.Fprintln(w, "No events recorded yet.")
+				return nil
+			}
+			_, _ = fmt.Fprintf(w, "Window:        %s → %s\n", stats.WindowStart, stats.WindowEnd)
+			_, _ = fmt.Fprintf(w, "Total events:  %d  (%d unique issues)\n", stats.Total, stats.UniqueIssues)
+			_, _ = fmt.Fprintln(w, "By source:")
+			for src, n := range stats.BySource {
+				pct := float64(n) / float64(stats.Total) * 100
+				_, _ = fmt.Fprintf(w, "  %-15s %5d  (%5.1f%%)\n", src, n, pct)
+			}
+			_, _ = fmt.Fprintf(w, "CLI ratio:     %.4f", stats.CLIRatio)
+			switch {
+			case stats.CLIRatio >= 0.99:
+				_, _ = fmt.Fprintln(w, "  ✅ ≥99% — Phase 8 gate cleared")
+			case stats.CLIRatio >= 0.95:
+				_, _ = fmt.Fprintln(w, "  🟡 ≥95% — close but not Phase-8-ready yet")
+			default:
+				_, _ = fmt.Fprintln(w, "  ❌ below 99% — keep the hook fallback live")
+			}
+			if stats.ParseErrors > 0 {
+				_, _ = fmt.Fprintf(w, "Parse errors:  %d (malformed lines skipped)\n", stats.ParseErrors)
+			}
+			return nil
+		},
+	}
 	return cmd
 }
 

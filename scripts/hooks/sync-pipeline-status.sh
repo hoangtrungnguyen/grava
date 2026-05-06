@@ -100,4 +100,33 @@ if [ "$WRITE" -eq 1 ]; then
   grava wisp write "$ISSUE_ID" pipeline_phase "$NEW_PHASE" 2>/dev/null
 fi
 
+# ─── Phase 6 telemetry — hook-fallback path ────────────────────────────────
+# Emit a JSON line matching pkg/cmd/issues/signal.go's signalLogEvent shape so
+# operators can compare cli vs hook-fallback adoption over a soak window. We
+# only log when we actually had a signal to act on (NEW_PHASE non-empty), since
+# the shape mirrors the CLI's own emission. Best-effort: failure to write is
+# ignored so observability never breaks the pipeline.
+SIGNAL_LOG_PATH="${GRAVA_SIGNAL_LOG_PATH:-.grava/signal-source.jsonl}"
+if [ -n "$NEW_PHASE" ] && [ -n "$SIGNAL_LOG_PATH" ]; then
+  # phase_wrote==true when we actually wrote, else false (forward-only suppressed).
+  PHASE_WROTE_JSON=$([ "$WRITE" -eq 1 ] && echo "true" || echo "false")
+  # Extract the original signal kind from the last line for the `kind` field
+  # (e.g. "CODER_DONE: abc" → "CODER_DONE"). Falls back to "UNKNOWN".
+  KIND=$(printf '%s' "$LAST_LINE" | awk -F'[: ]' '{print $1}')
+  [ -z "$KIND" ] && KIND="UNKNOWN"
+  # Seconds-precision is plenty for a week-long soak window. macOS's BSD date
+  # has no %N support so we don't try; the CLI side emits nanosecond precision
+  # for richer audits, but the comparison query (signal-stats) doesn't depend on it.
+  TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  mkdir -p "$(dirname "$SIGNAL_LOG_PATH")" 2>/dev/null
+  jq -cn \
+    --arg ts "$TS" \
+    --arg id "$ISSUE_ID" \
+    --arg kind "$KIND" \
+    --arg phase "$NEW_PHASE" \
+    --argjson wrote "$PHASE_WROTE_JSON" \
+    '{ts:$ts, issue_id:$id, kind:$kind, phase:$phase, phase_wrote:$wrote, source:"hook-fallback"}' \
+    >> "$SIGNAL_LOG_PATH" 2>/dev/null || true
+fi
+
 exit 0

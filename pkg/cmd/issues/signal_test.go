@@ -3,7 +3,11 @@ package issues
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -246,6 +250,81 @@ func TestAuxiliaryKey(t *testing.T) {
 	for k, want := range cases {
 		assert.Equal(t, want, auxiliaryKey(k), "kind=%s", k)
 	}
+}
+
+// ─── Phase 6 telemetry: emitSignalLog + computeSignalStats ────────────────
+
+func TestEmitSignalLog_AppendsValidJSON(t *testing.T) {
+	dir := t.TempDir()
+	logPath := dir + "/signal-source.jsonl"
+	t.Setenv("GRAVA_SIGNAL_LOG_PATH", logPath)
+
+	emitSignalLog(signalLogEvent{
+		TS: "2026-01-01T00:00:00Z", IssueID: "grava-aaaa", Kind: "CODER_DONE",
+		Phase: "coding_complete", PhaseWrote: true, Source: "cli", Actor: "agent-coder",
+	})
+	emitSignalLog(signalLogEvent{
+		TS: "2026-01-01T00:00:01Z", IssueID: "grava-bbbb", Kind: "PR_MERGED",
+		Phase: "pr_merged", PhaseWrote: true, Source: "cli", Actor: "watcher",
+	})
+
+	raw, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	require.Len(t, lines, 2)
+
+	var ev1 signalLogEvent
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &ev1))
+	assert.Equal(t, "grava-aaaa", ev1.IssueID)
+	assert.Equal(t, "CODER_DONE", ev1.Kind)
+	assert.Equal(t, "cli", ev1.Source)
+	assert.True(t, ev1.PhaseWrote)
+}
+
+func TestEmitSignalLog_DisabledByEmptyEnv(t *testing.T) {
+	dir := t.TempDir()
+	logPath := dir + "/should-not-exist.jsonl"
+	t.Setenv("GRAVA_SIGNAL_LOG_PATH", "") // explicitly disable
+
+	emitSignalLog(signalLogEvent{TS: "x", IssueID: "y", Kind: "z", Source: "cli"})
+
+	_, err := os.Stat(logPath)
+	assert.True(t, os.IsNotExist(err), "log file should not have been created")
+}
+
+func TestComputeSignalStats_MixedSources(t *testing.T) {
+	dir := t.TempDir()
+	logPath := dir + "/signal-source.jsonl"
+	// 90 cli + 10 hook-fallback events = 0.9 cli ratio.
+	lines := []string{}
+	for i := range 90 {
+		lines = append(lines, fmt.Sprintf(
+			`{"ts":"2026-05-01T00:00:%02dZ","issue_id":"grava-x%02d","kind":"CODER_DONE","phase":"coding_complete","phase_wrote":true,"source":"cli"}`,
+			i%60, i%50))
+	}
+	for i := range 10 {
+		lines = append(lines, fmt.Sprintf(
+			`{"ts":"2026-05-02T00:00:%02dZ","issue_id":"grava-y%02d","kind":"REVIEWER_APPROVED","phase":"review_approved","phase_wrote":true,"source":"hook-fallback"}`,
+			i, i))
+	}
+	require.NoError(t, os.WriteFile(logPath, []byte(strings.Join(lines, "\n")+"\n"), 0o644))
+
+	stats, err := computeSignalStats(logPath)
+	require.NoError(t, err)
+	assert.Equal(t, 100, stats.Total)
+	assert.Equal(t, 90, stats.BySource["cli"])
+	assert.Equal(t, 10, stats.BySource["hook-fallback"])
+	assert.InDelta(t, 0.90, stats.CLIRatio, 0.0001)
+	assert.Equal(t, "2026-05-01T00:00:00Z", stats.WindowStart)
+	assert.Equal(t, "2026-05-02T00:00:09Z", stats.WindowEnd)
+	assert.Equal(t, 0, stats.ParseErrors)
+}
+
+func TestComputeSignalStats_MissingFileReturnsZero(t *testing.T) {
+	stats, err := computeSignalStats("/nonexistent/path/signal-source.jsonl")
+	require.NoError(t, err) // missing log isn't an error — just no traffic yet
+	assert.Equal(t, 0, stats.Total)
+	assert.Equal(t, 0.0, stats.CLIRatio)
 }
 
 // ─── legacyTextLine ────────────────────────────────────────────────────────
