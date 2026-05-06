@@ -144,7 +144,12 @@ leveraging the power of a version-controlled database.`,
 		if Store != nil {
 			// Record write commands in cmd_audit_log before closing the connection.
 			// Read-only commands are excluded — only state-mutating commands are audited.
-			if !isReadOnlyCommand(cmd.Name()) {
+			//
+			// `commit` is also excluded here: it records its own audit row inside
+			// RunE and folds cmd_audit_log into Dolt history with a follow-up
+			// commit. Auditing it again here would (a) double-record the row and
+			// (b) re-dirty cmd_audit_log, defeating the fix for grava-ff4b.
+			if !isReadOnlyCommand(cmd.Name()) && !isSelfAuditingCommand(cmd.Name()) {
 				argsBytes, _ := json.Marshal(os.Args[1:])
 				maintenance.RecordCommand(cmd.Context(), Store, cmd.CommandPath(), actor, string(argsBytes), 0)
 			}
@@ -227,6 +232,23 @@ var readOnlyCommands = map[string]bool{
 // isReadOnlyCommand returns true when the command name is known to be read-only.
 func isReadOnlyCommand(name string) bool {
 	return readOnlyCommands[name]
+}
+
+// selfAuditingCommands lists commands whose RunE records their own audit row
+// (and folds cmd_audit_log into Dolt history). PersistentPostRunE must NOT
+// re-record these — doing so would both double-write the audit row and
+// re-dirty cmd_audit_log after the commit cleanup.
+//
+// Currently only `commit` qualifies: it must end with a clean Dolt status so
+// `grava import`'s Dual-Safety Check (FR24) does not falsely trip.
+var selfAuditingCommands = map[string]bool{
+	"commit": true,
+}
+
+// isSelfAuditingCommand returns true when the command records its own audit
+// row inside RunE — see selfAuditingCommands.
+func isSelfAuditingCommand(name string) bool {
+	return selfAuditingCommands[name]
 }
 
 // initConfig reads in config file and ENV variables if set.
