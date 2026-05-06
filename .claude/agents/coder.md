@@ -72,7 +72,7 @@ The leading-edge case (round 1 / fresh implementation) follows `grava-dev-task`'
 
 Once `grava-dev-task` completes Step 7 (commit + label `code_review`):
 - Read the recorded commit hash: `grava show $ISSUE_ID --json | jq -r '.last_commit'`
-- Emit the signal via the **`grava signal`** subcommand. It writes `pipeline_phase` atomically (forward-only), records auxiliary triage state when relevant (e.g. `coder_halted` reason), and prints the legacy `<KIND>: <payload>` line as the final stdout line so existing last-line parsers (orchestrator + `sync-pipeline-status` hook) keep working.
+- Emit the signal via the **`grava signal`** subcommand. It writes `pipeline_phase` atomically (forward-only), records auxiliary triage state when relevant (e.g. `coder_halted` reason), and prints the legacy `<KIND>: <payload>` line as the final stdout line so the orchestrator's stdout-fallback parser still works in the rare case the wisp write somehow failed.
 
   Run from the **repo root** (signal needs DB access — same dolt-config rule as every other `grava` call):
 
