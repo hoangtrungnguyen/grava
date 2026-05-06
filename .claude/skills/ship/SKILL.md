@@ -56,12 +56,17 @@ if [ "$RETRY" = "1" ] && [ -z "$ISSUE_ID" ]; then
   exit 1
 fi
 
-# gh preflight before any work
-./scripts/preflight-gh.sh || exit 1
-
 # When an ID is supplied, validate it exists
 if [ -n "$ISSUE_ID" ]; then
   grava show "$ISSUE_ID" --json >/dev/null 2>&1 || { echo "PIPELINE_FAILED: $ISSUE_ID not found"; exit 1; }
+fi
+
+# gh preflight is needed for any path that opens a PR (Phases 1-3, retry)
+# but NOT for --dry-run (read-only DB inspection — no GitHub access).
+# Skip the gh check when dry-running so debugging stuck pipelines doesn't
+# require an authenticated gh CLI.
+if [ "$DRY_RUN" = "0" ]; then
+  ./scripts/preflight-gh.sh || exit 1
 fi
 ```
 
