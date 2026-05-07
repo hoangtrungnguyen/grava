@@ -138,7 +138,11 @@ EOF
 
   # Check for new review comments + CHANGES_REQUESTED
   COMMENTS_JSON=$(gh api "repos/{owner}/{repo}/pulls/$PR_NUMBER/comments" 2>/dev/null)
-  LAST_SEEN=$(grava wisp read "$ID" pr_last_seen_comment_id 2>/dev/null || echo 0)
+  # Same empty-wisp class as grava-6ac8: `grava wisp read` exits 0 with
+  # empty stdout when the wisp is missing, so `|| echo 0` never fires.
+  # Default explicitly so the jq --argjson + arithmetic below don't error.
+  LAST_SEEN=$(grava wisp read "$ID" pr_last_seen_comment_id 2>/dev/null)
+  [ -n "$LAST_SEEN" ] || LAST_SEEN=0
   NEW=$(echo "$COMMENTS_JSON" | jq -c --argjson last "$LAST_SEEN" '
     [.[] | select(.in_reply_to_id == null) | select(.id > $last)]
   ')
