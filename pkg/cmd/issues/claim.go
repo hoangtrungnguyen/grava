@@ -98,9 +98,16 @@ func tryClaimIssue(ctx context.Context, store dolt.Store, issueID, actor, model 
 			if claimedBy == "" {
 				claimedBy = "unknown"
 			}
+			// concurrency-matrix #3: clearer recovery hints when the
+			// operator hits a concurrent claim (e.g. /ship'd the same
+			// issue from two terminals).
 			return gravaerrors.New("ALREADY_CLAIMED",
-				fmt.Sprintf("Issue %s is already in progress (claimed by %s, last heartbeat: %v)",
-					issueID, claimedBy, heartbeat.Time.Format(time.RFC3339)), nil)
+				fmt.Sprintf("Issue %s is already in progress (claimed by %s, last heartbeat: %v).\n\n"+
+					"Recovery options:\n"+
+					"  • If a /ship run is active in another terminal: wait for it to finish or PR\n"+
+					"  • If the prior agent crashed: 'grava stop %s' rolls back the claim, then re-/ship\n"+
+					"  • To resume mid-flight: '/ship %s --dry-run' to inspect state, then re-enter at the right phase",
+					issueID, claimedBy, heartbeat.Time.Format(time.RFC3339), issueID, issueID), nil)
 		}
 		if currentStatus != "open" && !isStale {
 			return gravaerrors.New("INVALID_STATUS_TRANSITION",

@@ -333,6 +333,18 @@ else
     echo "$LABELS" | grep -qw "code_review" && PRECOND_FAIL="already has code_review label (work pending review)"
   fi
 
+  # Concurrency-matrix #11: refuse to ship an issue with unresolved
+  # blockers. `grava blocked $ID --json` returns the direct upstream
+  # blockers; non-empty array means at least one dep is open. Operator
+  # can either resolve the blocker, or `/ship --force` to override.
+  if [ -z "$PRECOND_FAIL" ]; then
+    BLOCKERS_JSON=$(grava blocked "$ISSUE_ID" --json 2>/dev/null || echo "[]")
+    BLOCKER_COUNT=$(echo "$BLOCKERS_JSON" | jq 'length')
+    if [ "$BLOCKER_COUNT" -gt 0 ]; then
+      PRECOND_FAIL="$BLOCKER_COUNT unresolved blocker(s): $(echo "$BLOCKERS_JSON" | jq -r '[.[] | .id] | join(", ")')"
+    fi
+  fi
+
   if [ -n "$PRECOND_FAIL" ]; then
     echo "PIPELINE_HALTED: $ISSUE_ID failed precondition — $PRECOND_FAIL"
     echo "Operator must intervene. Options:"

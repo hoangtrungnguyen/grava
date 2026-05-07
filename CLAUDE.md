@@ -126,3 +126,16 @@ Then add these cron entries (or launchd equivalents on macOS):
 # Nightly bug scan
 0 2 * * * cd /path/to/grava && claude -p "/hunt since-last-tag" >> .grava/hunt.log 2>&1
 ```
+
+## Operator Hazards (concurrency / state-corruption pitfalls)
+
+These are operator-managed. Pipeline can't enforce all of them.
+
+| Hazard | Why it breaks things | Avoid |
+|--------|----------------------|-------|
+| `grava db-stop` while issues `in_progress` | Active /ship runs lose state on next signal write — wisps stranded, pipeline_phase stale | `db-stop` now refuses with `--force` required (concurrency-matrix #4). Wait for `grava list --status in_progress --json \| jq length` to be 0 |
+| Editing `.grava.yaml` mid-flight | Config re-read by next CLI invocation; an in-flight `/ship` may pick up the new value mid-pipeline. DB URL change is the worst case — old store handle becomes stale | Edit only when `grava list --status in_progress` is empty. If urgent, halt all in-flight issues (`grava stop <id>`) before editing |
+| `/ship X` from two terminals | Second one halts at `ALREADY_CLAIMED` (safe). Operator-confusion only — not data loss | Check `grava show X --json \| jq .status` first if unsure |
+| `git push --force` to `grava/<id>` from two terminals | Same branch from two worktrees → conflict / lost commits | Don't force-push grava/* branches outside the pipeline. /ship handles its own branches via worktree |
+| Manually editing files inside `.worktree/<id>/` while agent is running | Agent's view diverges from disk; commit may include unintended changes | Don't touch `.worktree/<id>/` while the issue is `in_progress` |
+| Restarting Dolt on a different port | New PID, old `.grava.yaml` still points at old port | Update `.grava.yaml` first, then `db-start` (db-stop handles the prior server) |

@@ -10,7 +10,10 @@ cd "$REPO_ROOT" || exit 1
 PIDFILE=".grava/pr-merge-watcher.pid"
 mkdir -p .grava
 if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-  exit 0    # previous run still active
+  # concurrency-matrix #5: log the skip so cron logs surface long-running
+  # iterations rather than silently dropping every overlapping tick.
+  echo "[$(date -u +%FT%TZ)] watcher: previous run (pid $(cat "$PIDFILE")) still active — skipping this tick" >&2
+  exit 0
 fi
 echo $$ > "$PIDFILE"
 trap 'rm -f "$PIDFILE"' EXIT
