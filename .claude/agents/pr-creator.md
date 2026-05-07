@@ -62,9 +62,18 @@ vars stay unset and the agent transparently falls back to the operator's
 
 When bot identity IS configured, rewrite the author of every commit on
 this branch since `origin/main` to the bot. We do this via
-`git rebase --exec` with `-c user.{name,email}` overrides so the bot
-shows up on every commit line in the PR — not just the HEAD commit. The
-rewrite is a no-op if all commits already match the bot author.
+`git rebase --exec` so the bot shows up on every commit line in the PR
+— not just the HEAD commit. The rewrite is a no-op if all commits
+already match the bot author.
+
+> **grava-b3f2 contract:** the `-c user.name=…` overrides MUST go on
+> the inner `git commit` invocation (the one `--exec` runs), NOT on the
+> outer `git rebase`. `--exec` shells out to a fresh `sh -c 'git commit
+> --amend …'` subprocess — `-c` flags on the outer rebase do not
+> propagate, and `--reset-author` falls back to whatever
+> `git config user.email` resolves at runtime (i.e. the operator's
+> identity). Putting the overrides on the inner command is the only way
+> the bot identity actually lands.
 
 ```bash
 # Source helper — sets GRAVA_AGENT_BOT_TOKEN/USER/EMAIL if configured.
@@ -77,9 +86,11 @@ FEATURE_BRANCH="grava/$ISSUE_ID"
 if [ -n "${GRAVA_AGENT_BOT_USER:-}" ] && [ -n "${GRAVA_AGENT_BOT_EMAIL:-}" ]; then
   MERGE_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
   if [ -n "$MERGE_BASE" ]; then
-    git -c user.name="$GRAVA_AGENT_BOT_USER" \
-        -c user.email="$GRAVA_AGENT_BOT_EMAIL" \
-        rebase --exec 'git commit --amend --no-edit --reset-author' \
+    # The inner `git commit` runs in a fresh subprocess that does NOT
+    # inherit `-c` overrides from the outer `rebase`. Pass the bot
+    # identity to the inner command instead. See grava-b3f2.
+    git rebase --exec \
+        "git -c user.name='$GRAVA_AGENT_BOT_USER' -c user.email='$GRAVA_AGENT_BOT_EMAIL' commit --amend --no-edit --reset-author" \
         "$MERGE_BASE" || {
           ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "author rewrite failed" )
           exit 1
