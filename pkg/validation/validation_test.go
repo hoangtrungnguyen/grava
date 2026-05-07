@@ -60,6 +60,14 @@ func TestValidatePriority(t *testing.T) {
 		{"MEDIUM", 2, false}, // Case insensitive
 		{"low", 3, false},
 		{"backlog", 4, false},
+		{"0", 0, false},      // Numeric critical
+		{"1", 1, false},      // Numeric high
+		{"2", 2, false},      // Numeric medium
+		{"3", 3, false},      // Numeric low
+		{"4", 4, false},      // Numeric backlog
+		{"-1", -1, true},     // Out of range (negative)
+		{"5", -1, true},      // Out of range (too high)
+		{"99", -1, true},     // Out of range (way too high)
 		{"urgent", -1, true}, // Invalid
 		{"", -1, true},
 	}
