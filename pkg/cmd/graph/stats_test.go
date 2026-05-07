@@ -184,3 +184,32 @@ func TestStatsCmd_NoCycleTimeData(t *testing.T) {
 	assert.NotContains(t, buf.String(), "Avg Cycle Time:")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// TestStatsCmd_InvalidFormat verifies grava-55d3: --format with an unrecognized
+// value (typo, unsupported format) must exit non-zero, not silently fall
+// through to table output. Validation runs BEFORE any DB query so typos
+// fail fast without burning the mock expectations.
+func TestStatsCmd_InvalidFormat(t *testing.T) {
+	deps, _, cleanup := setupStatsMock(t, false)
+	defer cleanup()
+
+	// Note: empty string is not in this list — cobra's StringVar default
+	// ("table") overwrites a manual reassignment when newStatsCmd() runs,
+	// so "--format=" doesn't actually reach the validator. That's also a
+	// non-realistic input — flags either get explicit user values or the
+	// declared default.
+	cases := []string{"yaml", "jsno", "TABLE", "xml", "JSON"}
+	for _, format := range cases {
+		t.Run("format="+format, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			cmd := newStatsCmd(deps)
+			cmd.SetOut(buf)
+			cmd.SetErr(buf)
+			cmd.SetArgs([]string{"--format", format})
+			err := cmd.ExecuteContext(context.Background())
+			require.Error(t, err, "expected error for --format=%q", format)
+			assert.Contains(t, err.Error(), "invalid --format")
+			assert.Contains(t, err.Error(), "json, table, csv")
+		})
+	}
+}
