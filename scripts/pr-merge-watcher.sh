@@ -33,7 +33,17 @@ echo "$ISSUES" | jq -r '.[].id' | while read -r ID; do
       grava wisp write "$ID" pr_merged_at "$NOW"
       grava signal PR_MERGED --issue "$ID" --actor watcher
       grava label "$ID" --remove pr-created
-      grava close "$ID" --actor watcher
+      # grava-63f3: don't emit PIPELINE_COMPLETE if grava close fails for
+      # any reason other than "already closed". Otherwise the pipeline
+      # reports complete while the issue board still says in_progress.
+      if ! grava close "$ID" --actor watcher 2>/dev/null; then
+        CURRENT_STATUS=$(grava show "$ID" --json 2>/dev/null | jq -r '.status // ""')
+        if [ "$CURRENT_STATUS" != "closed" ]; then
+          echo "watcher: failed to close $ID (status=$CURRENT_STATUS) — leaving for next iteration"
+          continue
+        fi
+        # Already closed by hand or by an earlier iteration — proceed.
+      fi
       grava signal PIPELINE_COMPLETE --issue "$ID" --payload "$ID" --actor watcher
       grava commit -m "watcher: $ID merged + closed"
       continue
@@ -77,7 +87,14 @@ ${LAST_COMMENT:-_none_}
 EOF
 )
 
-        printf '%s\n' "$NOTES" | grava update "$ID" --description-append-from-stdin
+        # grava-97ec: guard the description write — if it fails (DB blip,
+        # network), defer the rest of the recording until next iteration so
+        # the rejection notes aren't silently lost. The pr_rejection_recorded
+        # gate is NOT set yet at this point, so re-runs will retry cleanly.
+        if ! printf '%s\n' "$NOTES" | grava update "$ID" --description-append-from-stdin; then
+          echo "watcher: failed to record rejection notes for $ID — will retry next iteration"
+          continue
+        fi
         grava comment "$ID" -m "PR closed without merge ($REASON). See description for full notes."
 
         # Bookkeeping wisps (non-phase): rejection notes blob, close timestamp,
@@ -104,7 +121,13 @@ EOF
   esac
 
   # State is OPEN. Check stale cap.
-  SINCE=$(grava wisp read "$ID" pr_awaiting_merge_since 2>/dev/null || echo "$NOW")
+  # grava-6ac8: `grava wisp read` exits 0 even when the wisp is missing
+  # (just empty stdout per current CLI behavior), so the `|| echo "$NOW"`
+  # fallback never fires. Without an explicit emptiness check, SINCE
+  # becomes "" and the arithmetic below errors silently — PRs >72h never
+  # get the needs-human label. Default explicitly when SINCE is empty.
+  SINCE=$(grava wisp read "$ID" pr_awaiting_merge_since 2>/dev/null)
+  [ -n "$SINCE" ] || SINCE="$NOW"
   AGE_HRS=$(( (NOW - SINCE) / 3600 ))
   if [ "$AGE_HRS" -ge "$MAX_PR_WAIT_HOURS" ]; then
     grava wisp write "$ID" pr_stale "true"
