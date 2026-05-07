@@ -127,9 +127,15 @@ bot_email="${bot_email:-$default_email}"
 # ── PAT
 echo ""
 echo "Paste the bot's fine-grained PAT (input hidden). Ctrl+D when done if no value:"
+# `set -e` would otherwise abort the script on Ctrl+D (which makes `read`
+# return non-zero) before our friendly empty-string check can fire
+# (grava-8777). Toggle errexit off just for the read.
+set +e
 read -r -s bot_token
+read_rc=$?
+set -e
 echo ""
-if [ -z "$bot_token" ]; then
+if [ "$read_rc" -ne 0 ] || [ -z "$bot_token" ]; then
   echo "❌ No token provided. Aborting."
   exit 1
 fi
