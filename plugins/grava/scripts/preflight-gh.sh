@@ -1,0 +1,1 @@
+../../../scripts/preflight-gh.sh

@@ -1,0 +1,20 @@
+#!/bin/bash
+# commit-msg hook — enqueue bug hunts when developers tag commits.
+# Token format anywhere in the commit body:  bug-hunt: <scope>
+# Scope examples: ./internal/auth, recent, all
+
+set -u
+MSG_FILE="$1"
+SCOPES=$(grep -oE 'bug-hunt:[[:space:]]*[^[:space:]]+' "$MSG_FILE" | awk -F: '{print $2}' | tr -d ' ')
+
+[ -z "$SCOPES" ] && exit 0
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+QUEUE="$ROOT/.grava/pending-hunts.txt"
+mkdir -p "$ROOT/.grava"
+
+for s in $SCOPES; do
+  printf '%s\n' "$s" >> "$QUEUE"
+done
+
+exit 0

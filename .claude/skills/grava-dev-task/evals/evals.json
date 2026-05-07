@@ -1,0 +1,26 @@
+{
+  "skill_name": "grava-dev-task",
+  "evals": [
+    {
+      "id": 1,
+      "name": "leaf-task-id-given",
+      "prompt": "implement task grava-d217.1 — should be a quick subtask. dev it and label it for review when you're done. cwd: /Users/trungnguyenhoang/IdeaProjects/gravav6-sandbox",
+      "expected_output": "Skill announces grava-dev-task. Runs grava show grava-d217.1, confirms type=task. Claims it. Loads parent (grava-d217 epic) context. If description/AC is empty/ambiguous, HALTs per workflow rule and asks the user to clarify rather than fabricating. If a reasonable interpretation is possible, proceeds with TDD (RED→GREEN→REFACTOR), runs scoped tests only, commits with conventional message including grava-d217.1, runs grava update --last-commit, adds code_review label, posts completion comment, prints summary. Does NOT run full repo test suite. Does NOT pick up another task afterwards.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "epic-id-should-halt",
+      "prompt": "hey can you dev grava-d217, it's the parent epic in the sandbox. cwd: /Users/trungnguyenhoang/IdeaProjects/gravav6-sandbox",
+      "expected_output": "Skill announces grava-dev-task. Runs grava show grava-d217 --json. Sees type=epic with subtasks. HALTS. Tells user: this is an epic — use grava-dev-epic instead, or pick a specific subtask (e.g. grava-d217.1, grava-d217.2). Does NOT claim. Does NOT start implementing. Optionally lists subtasks via grava show --tree.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "no-id-list-and-ask",
+      "prompt": "i've got a few minutes — pick up the next task on the board and knock it out. cwd: /Users/trungnguyenhoang/IdeaProjects/gravav6-sandbox",
+      "expected_output": "Skill announces grava-dev-task. Runs grava ready --limit 10 --json (or grava list --type task --status open --json). Filters/identifies type=task candidates. Presents 3-5 to user and ASKS which to pick. Does NOT auto-claim the top result. Stops after presenting candidates (the eval ends here since there's no human in the loop to answer).",
+      "files": []
+    }
+  ]
+}

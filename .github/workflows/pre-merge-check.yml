@@ -1,0 +1,29 @@
+name: pre-merge-check
+on:
+  push:
+    branches:
+      - 'grava/**'
+
+jobs:
+  merged-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure git
+        run: |
+          git config user.email ci@grava.local
+          git config user.name "grava ci"
+      - name: Merge main into branch (probe)
+        run: |
+          git fetch origin main
+          git merge --no-commit --no-ff origin/main || {
+            echo "::error::merge with main produced conflicts"
+            exit 1
+          }
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test merged result
+        run: go test -race ./...

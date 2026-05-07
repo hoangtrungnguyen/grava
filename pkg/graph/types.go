@@ -59,6 +59,7 @@ const (
 	StatusTombstone  IssueStatus = "tombstone"
 	StatusDeferred   IssueStatus = "deferred"
 	StatusPinned     IssueStatus = "pinned"
+	StatusArchived   IssueStatus = "archived"
 )
 
 // Priority represents task priority (0=Critical to 4=Backlog)

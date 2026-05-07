@@ -34,8 +34,10 @@ func TestValidateStatus(t *testing.T) {
 		{"open", true},
 		{"in_progress", true},
 		{"closed", true},
-		{"BLOCKED", true}, // Case insensitive
-		{"done", false},   // "done" is not a valid status in our schema (it's "closed")
+		{"BLOCKED", true},  // Case insensitive
+		{"archived", true}, // Soft-delete status (Story 2.6)
+		{"ARCHIVED", true}, // Case insensitive
+		{"done", false},    // "done" is not a valid status in our schema (it's "closed")
 		{"", false},
 	}
 
@@ -58,6 +60,14 @@ func TestValidatePriority(t *testing.T) {
 		{"MEDIUM", 2, false}, // Case insensitive
 		{"low", 3, false},
 		{"backlog", 4, false},
+		{"0", 0, false},      // Numeric critical
+		{"1", 1, false},      // Numeric high
+		{"2", 2, false},      // Numeric medium
+		{"3", 3, false},      // Numeric low
+		{"4", 4, false},      // Numeric backlog
+		{"-1", -1, true},     // Out of range (negative)
+		{"5", -1, true},      // Out of range (too high)
+		{"99", -1, true},     // Out of range (way too high)
 		{"urgent", -1, true}, // Invalid
 		{"", -1, true},
 	}

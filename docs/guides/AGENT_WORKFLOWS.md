@@ -1,6 +1,10 @@
 # Agent Workflows
 
-This document describes the core agent workflows designed to streamline development, context gathering, and session handoffs. These protocols ensure that AI agents and contributors maintain consistent quality, track progress accurately via the `grava` CLI, and avoid prematurely writing code without proper context.
+This document describes the core **single-agent** workflows for context gathering and session handoff (`/are-u-ready-grava`, `/landing-the-plane`). One agent, one session, human-in-the-loop.
+
+> **Looking for the multi-agent pipeline?** See [`AGENT_TEAM.md`](./AGENT_TEAM.md) for the `/ship`, `/plan`, `/hunt` orchestration — 5 agents (coder, reviewer, bug-hunter, planner, pr-creator) chained through Claude Code skills, with async PR-merge tracking via cron watchers.
+
+These protocols ensure that AI agents and contributors maintain consistent quality, track progress accurately via the `grava` CLI, and avoid prematurely writing code without proper context.
 
 ---
 

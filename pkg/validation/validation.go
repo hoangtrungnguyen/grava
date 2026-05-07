@@ -2,6 +2,7 @@ package validation
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,6 +24,7 @@ var (
 		"closed":      true,
 		"blocked":     true,
 		"tombstone":   true,
+		"archived":    true,
 	}
 
 	PriorityMap = map[string]int{
@@ -47,19 +49,30 @@ func ValidateIssueType(t string) error {
 func ValidateStatus(s string) error {
 	normalized := strings.ToLower(strings.TrimSpace(s))
 	if !AllowedStatuses[normalized] {
-		return fmt.Errorf("invalid status: '%s'. Allowed: open, in_progress, closed, blocked", s)
+		return fmt.Errorf("invalid status: '%s'. Allowed: open, in_progress, closed, blocked, archived", s)
 	}
 	return nil
 }
 
 // ValidatePriority checks if the priority is valid and returns its integer value.
+// Accepts both named priorities (critical, high, medium, low, backlog) and
+// numeric values (0-4). Returns an error with a clear message for out-of-range values.
 func ValidatePriority(p string) (int, error) {
 	normalized := strings.ToLower(strings.TrimSpace(p))
 	val, ok := PriorityMap[normalized]
-	if !ok {
-		return -1, fmt.Errorf("invalid priority: '%s'. Allowed: critical, high, medium, low, backlog", p)
+	if ok {
+		return val, nil
 	}
-	return val, nil
+
+	// Try parsing as an integer for numeric priority values.
+	if n, err := strconv.Atoi(normalized); err == nil {
+		if n < 0 || n > 4 {
+			return -1, fmt.Errorf("priority value %d is out of range (0-4). Allowed: 0=critical, 1=high, 2=medium, 3=low, 4=backlog", n)
+		}
+		return n, nil
+	}
+
+	return -1, fmt.Errorf("invalid priority: '%s'. Allowed: critical (0), high (1), medium (2), low (3), backlog (4)", p)
 }
 
 // ValidateDateRange parses and validates a date range (inclusive).

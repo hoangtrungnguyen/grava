@@ -1,0 +1,20 @@
+{
+  "skill_name": "grava-bug-hunt",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "find bugs in pkg/cmd/reserve/",
+      "expected_output": "Targeted review of the reserve package, findings table, grava issues created for real bugs"
+    },
+    {
+      "id": 2,
+      "prompt": "audit the code changes since v0.0.8",
+      "expected_output": "Review all files changed since tag, multi-agent parallel review, consolidated findings, grava issues"
+    },
+    {
+      "id": 3,
+      "prompt": "comprehensive review of the sandbox scenarios",
+      "expected_output": "Review test code for false positives, weak assertions, missing validations, file issues for each"
+    }
+  ]
+}

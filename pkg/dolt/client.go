@@ -186,8 +186,7 @@ func (c *Client) LogEventTx(ctx context.Context, tx *sql.Tx, issueID, eventType,
 		}
 	}
 
-	query := `INSERT INTO events (issue_id, event_type, actor, old_value, new_value, created_by, updated_by, agent_model, timestamp)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := "INSERT INTO events (issue_id, event_type, actor, old_value, new_value, created_by, updated_by, agent_model, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 	var err error
 	if tx != nil {

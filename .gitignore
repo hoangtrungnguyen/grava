@@ -32,8 +32,16 @@ go.work.sum
 # .vscode/
 
 # Grava local database and config
-.grava/
 .grava.yaml
+# Exclude Dolt DB, binaries, and logs inside .grava/ — NOT .grava/file_reservations/
+# (FR-ECS-1d: reservation audit artifacts in file_reservations/ are Git-tracked)
+.grava/bin/
+.grava/dolt/
+.grava/*.log
+.grava/schema_version
+.grava/conflicts.json
+# Agent-bot author identity (token + username + email) — local-only
+.grava/agent-bot.*
 
 # Binaries
 /grava
@@ -53,3 +61,20 @@ __pycache__/
 # Benchmark results
 scripts/benchmark_results.json
 dist/.DS_Store
+notebooklm-py/
+notebooklm-skill/
+run-claude-zai.sh
+run-claude.sh
+
+
+skills-lock.json
+
+
+.venv/
+docs/.DS_Store
+.claude/worktrees/*grava_test_bin
+.worktree/
+
+plan/_bmad/
+plan/_bmad-output/
+plan/.claude/

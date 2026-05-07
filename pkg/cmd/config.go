@@ -24,18 +24,18 @@ This includes the database URL, actor identity, and agent model.`,
 
 		if outputJSON {
 			b, _ := json.MarshalIndent(config, "", "  ")
-			fmt.Println(string(b))
+			fmt.Fprintln(cmd.OutOrStdout(), string(b)) //nolint:errcheck
 			return
 		}
 
-		fmt.Println("🛠️  Grava Configuration:")
-		fmt.Printf("  DB URL:           %s\n", config["db_url"])
-		fmt.Printf("  Actor:            %s\n", config["actor"])
-		fmt.Printf("  Agent Model:      %s\n", config["agent_model"])
-		fmt.Printf("  Config File:      %s\n", config["config_file_used"])
+		cmd.Println("🛠️  Grava Configuration:")
+		cmd.Printf("  DB URL:           %s\n", config["db_url"])
+		cmd.Printf("  Actor:            %s\n", config["actor"])
+		cmd.Printf("  Agent Model:      %s\n", config["agent_model"])
+		cmd.Printf("  Config File:      %s\n", config["config_file_used"])
 
 		if config["config_file_used"] == "" {
-			fmt.Println("\nℹ️  Note: Using default values (no config file found).")
+			cmd.Println("\nℹ️  Note: Using default values (no config file found).")
 		}
 	},
 }

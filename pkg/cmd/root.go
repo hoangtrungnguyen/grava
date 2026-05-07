@@ -1,27 +1,50 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/hoangtrungnguyen/grava/pkg/devlog"
+	cmdgraph "github.com/hoangtrungnguyen/grava/pkg/cmd/graph"
+	"github.com/hoangtrungnguyen/grava/pkg/cmd/issues"
+	"github.com/hoangtrungnguyen/grava/pkg/cmd/maintenance"
+	cmdreserve "github.com/hoangtrungnguyen/grava/pkg/cmd/reserve"
+	cmdsandbox "github.com/hoangtrungnguyen/grava/pkg/cmd/sandbox"
+	synccmd "github.com/hoangtrungnguyen/grava/pkg/cmd/sync"
+	"github.com/hoangtrungnguyen/grava/pkg/cmddeps"
 	"github.com/hoangtrungnguyen/grava/pkg/dolt"
-	"github.com/hoangtrungnguyen/grava/pkg/migrate"
+	gravaerrors "github.com/hoangtrungnguyen/grava/pkg/errors"
+	"github.com/hoangtrungnguyen/grava/pkg/grava"
+	gravelog "github.com/hoangtrungnguyen/grava/pkg/log"
+	"github.com/hoangtrungnguyen/grava/pkg/notify"
+	"github.com/hoangtrungnguyen/grava/pkg/utils"
 )
 
 var (
-	cfgFile      string
-	dbURL        string
-	actor        string
-	agentModel   string
-	Store        dolt.Store
-	outputJSON   bool
-	Version      = "v0.0.1"
-	enableDevLog bool
-	logFilePath  string
+	cfgFile    string
+	dbURL      string
+	actor      string
+	agentModel string
+	Store      dolt.Store
+	outputJSON bool
+	Version    = "v0.0.1"
+	// Notifier is the package-level alert notifier. Default: ConsoleNotifier.
+	// Commands call Notifier.Send(...) — never instantiate directly in command code.
+	// Tests inject a mock: cmd.Notifier = &mock.MockNotifier{}
+	Notifier notify.Notifier = notify.NewConsoleNotifier()
+
+	// deps is the shared dependency struct passed to sub-package AddCommands.
+	// Pointer fields allow sub-package commands to read current values set by PersistentPreRunE.
+	deps = &cmddeps.Deps{
+		Store:      &Store,
+		Actor:      &actor,
+		AgentModel: &agentModel,
+		OutputJSON: &outputJSON,
+		Notifier:   &Notifier,
+	}
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -32,20 +55,30 @@ var rootCmd = &cobra.Command{
 It allows you to manage issues, tasks, and bugs directly from your terminal,
 leveraging the power of a version-controlled database.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Initialize dev logger
-		useDevLog := enableDevLog || viper.GetBool("enable_dev_log")
-		logPath := logFilePath
-		if logPath == "" {
-			logPath = viper.GetString("log_file_path")
+		// Step 1: Initialise zerolog (GRAVA_LOG_LEVEL env var, default: warn)
+		logLevel := os.Getenv("GRAVA_LOG_LEVEL")
+		if logLevel == "" {
+			logLevel = "warn"
 		}
-		if err := devlog.Init(useDevLog, logPath); err != nil {
-			return fmt.Errorf("failed to initialize development log: %w", err)
+		gravelog.Init(logLevel, outputJSON)
+
+		gravelog.Logger.Debug().Str("command", cmd.Name()).Msg("Starting Grava command")
+
+		// Step 2: Skip DB init for commands that don't need it
+		if cmd.Name() == "help" || cmd.Name() == "init" || cmd.Name() == "version" ||
+			cmd.Name() == "db-start" || cmd.Name() == "db-stop" || cmd.Name() == "merge-slot" ||
+			cmd.Name() == "merge-driver" || cmd.Name() == "install" || cmd.Name() == "sync-status" {
+			return nil
 		}
-
-		devlog.Printf("Starting Grava command: %s", cmd.Name())
-
-		// Initialize DB connection if not help command or init command
-		if cmd.Name() == "help" || cmd.Name() == "init" || cmd.Name() == "start" || cmd.Name() == "stop" {
+		// Hook dispatch commands connect to DB themselves with graceful
+		// failure handling so that a missing Dolt server does not block
+		// git operations (post-merge, post-checkout).
+		if cmd.Parent() != nil && cmd.Parent().Name() == "hook" {
+			return nil
+		}
+		// Resolve subcommands operate only on .grava/conflicts.json and
+		// issues.jsonl; no database connection required.
+		if cmd.Parent() != nil && cmd.Parent().Name() == "resolve" {
 			return nil
 		}
 
@@ -54,19 +87,42 @@ leveraging the power of a version-controlled database.`,
 			return nil
 		}
 
-		var err error
-		// Use flag value or config value
+		// Step 3: Resolve .grava/ directory using full ADR-004 priority chain
+		gravaDir, err := grava.ResolveGravaDir()
+		if err != nil {
+			return gravaerrors.New("NOT_INITIALIZED", "grava is not initialized in this directory; run 'grava init' first", err)
+		}
+
+		// conflicts subcommands need only .grava/conflicts.json — skip schema check.
+		// They try DB for optional audit persistence but must not fail when Dolt is down.
+		if cmd.Parent() != nil && cmd.Parent().Name() == "conflicts" {
+			resolvedURL := dbURL
+			if resolvedURL == "" {
+				resolvedURL = viper.GetString("db_url")
+			}
+			if resolvedURL == "" {
+				resolvedURL = "root@tcp(127.0.0.1:3306)/grava?parseTime=true"
+			}
+			if s, connErr := dolt.NewClient(resolvedURL); connErr == nil {
+				Store = s
+			}
+			return nil
+		}
+
+		// Step 4: Check schema version — replaces migrate.Run() in PersistentPreRunE (ADR-FM6)
+		if err := utils.CheckSchemaVersion(gravaDir, utils.SchemaVersion); err != nil {
+			return err
+		}
+
+		// Step 5: Resolve DB URL (flag → viper → env → default)
 		if dbURL == "" {
 			dbURL = viper.GetString("db_url")
 		}
-
 		if dbURL == "" {
-			// Default DSN for local Dolt
-			// The database name exposed by `dolt sql-server` inside a repo is `dolt`
-			dbURL = "root@tcp(127.0.0.1:3306)/dolt?parseTime=true"
+			dbURL = "root@tcp(127.0.0.1:3306)/grava?parseTime=true"
 		}
 
-		// Sync flags with viper (handles env vars and config)
+		// Sync actor/model from viper (handles env vars and config)
 		if actor == "unknown" {
 			actor = viper.GetString("actor")
 		}
@@ -74,47 +130,58 @@ leveraging the power of a version-controlled database.`,
 			agentModel = viper.GetString("agent_model")
 		}
 
+		// Step 6: Connect to Dolt
 		Store, err = dolt.NewClient(dbURL)
 		if err != nil {
-			return fmt.Errorf("failed to connect to database: %w", err)
+			return gravaerrors.New("DB_UNREACHABLE", "failed to connect to database", err)
 		}
-
-		// Run pending migrations
-		devlog.Println("Running migrations...")
-		if err := migrate.Run(Store.DB()); err != nil {
-			return fmt.Errorf("failed to run migrations: %w", err)
-		}
-		devlog.Println("Migrations complete.")
 
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-		var errStore error
+		gravelog.Logger.Debug().Str("command", cmd.Name()).Msg("Grava command completed")
+
 		if Store != nil {
-			errStore = Store.Close()
+			// Record write commands in cmd_audit_log before closing the connection.
+			// Read-only commands are excluded — only state-mutating commands are audited.
+			//
+			// `commit` is also excluded here: it records its own audit row inside
+			// RunE and folds cmd_audit_log into Dolt history with a follow-up
+			// commit. Auditing it again here would (a) double-record the row and
+			// (b) re-dirty cmd_audit_log, defeating the fix for grava-ff4b.
+			if !isReadOnlyCommand(cmd.Name()) && !isSelfAuditingCommand(cmd.Name()) {
+				argsBytes, _ := json.Marshal(os.Args[1:])
+				maintenance.RecordCommand(cmd.Context(), Store, cmd.CommandPath(), actor, string(argsBytes), 0)
+			}
+
+			err := Store.Close()
 			Store = nil
+			return err
 		}
-
-		devlog.Printf("Grava command completed: %s", cmd.Name())
-		errLog := devlog.Close()
-
-		if errStore != nil {
-			return errStore
-		}
-		return errLog
+		return nil
 	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
+	// Suppress cobra's default error printing — we handle it below so that
+	// --json mode always emits a structured JSON error envelope instead of plain text.
+	rootCmd.SilenceErrors = true
+	rootCmd.SilenceUsage = true
+
 	err := rootCmd.Execute()
 	if err != nil {
+		if outputJSON {
+			cmddeps.WriteJSONError(rootCmd.OutOrStderr(), err) //nolint:errcheck
+		} else {
+			_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
+		}
 		os.Exit(1)
 	}
 }
 
-// SetVersion sets the version string for the CLI
+// SetVersion sets the version string for the CLI.
 func SetVersion(v string) {
 	if v != "" {
 		Version = v
@@ -124,50 +191,85 @@ func SetVersion(v string) {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.grava.yaml)")
 	rootCmd.PersistentFlags().StringVar(&dbURL, "db-url", "", "Dolt database connection string")
 	rootCmd.PersistentFlags().StringVar(&actor, "actor", "unknown", "User or agent identity (env: GRAVA_ACTOR)")
 	rootCmd.PersistentFlags().StringVar(&agentModel, "agent-model", "", "AI model identifier (env: GRAVA_AGENT_MODEL)")
 	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false, "Output in JSON format")
-	rootCmd.PersistentFlags().BoolVar(&enableDevLog, "enable-dev-log", false, "Enable the development log")
-	rootCmd.PersistentFlags().StringVar(&logFilePath, "log-file-path", "", "Path to the development log file (default .grava/dev.log)")
 
 	// Bind flags to viper for ENV var support
-	viper.BindPFlag("actor", rootCmd.PersistentFlags().Lookup("actor"))                   //nolint:errcheck
-	viper.BindPFlag("agent_model", rootCmd.PersistentFlags().Lookup("agent-model"))       //nolint:errcheck
-	viper.BindPFlag("enable_dev_log", rootCmd.PersistentFlags().Lookup("enable-dev-log")) //nolint:errcheck
-	viper.BindPFlag("log_file_path", rootCmd.PersistentFlags().Lookup("log-file-path"))   //nolint:errcheck
+	viper.BindPFlag("actor", rootCmd.PersistentFlags().Lookup("actor"))             //nolint:errcheck
+	viper.BindPFlag("agent_model", rootCmd.PersistentFlags().Lookup("agent-model")) //nolint:errcheck
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+
+	// Register commands from sub-packages.
+	issues.AddCommands(rootCmd, deps)
+	cmdgraph.AddCommands(rootCmd, deps)
+	maintenance.AddCommands(rootCmd, deps)
+	synccmd.AddCommands(rootCmd, deps)
+	cmdreserve.AddCommands(rootCmd, deps)
+	cmdsandbox.AddCommands(rootCmd, deps)
+}
+
+// readOnlyCommands is the set of command names that do not mutate state and
+// should not be recorded in cmd_audit_log.
+var readOnlyCommands = map[string]bool{
+	"list":        true,
+	"show":        true,
+	"history":     true,
+	"ready":       true,
+	"blocked":     true,
+	"graph":       true,
+	"doctor":      true,
+	"stats":       true,
+	"search":      true,
+	"cmd_history": true,
+	"sync-status": true,
+	"version":     true,
+}
+
+// isReadOnlyCommand returns true when the command name is known to be read-only.
+func isReadOnlyCommand(name string) bool {
+	return readOnlyCommands[name]
+}
+
+// selfAuditingCommands lists commands whose RunE records their own audit row
+// (and folds cmd_audit_log into Dolt history). PersistentPostRunE must NOT
+// re-record these — doing so would both double-write the audit row and
+// re-dirty cmd_audit_log after the commit cleanup.
+//
+// Currently only `commit` qualifies: it must end with a clean Dolt status so
+// `grava import`'s Dual-Safety Check (FR24) does not falsely trip.
+var selfAuditingCommands = map[string]bool{
+	"commit": true,
+}
+
+// isSelfAuditingCommand returns true when the command records its own audit
+// row inside RunE — see selfAuditingCommands.
+func isSelfAuditingCommand(name string) bool {
+	return selfAuditingCommands[name]
 }
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
 	if cfgFile != "" {
-		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
 	} else {
-		// Find home directory.
 		home, err := os.UserHomeDir()
 		cobra.CheckErr(err)
 
-		// Search config in home directory with name ".grava" (without extension).
 		viper.AddConfigPath(home)
 		viper.AddConfigPath(".")
 		viper.SetConfigType("yaml")
 		viper.SetConfigName(".grava")
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	viper.AutomaticEnv()
 
-	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		_, _ = fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		if !outputJSON {
+			_, _ = fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		}
 	}
 }

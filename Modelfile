@@ -1,0 +1,7 @@
+FROM qwen3-coder-next:q8_0
+# Hardware: Ensure 85GB weights + 8GB context split across all 3 GPUs
+PARAMETER num_gpu 999
+# Memory: 32k context is safe for 96GB VRAM (approx 30GB per GPU)
+PARAMETER num_ctx 32768
+# Logic: Low temperature (0.0) is best for backend/syntax accuracy
+PARAMETER temperature 0.0

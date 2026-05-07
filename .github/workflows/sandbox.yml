@@ -1,0 +1,84 @@
+name: Sandbox Validation
+
+on:
+  workflow_dispatch:  # automated triggers disabled — re-enable when sandbox scenarios are ready
+
+jobs:
+  sandbox:
+    name: Sandbox Scenarios
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.0'
+          cache: true
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+      - name: Start Dolt Database
+        run: |
+          chmod +x ./scripts/ci_setup_dolt.sh
+          ./scripts/ci_setup_dolt.sh
+
+      - name: Set up test database
+        run: |
+          chmod +x ./scripts/setup_test_env.sh
+          ./scripts/setup_test_env.sh
+
+      - name: Run Sandbox Scenarios
+        env:
+          DB_URL: "root@tcp(127.0.0.1:3306)/test_grava?parseTime=true"
+          GRAVA_SKIP_CLAUDE_CHECK: "1"
+        run: |
+          chmod +x ./sandbox/scripts/run-scenarios.sh
+          ./sandbox/scripts/run-scenarios.sh --verbose
+
+      - name: Upload Sandbox Report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sandbox-report
+          path: sandbox/results/
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const reports = fs.readdirSync('./sandbox/results/')
+              .filter(f => f.startsWith('report-'))
+              .sort()
+              .reverse();
+
+            if (reports.length > 0) {
+              const latestReport = fs.readFileSync(`./sandbox/results/${reports[0]}`, 'utf8');
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '## 🧪 Sandbox Validation\n\n' + latestReport
+              });
+            }
+
+  gate:
+    name: Phase 2 Release Gate
+    needs: sandbox
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Check Sandbox Status
+        run: |
+          if [ "${{ needs.sandbox.result }}" == "success" ]; then
+            echo "✅ Phase 2 Sandbox PASSED"
+            exit 0
+          else
+            echo "❌ Phase 2 Sandbox FAILED"
+            exit 1
+          fi

@@ -1,71 +1,18 @@
+// Package devlog is a no-op stub retained for backward compatibility.
+//
+// All functionality has been replaced by pkg/log (zerolog). Every function in
+// this package is a guaranteed no-op — no files are opened, no output is written.
+// Do not add new callers. This package will be removed once all references are gone.
 package devlog
 
-import (
-	"fmt"
-	"log"
-	"os"
-	"path/filepath"
-)
+// Deprecated: use pkg/log (zerolog) instead. No-op stub.
+func Init(_ bool, _ string) error { return nil }
 
-var (
-	logger *log.Logger
-	file   *os.File
-)
+// Deprecated: use pkg/log (zerolog) instead. No-op stub.
+func Close() error { return nil }
 
-// Init initializes the development logger if enabled.
-// If not enabled, the underlying logger remains nil (no-op).
-func Init(enabled bool, logFilePath string) error {
-	if !enabled {
-		return nil
-	}
+// Deprecated: use pkg/log (zerolog) instead. No-op stub.
+func Printf(_ string, _ ...interface{}) {}
 
-	if logFilePath == "" {
-		// Use default if not provided
-		logFilePath = ".grava/dev.log"
-	}
-
-	// Create directory if it doesn't exist
-	dir := filepath.Dir(logFilePath)
-	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return err
-		}
-	}
-
-	// Open file for appending
-	var err error
-	file, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		return err
-	}
-
-	logger = log.New(file, "[DEV] ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
-	return nil
-}
-
-// Close closes the underlying log file, if any.
-func Close() error {
-	if file != nil {
-		err := file.Close()
-		file = nil
-		logger = nil
-		return err
-	}
-	return nil
-}
-
-// Printf logs a formatted message if the logger is enabled.
-func Printf(format string, v ...interface{}) {
-	if logger != nil {
-		// Call Output with calldepth 2 so it shows the caller of Printf
-		_ = logger.Output(2, fmt.Sprintf(format, v...))
-	}
-}
-
-// Println logs a message with a newline if the logger is enabled.
-func Println(v ...interface{}) {
-	if logger != nil {
-		// Call Output with calldepth 2 so it shows the caller of Println
-		_ = logger.Output(2, fmt.Sprintln(v...))
-	}
-}
+// Deprecated: use pkg/log (zerolog) instead. No-op stub.
+func Println(_ ...interface{}) {}

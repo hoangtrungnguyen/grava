@@ -6,6 +6,80 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [v0.0.8] - 2026-04-11
+
+* feat(blocked): add per-issue blocker query to grava blocked (grava-722b.3) (713348f)
+* fix: return error for non-existent --root node in graph render (grava-722b.4) (61813fc)
+* fix: resolve Story 4.6 code review findings (grava-722b.6) (a1e0f0c)
+* feat(stats): add blocked count, stale in_progress, and avg cycle time (grava-722b.6) (684f930)
+* fix: resolve Story 4.5 code review findings (f99dfcd)
+* style: add nolint comments to test db.Close() (grava-722b.5) (a27a5b5)
+* fix: remove unused count variable in list command (grava-722b.5) (2ccd4ee)
+* docs: complete story 4.5 implementation artifact (grava-722b.5) (93efcd7)
+* feat(cmd): implement list filtering and enhanced search for issues (grava-722b.5) (6829910)
+* feat(graph): implement dependency graph visualization (grava-722b.4) (389349c)
+* fix: log EventCreate instead of EventSubtask for subtask creation (4be8642)
+
+
+## [v0.0.7] - 2026-04-11
+
+* fix: resolve critical and high-severity Story 3.4 findings (3b5b3e7)
+* fix: resolve 7 findings in Story 3.3 code review (e0d35ba)
+* refactor: prune legacy BMAD documentation and workflow files while updating active agent skills and configurations. (161b189)
+* fix: update RemoveDependency test to expect all queries and handle duplicate LogEventTx calls (ebf50c1)
+* fix: remove unnecessary assignee query mock from ready/blocked tests (f91695c)
+* fix: update test mocks to match implementation with metadata column and corrected query expectations (bab0f5a)
+* chore: add .DS_Store to gitignore (39c5c48)
+* fix: update blocked and ready command tests to match implementation (f9fb8c0)
+* chore(data): refresh issues.jsonl export (bed2c99)
+* chore(skills): split grava code review into severity-tagged comments (b1291ed)
+* chore(skills): streamline complete-dev-story skill (grava-d193) (0782158)
+* chore(skills): add grava workflow skills (grava-03bc) (b44c36c)
+* fix(cli): allow --last-commit as sole update flag and expose last_commit in show --json (grava-7b39) (dbf8db0)
+* chore(config): update gitignore and add deferred work artifact (grava-a3fd) (aa9758c)
+* chore(data): refresh issues.jsonl export (4e6d9a2)
+* chore(skills): split grava code review into severity-tagged comments (4622db2)
+* chore(skills): streamline complete-dev-story skill (grava-d193) (b10ff38)
+* chore(skills): add grava workflow skills (grava-03bc) (12711ec)
+* fix(cli): allow --last-commit as sole update flag and expose last_commit in show --json (grava-7b39) (00e0f68)
+* chore(config): update gitignore and add deferred work artifact (grava-a3fd) (ea84b94)
+* feat: implement dependency management and audit logging (Story 4.1) (91c931c)
+* feat(cli): add blocked command to query blockers for a specific issue (4-3) (b3c323e)
+* docs: standardize mandatory worktree orchestration on .worktree folder and Claude integration (3aae95c)
+* feat(cli): add assignee field to ready command JSON output and fix empty state (4-2) (ccfbc79)
+* feat(cli): add --remove flag, audited transactions, and validation to dep command (4-1) (17a2b78)
+* docs: finalize Epic 6 story implementation specs and sync sprint status (db63bbc)
+* clean (937b367)
+* docs: finalize implementation stories for Epics 4 and 5; sync roadmap tracking (50abde7)
+* docs: reorder phase 1 roadmap for worktree-first strategy and remove onboarding (c3a8540)
+* chore: move test docs and scripts into sandbox directory (6f32557)
+* docs: correct release process documentation to match script automation (2d7d815)
+* docs: restructure README to match explicit project specifications (413841a)
+
+
+## [v0.0.6] - 2026-04-09
+
+### Added
+* feat(issues): implement Epic 2 and 3 — issue lifecycle, claiming, and session tracking
+* feat(cli): implement `grava start/stop` for work session tracking (grava-1073)
+* feat(cli): implement atomic issue claim and ephemeral state (grava-e4b2)
+* feat(lifecycle): implement archive and purge issues (Story 2.6)
+* feat(cli): implement label and comment on issues (Story 2.5)
+* feat(cli): add db lifecycle commands
+* feat(sandbox): implement multi-agent orchestration validation framework
+* feat: initialize Serena project configuration and documentation
+* feat: implement liveness subsystem with wisp validation and circuit breaking
+
+### Changed
+* refactor(cli): modularize issues package and centralize error handling (grava-a0df.1)
+* chore(ci): upgrade all GitHub Actions to latest versions
+* chore(ci): enable CI build on main branch
+* docs: initialize comprehensive project documentation and automated update scripts
+
+### Fixed
+* fix(sandbox): implement missing scenario functions and reporting logic
+* fix(review): address numerous adversarial code review findings for Epics 1, 2, and 3
+
 ## [v0.0.5] - 2026-03-09
 
 * chore: ignore .grava.yaml (9c8396c)

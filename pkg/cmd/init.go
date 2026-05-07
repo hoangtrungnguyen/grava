@@ -6,8 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/hoangtrungnguyen/grava/pkg/doltinstall"
+	"github.com/hoangtrungnguyen/grava/pkg/gitattributes"
+	"github.com/hoangtrungnguyen/grava/pkg/gitconfig"
+	"github.com/hoangtrungnguyen/grava/pkg/githooks"
+	"github.com/hoangtrungnguyen/grava/pkg/migrate"
 	"github.com/hoangtrungnguyen/grava/pkg/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -25,6 +31,56 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 		cwd, err := os.Getwd()
 		if err != nil {
 			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+
+		// 0a. Pre-flight: verify Claude CLI is installed (grava is for Claude only)
+		if err := utils.CheckClaudeInstalled(); err != nil {
+			return fmt.Errorf("pre-flight check failed: %w", err)
+		}
+
+		// 0b. Pre-flight: verify Git version >= 2.17 (required for worktree remove)
+		if err := utils.CheckGitVersion(); err != nil {
+			return fmt.Errorf("pre-flight check failed: %w", err)
+		}
+
+		// 0. Check if this is a worktree — if so, just write redirect and exit
+		if utils.IsWorktree(cwd) {
+			if !outputJSON {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "🌳 Detected Git worktree. Writing redirect to main repo .grava...")
+			}
+			created, err := utils.WriteRedirectFile(cwd)
+			if err != nil {
+				return fmt.Errorf("failed to initialize worktree: %w", err)
+			}
+
+			// Sync Claude settings and git user config from main repo — non-fatal.
+			if mainRepo, findErr := utils.FindMainRepo(cwd); findErr == nil {
+				if syncErr := utils.SyncClaudeSettings(mainRepo, cwd); syncErr != nil {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Claude settings sync failed: %v\n", syncErr)
+				}
+				if configErr := utils.ConfigureGitUser(mainRepo, cwd); configErr != nil {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  git user config failed: %v\n", configErr)
+				}
+			} else {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not locate main repo for settings sync: %v\n", findErr)
+			}
+
+			if !outputJSON {
+				if created {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Worktree initialized. Redirect to main repo .grava created.")
+				} else {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Worktree already initialized.")
+				}
+			}
+			if outputJSON {
+				resp := map[string]interface{}{
+					"status":   "initialized",
+					"worktree": true,
+				}
+				b, _ := json.MarshalIndent(resp, "", "  ")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			}
+			return nil
 		}
 
 		// 1. Resolve or install Dolt
@@ -54,6 +110,16 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 		gravaDir := ".grava"
 		if err := os.MkdirAll(gravaDir, 0755); err != nil {
 			return fmt.Errorf("failed to create .grava directory: %w", err)
+		}
+
+		// 2a. Add .grava/ to .git/info/exclude (ADR-H5)
+		if migrated, excludeErr := utils.WriteGitExclude(cwd); excludeErr != nil {
+			// Non-fatal: warn but continue
+			if !outputJSON {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Warning: failed to update .git/info/exclude: %v\n", excludeErr)
+			}
+		} else if migrated && !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Migrated .grava/ from .gitignore to .git/info/exclude")
 		}
 
 		// 3. Initialize Dolt Repo in .grava/dolt
@@ -87,7 +153,7 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "🚀 Starting Dolt server on port %d...\n", port)
 		}
 
-		serverCmd := exec.Command(doltBin, "sql-server", "--port", fmt.Sprintf("%d", port), "--host", "0.0.0.0")
+		serverCmd := exec.Command(doltBin, "sql-server", "--port", fmt.Sprintf("%d", port), "--host", "127.0.0.1")
 		serverCmd.Dir = doltRepoDir
 
 		// Redirect output to log file
@@ -98,10 +164,45 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 		}
 
 		if err := serverCmd.Start(); err != nil {
+			if logFile != nil {
+				_ = logFile.Close()
+			}
 			return fmt.Errorf("failed to start dolt server: %w", err)
 		}
+		// Close parent's copy of the log fd; child process inherited its own.
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 
-		// 6. Create default config
+		// 6. Wait for server ready, run migrations, write schema_version
+		initDBURL := fmt.Sprintf("root@tcp(127.0.0.1:%d)/dolt?parseTime=true", port)
+		var initStore *dolt.Client
+		for i := 0; i < 10; i++ {
+			initStore, err = dolt.NewClient(initDBURL)
+			if err == nil {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		if err != nil {
+			return fmt.Errorf("dolt server did not become ready: %w", err)
+		}
+		defer initStore.Close() //nolint:errcheck
+
+		if !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "📦 Running database migrations...")
+		}
+		if err := migrate.Run(initStore.DB()); err != nil {
+			return fmt.Errorf("failed to run migrations: %w", err)
+		}
+		if err := utils.WriteSchemaVersion(gravaDir, utils.SchemaVersion); err != nil {
+			return fmt.Errorf("failed to write schema_version: %w", err)
+		}
+		if !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Database migrations complete.")
+		}
+
+		// 7. Create default config
 		configFile := ".grava.yaml"
 		dbURL := fmt.Sprintf("root@tcp(127.0.0.1:%d)/dolt?parseTime=true", port)
 		viper.Set("db_url", dbURL)
@@ -119,11 +220,85 @@ automatically downloaded to .grava/bin/dolt (no sudo required).`,
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Created configuration in .grava.yaml")
 		}
 
+		// 8. Register merge driver in .git/config and .gitattributes (non-fatal).
+		// Only runs when we are inside a Git repository; silently skipped otherwise.
+		hooksRegistered, hooksAppended, hooksSkipped := 0, 0, 0
+		if gitconfig.IsInGitRepo() {
+			driverCfg := gitconfig.DefaultDriverConfig()
+			if _, regErr := gitconfig.RegisterMergeDriver(driverCfg, cmd.OutOrStdout(), cmd.ErrOrStderr()); regErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not register merge driver in .git/config: %v\n", regErr)
+			} else if !outputJSON {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Merge driver 'grava-merge' registered in .git/config")
+			}
+			if added, attrErr := gitattributes.EnsureMergeAttr(cwd); attrErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not update .gitattributes: %v\n", attrErr)
+			} else if added && !outputJSON {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Added 'issues.jsonl merge=grava-merge' to .gitattributes")
+			}
+
+			// 9. Register Git hook stubs (FR25, ADR-H2) — append mode, idempotent.
+			hooksDir := githooks.DefaultHooksDir(cwd)
+			hookResults, hookErr := githooks.AppendStubs(hooksDir, githooks.InitHookNames)
+			if hookErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not register git hooks: %v\n", hookErr)
+			} else {
+				for _, r := range hookResults {
+					switch r.Action {
+					case "registered":
+						hooksRegistered++
+						if !outputJSON {
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Registered git hook: %s\n", r.Name)
+						}
+					case "appended":
+						hooksAppended++
+						if !outputJSON {
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✅ Appended grava to existing hook: %s\n", r.Name)
+						}
+					case "skipped":
+						hooksSkipped++
+					}
+				}
+			}
+		}
+
+		// 10. Create .worktree/ directory (AC#1)
+		if created, wtErr := utils.EnsureWorktreeDir(cwd); wtErr != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not create .worktree directory: %v\n", wtErr)
+		} else if created && !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Created .worktree/ directory")
+		}
+
+		// 10a. Add .worktree/ to .gitignore (AC#1)
+		if added, giErr := utils.EnsureWorktreeGitignore(cwd); giErr != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not update .gitignore for .worktree/: %v\n", giErr)
+		} else if added && !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Added .worktree/ to .gitignore")
+		}
+
+		// 11. Set git config grava.worktreeDir (AC#2)
+		if gitconfig.IsInGitRepo() {
+			if gcErr := utils.SetWorktreeGitConfig(cwd); gcErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not set grava.worktreeDir git config: %v\n", gcErr)
+			} else if !outputJSON {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Set git config grava.worktreeDir = .worktree")
+			}
+		}
+
+		// 12. Update .claude/settings.json with worktree and plugin settings
+		if added, csErr := utils.EnsureClaudeWorktreeSettings(cwd); csErr != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Could not update .claude/settings.json: %v\n", csErr)
+		} else if added && !outputJSON {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "✅ Updated .claude/settings.json with worktree and plugin settings")
+		}
+
 		if outputJSON {
 			resp := map[string]interface{}{
-				"status": "initialized",
-				"port":   port,
-				"db_url": dbURL,
+				"status":           "initialized",
+				"port":             port,
+				"db_url":           dbURL,
+				"hooks_registered": hooksRegistered,
+				"hooks_appended":   hooksAppended,
+				"hooks_skipped":    hooksSkipped,
 			}
 			b, _ := json.MarshalIndent(resp, "", "  ")
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(b))

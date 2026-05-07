@@ -1,0 +1,1 @@
+../../../scripts/pr-merge-watcher.sh

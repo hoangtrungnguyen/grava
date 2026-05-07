@@ -2,92 +2,62 @@
 
 **The Distributed, Agent-Centric Issue Tracker**
 
-Grava is a next-generation issue tracking system designed specifically for autonomous AI agents. Unlike traditional tools built for human managers, Grava provides a **deterministic, graph-based memory system** that allows fleets of agents to coordinate complex software development tasks without hallucinations or race conditions.
+Grava is an issue tracking system built for autonomous AI agents. It provides a deterministic, graph-based memory layer that lets agent fleets coordinate complex software tasks without hallucinations or race conditions.
 
 > "Remove the need for managers."
 
-## ⚡ Quick Start
+## Key Features
 
-Get from zero to your first issue in under 60 seconds:
+| Feature | Summary |
+|---|---|
+| **Dolt-Backed Storage** | Version-controlled SQL database with `git`-like branch/merge/diff semantics |
+| **Ready Engine** | DAG-based task selector — agents only pick up unblocked, highest-priority work |
+| **Agent Team Pipeline** | Full Claude Code agent team (`coder`, `reviewer`, `bug-hunter`, `planner`, `pr-creator`) wired through `/ship`, `/plan`, `/hunt` — spec → code → review → PR → merge |
+| **MCP Interface** | Structured Model Context Protocol server; no web UI, strictly typed agent tools |
+| **Distributed Sync** | Offline-first; background daemon syncs local replicas to a central server |
+| **Flight Recorder** | Structured logs and artifact storage for debugging agent decision trails |
+| **Wisp (Ephemeral Issues)** | Lightweight scratch issues for transient agent state; auto-purged via `grava compact` |
+| **History & Undo** | Full revision history per issue; single-command rollback via `grava undo` |
 
-```bash
-# 1. Install grava
-go install github.com/hoangtrungnguyen/grava/cmd/grava@latest
+## Install
 
-# 2. Initialize in your project (auto-installs Dolt, starts server)
-cd your-project
-grava init
-
-# 3. Create your first issue
-grava create --title "My first task" --type task --priority medium
-
-# 4. See what's tracked
-grava list
-```
-
-That's it! Dolt (the version-controlled database) is automatically downloaded and managed for you — no separate install needed.
-
-## 📥 Installation
-
-### Option 1: Go Install (Recommended)
-
-If you have Go installed, this is the fastest way — no `sudo`, no `curl`:
-
+**Go install (recommended):**
 ```bash
 go install github.com/hoangtrungnguyen/grava/cmd/grava@latest
 ```
 
-### Option 2: Shell Script
-
-Downloads the latest binary to `~/.local/bin` (no `sudo` required):
-
+**Shell script** (installs to `~/.local/bin`):
 ```bash
 curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh | bash
 ```
 
-> **Tip:** To install to a different directory, set `INSTALL_DIR`:
-> ```bash
-> curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh | INSTALL_DIR=/usr/local/bin bash
-> ```
-
-### Option 3: Try with Docker (Zero-Commitment Sandbox)
-
-Want to try Grava without installing anything on your host machine? Use our pre-configured Docker sandbox:
-
-#### Using Docker Run:
+**Docker sandbox:**
 ```bash
 docker run -it ghcr.io/hoangtrungnguyen/grava:latest
-```
-
-This will automatically initialize a Grava and Dolt environment and drop you into a read-to-use bash shell.
-
-#### Using Docker Compose:
-If you have the repository cloned, you can simply run:
-```bash
+# or, from the repo:
 docker compose run --rm sandbox
 ```
 
-### Verify Installation
-
+**Verify:**
 ```bash
 grava version
 ```
 
-## 🚀 Key Features
+## Quickstart
 
-*   **Dolt-Backed Storage**: Utilizes [Dolt](https://github.com/dolthub/dolt), a version-controlled SQL database, to enable `git`-like semantics (branch, merge, diff) for your issue tracker.
-*   **The Ready Engine**: A DAG-based (Directed Acyclic Graph) task selection engine that mathematically guarantees agents only work on unblocked, high-priority tasks.
-*   **Agent-Native Interface**: Exposes a structured MCP (Model Context Protocol) server instead of a web UI, allowing agents to interact via strictly typed tools.
-*   **Distributed Synchronization**: Supports offline-first development with a background daemon that syncs state between local replicas and a central server.
-*   **Flight Recorder**: Comprehensive logging and artifact storage to debug agent decision-making processes ("vibe coding").
+```bash
+grava init                                              # initialize + start Dolt server
+grava create --title "My first task" --type task --priority medium
+grava list
+```
 
-## 🖥️ CLI Commands
+## Command Reference
 
 | Command | Description |
 |---|---|
 | `grava init` | Initialize Grava environment |
-| `grava version` | Print the version number |
-| `grava create` | Create a new issue (`--ephemeral` for Wisps) |
+| `grava version` | Print version |
+| `grava create` | Create an issue (`--ephemeral` for Wisps) |
 | `grava subtask <id>` | Create a hierarchical subtask |
 | `grava show <id>` | Show issue details |
 | `grava list` | List issues (`--wisp` for ephemeral) |
@@ -96,103 +66,67 @@ grava version
 | `grava dep <from> <to>` | Create a dependency edge |
 | `grava label <id> <label>` | Add a label |
 | `grava assign <id> <user>` | Assign to a user or agent |
-| `grava history <id>` | View revision history for an issue |
-| `grava undo <id>` | Revert the last change to an issue |
+| `grava history <id>` | View revision history |
+| `grava undo <id>` | Revert last change to an issue |
 | `grava compact` | Purge old ephemeral Wisps |
+| `grava doctor` | Run built-in diagnostics |
 
 See **[CLI Reference](docs/guides/CLI_REFERENCE.md)** for full documentation.
 
-## ❓ Troubleshooting
+## Agent Team (Claude Code Pipeline)
 
-### `grava: command not found`
-
-Your install directory is not in your `PATH`. If you used `go install`, ensure `$GOPATH/bin` (usually `~/go/bin`) is in your PATH:
+Grava ships a multi-agent pipeline as a Claude Code plugin:
 
 ```bash
-export PATH="$HOME/go/bin:$PATH"
+/plugin marketplace add hoangtrungnguyen/grava
+/plugin install grava@grava
+grava bootstrap          # installs git hook, prints cron lines
 ```
 
-If you used the shell script, add `~/.local/bin`:
+| Command | Purpose |
+|---|---|
+| `/ship [id]` | Ship one issue end-to-end (code → review → PR → handoff) |
+| `/ship` (no id) | Auto-pick next ready `task`/`bug` from backlog |
+| `/plan <doc>` | Break a spec document into a grava issue hierarchy |
+| `/hunt [scope]` | Audit codebase for bugs, file as grava issues |
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+Full reference: **[Agent Team Guide](docs/guides/AGENT_TEAM.md)**
 
-### `failed to connect to database`
+## Troubleshooting
 
-The Dolt server is not running. Start it:
+| Error | Fix |
+|---|---|
+| `grava: command not found` | Add `~/go/bin` or `~/.local/bin` to `$PATH` |
+| `failed to connect to database` | Run `grava start` or `grava init` |
+| `port 3306 is already in use` | Check `.grava.yaml` for the configured port; `grava init` auto-picks a free port |
 
-```bash
-grava start
-```
+## Architecture
 
-Or re-initialize if this is a fresh project:
+Grava is built on **Dolt** (version-controlled SQL) with layered components: CLI (Cobra), domain bootstrap, persistence with audited transactions, DAG graph engine, embedded migrations (Goose), schema-aware merge driver, file-reservation system, and a Claude Code agent team plugin.
 
-```bash
-grava init
-```
+Full breakdown: **[Architecture](docs/architecture.md)** — 12 components, data flow, invariants, design decisions.
 
-### `port 3306 is already in use`
+## Docs
 
-Another Dolt server or MySQL instance is using the default port. Grava will automatically pick an available port during `grava init`. If you're running `grava start` manually, check `.grava.yaml` for the configured port.
+- [Documentation Index](docs/index.md)
+- [Project Overview](docs/project-overview.md)
+- [Architecture](docs/architecture.md)
+- [Development Guide](docs/development-guide.md)
 
-### Health check
-
-Run the built-in diagnostics:
-
-```bash
-grava doctor
-```
-
-## 📚 Documentation
-
-The project governance and architecture are strictly documented:
-
-*   **[Architecture Overview](docs/AI%20Agent%20Issue%20Tracker%20Architecture%20&%20MVP.md)**: Deep dive into the system design, Prolly Trees, and the "Ready Engine".
-*   **[MVP Epics & Roadmap](docs/Agent_Issue_Tracker_MVP_Epics.md)**: The step-by-step implementation plan.
-
-### Core Modules (Epics)
-
-1.  **[Storage Substrate](docs/epics/Epic_1_Storage_Substrate.md)**: Dolt initialization and schema.
-2.  **[Graph Mechanics](docs/epics/Epic_2_Graph_Mechanics.md)**: Dependency logic and topological sorting.
-3.  **[Git Merge Driver](docs/epics/Epic_3_Git_Merge_Driver.md)**: Schema-aware merging for `issues.jsonl`.
-4.  **[Flight Recorder](docs/epics/Epic_4_Log_Saver.md)**: Structured logging and session context.
-5.  **[Security](docs/epics/Epic_5_Security.md)**: mTLS and RBAC for agent safety.
-6.  **[MCP Integration](docs/epics/Epic_6_MCP_Integration.md)**: The interface for AI agents.
-7.  **[Advanced Analytics](docs/epics/Epic_7_Advanced_Analytics.md)**: PageRank and critical path analysis (Optional).
-
-## 🛠️ Contributing
-
-### Development Setup
+## Contributing
 
 **Prerequisites:** Go 1.24+, [Dolt](https://github.com/dolthub/dolt), mysql-client
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/hoangtrungnguyen/grava.git
-cd grava
-
-# 2. Build the CLI
+git clone https://github.com/hoangtrungnguyen/grava.git && cd grava
 go build -o bin/grava ./cmd/grava/
-
-# 3. Initialize (auto-downloads Dolt, starts server)
 ./bin/grava init
-
-# 4. Create a test issue
-./bin/grava create --title "Fix login bug" --type bug --priority high
-
-# 5. List issues
-./bin/grava list
 ```
 
-### Testing
-
+**Tests:**
 ```bash
-# Unit tests (no DB required)
-go test ./...
-
-# Full E2E smoke tests (requires Dolt running)
-./scripts/test/e2e_test_all_commands.sh
+go test ./...                                 # unit tests (no DB required)
+./scripts/test/e2e_test_all_commands.sh       # E2E smoke tests (requires Dolt)
 ```
 
 ## License

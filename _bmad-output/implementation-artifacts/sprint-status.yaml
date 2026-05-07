@@ -1,0 +1,126 @@
+# generated: 2026-03-22
+# project: grava
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-03-22
+project: grava
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # ─── Epic 1: Foundation & Scaffold ───────────────────────────────────────────
+  epic-1: done
+  1-1-core-error-types-logging-and-transaction-infrastructure: done
+  1-2-concurrency-primitives-and-coordinator-error-channel: done
+  1-3-worktree-resolver-named-functions-and-test-harness: done
+  epic-1-retrospective: optional
+
+  # ─── Epic 2: Issue Lifecycle — Create, Track & Manage ────────────────────────
+  epic-2: done
+  2-1-create-issues-and-macro-epics: done
+  2-2-break-issues-into-subtasks: done
+  2-3-update-issue-fields-and-assign-actors: done
+  2-4-track-work-start-and-stop: done
+  2-5-label-and-comment-on-issues: done
+  2-6-archive-and-purge-issues: done
+  epic-2-retrospective: optional
+
+  # ─── Epic 3: Atomic Work Claiming & Ephemeral State ──────────────────────────
+  epic-3: in-progress
+  3-1-atomic-issue-claim: done
+  3-2-write-and-read-wisp-ephemeral-state: done
+  3-3-retrieve-issue-progression-history: review
+  3-4-epic-3-sandbox-integration-tests: review
+  epic-3-retrospective: optional
+
+  # ─── Epic 4: Dependency Graph — Context-Aware Work Discovery ─────────────────
+  epic-4: in-progress
+  4-1-establish-and-remove-dependency-relationships: review
+  4-2-query-the-ready-queue: review
+  4-3-query-blockers-for-a-specific-issue: review
+  4-4-visualize-the-full-dependency-graph: review
+  4-5-filter-search-and-view-issues: in-progress
+  4-6-view-workspace-metrics-and-stats: ready-for-dev
+  epic-4-retrospective: optional
+
+  # ─── Epic 5: Mandatory Worktree Orchestration ──────────────────────────────
+  epic-5: ready-for-dev
+  5-1-automatic-master-root-resolution: ready-for-dev
+  5-2-claim-worktree-provisioning: ready-for-dev
+  5-3-claude-integration-custom-path: ready-for-dev
+  5-4-recursive-lifecycle-cleanup: ready-for-dev
+  5-5-configure-claude-git-on-init: ready-for-dev
+  epic-5-retrospective: optional
+
+  # ─── Epic 6: Advanced Merge Driver — Schema-Aware 3-Way Merge ───────────────
+  # Note: Story 6.1 is a mandatory spike — gates stories 6.2–6.4
+  epic-6: ready-for-dev
+  6-1-spike-validate-grava-merge-git-driver-invocation: ready-for-dev
+  6-2-register-grava-merge-driver-and-parse-3-way-input: ready-for-dev
+  6-3-lww-resolution-and-conflict-isolation: ready-for-dev
+  6-4-view-and-resolve-conflicts: ready-for-dev
+  epic-6-retrospective: optional
+
+  # ─── Epic 7: Git Sync — Export, Import & Hook Pipeline ───────────────────────
+  epic-7: backlog
+  7-1-export-db-state-to-jsonl: backlog
+  7-2-import-with-dual-safety-check: backlog
+  7-3-register-git-hook-stubs: backlog
+  7-4-automatic-sync-on-git-pull-via-post-merge-hook: backlog
+  epic-7-retrospective: optional
+
+  # ─── Epic 8: File Reservation & Concurrent Edit Safety ───────────────────────
+  epic-8: backlog
+  8-1-declare-and-release-file-leases: backlog
+  8-2-pre-commit-hook-enforcement: backlog
+  epic-8-retrospective: optional
+
+  # ─── Epic 9: Workspace Health & Maintenance ──────────────────────────────────
+  epic-9: backlog
+  9-1-command-history-ledger: backlog
+  9-2-undo-recent-state-changes: backlog
+  9-3-compact-stale-and-deleted-data: backlog
+  9-4-doctor-diagnostic-health-report: backlog
+  9-5-doctor-semi-automatic-repair-with-backup-safety: backlog
+  epic-9-retrospective: optional
+
+  # ─── Epic 10: Sandbox Validation — Integration Gate ──────────────────────────
+  epic-10: backlog
+  10-1-grava-sandbox-run-cli-prerequisite: backlog
+  10-2-ts-01-basic-issue-lifecycle: backlog
+  10-3-ts-02-concurrent-atomic-claim: backlog
+  10-4-ts-04-and-ts-07-export-import-round-trip-and-conflict-detection: backlog
+  10-5-ts-03-ts-05-ts-06-ts-08-ts-09-ts-10-remaining-phase-1-scenarios: backlog
+  epic-10-retrospective: optional

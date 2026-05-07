@@ -37,24 +37,72 @@ grava init
 
 ---
  
-### `start`
- 
+### `db-start`
+
 Starts the Dolt SQL server using the configured port in `.grava.yaml`.
- 
+
 **Usage:**
 ```bash
-grava start
+grava db-start
 ```
- 
+
 ---
- 
-### `stop`
- 
+
+### `db-stop`
+
 Stops the Dolt SQL server running on the configured port. This uses a non-interactive mode (`-y`) to force-stop the process.
- 
+
 **Usage:**
 ```bash
-grava stop
+grava db-stop
+```
+
+---
+
+### `start`
+
+Mark work as started on an issue, transitioning its status from `open` to `in_progress`. Records the `started_at` timestamp for cycle time measurement and emits an audit event.
+
+**Usage:**
+```bash
+grava start <id>
+```
+
+**Errors:**
+- `ISSUE_NOT_FOUND` — Issue does not exist.
+- `ALREADY_IN_PROGRESS` — Issue is already being worked on (includes current actor name).
+
+**JSON output:**
+```json
+{
+  "id": "abc123def456",
+  "status": "in_progress",
+  "started_at": "2026-04-01T10:30:45Z"
+}
+```
+
+---
+
+### `stop`
+
+Mark work as stopped on an issue, transitioning its status from `in_progress` back to `open` (ready queue). Records the `stopped_at` timestamp and emits an audit event.
+
+**Usage:**
+```bash
+grava stop <id>
+```
+
+**Errors:**
+- `ISSUE_NOT_FOUND` — Issue does not exist.
+- `NOT_IN_PROGRESS` — Issue is not currently in progress.
+
+**JSON output:**
+```json
+{
+  "id": "abc123def456",
+  "status": "open",
+  "stopped_at": "2026-04-01T10:45:30Z"
+}
 ```
  
 ---
@@ -185,9 +233,11 @@ grava update <id> [flags]
 **Flags:**
 - `-t, --title string`: New title.
 - `-d, --desc string`: New description.
+- `--type string`: Update issue type.
 - `--status string`: New status (e.g., `open`, `in_progress`, `closed`, `blocked`).
 - `-p, --priority string`: New priority.
 - `--files strings`: Update the list of affected files.
+- `--last-commit string`: Store the last session's commit hash.
 
 **Example:**
 ```bash
@@ -206,10 +256,11 @@ grava list [flags]
 ```
 
 **Flags:**
-- `-s, --status string`: Filter by status (e.g., `open`, `closed`).
+- `-s, --status string`: Filter by status (e.g., `open`, `closed`, `archived`).
 - `-t, --type string`: Filter by issue type.
 - `--wisp`: Show only ephemeral Wisp issues (inverts the default ephemeral filter).
-- `--sort string`: Sort criteria (e.g., `priority:asc,created:desc`). Supported fields: `id`, `title`, `type`, `status`, `priority`, `created`, `updated`, `assignee`. Default: `priority:asc,created:desc`.
+- `--include-archived`: Include issues with `archived` status in the results (excluded by default).
+- `--sort string`: Sort criteria (e.g., `priority:asc,created:desc`). Supported fields: `id`, `title`, `type`, `status`, `priority`, `created`, `updated`, `assignee`. Default: `priority:asc,created:desc,id:asc`.
 
 **Examples:**
 ```bash
@@ -329,87 +380,121 @@ grava compact --days 0
 
 ### `drop`
 
-**Nuclear reset.** Deletes **ALL data** from every table in the Grava database. This is a destructive, non-reversible operation intended for development resets or clean-slate scenarios.
+**Archive an issue (soft-delete) or perform a nuclear reset.**
 
 **Usage:**
 ```bash
-grava drop [flags]
+grava drop <id> [flags]      # Archive a specific issue
+grava drop --all [flags]     # Nuclear reset (delete ALL data)
 ```
 
 **Flags:**
-- `--force`: Skip the interactive confirmation prompt. **Required** for non-interactive / CI use.
+- `--force`: Force archive even if `in_progress`, or skip confirmation for `--all`.
+- `--all`: Nuclear reset: delete ALL data from every table in the database.
 
-**Behaviour:**
-1. Without `--force`, the command prompts for confirmation:
+**Modes:**
+
+1. **Per-issue Archive (Soft-delete):**
+   ```bash
+   grava drop grava-123
    ```
-   ⚠️  This will DELETE ALL DATA from the Grava database.
-   Type "yes" to confirm:
+   Transitions the issue status to `archived`. The issue is hidden from default `list` output but remains in the database for audit or recovery.
+
+2. **Nuclear Reset:**
+   ```bash
+   grava drop --all --force
    ```
-   Any answer other than `"yes"` aborts the operation.
-2. Tables are truncated in FK-safe order:
-   1. `dependencies`
-   2. `events`
-   3. `deletions`
-   4. `child_counters`
-   5. `issues`
+   Deletes **ALL data** from every table. This is a destructive, non-reversible operation. Without `--force`, it prompts for `"yes"` confirmation.
 
 **Examples:**
 ```bash
-# Interactive confirmation
-grava drop
+# Archive a completed issue
+grava drop grava-123
+# Output: 📦 Archived issue grava-123
+
+# Nuclear reset with confirmation
+grava drop --all
 # Output: ⚠️  This will DELETE ALL DATA from the Grava database.
 #         Type "yes" to confirm: yes
 #         💣 All Grava data has been dropped.
-
-# Skip confirmation (for CI/scripts)
-grava drop --force
-# Output: 💣 All Grava data has been dropped.
 ```
 
 **Exit Codes:**
-- `0` — success, all data deleted
-- `1` — user cancelled or DB error
+- `0` — success
+- `1` — error or user cancelled nuclear reset
 
 ---
 
 ### `clear`
 
-**Soft-delete** issues (and related data) created within a specified date range. Issues are marked with `tombstone` status and recorded in the `deletions` table.
+**Purge archived issues permanently** or **soft-delete** issues within a date range.
 
 **Usage:**
 ```bash
-grava clear --from <date> --to <date> [flags]
+grava clear                  # Purge all archived issues
+grava clear --from <date> --to <date> [flags] # Soft-delete range
 ```
 
 **Flags:**
-- `--from string`: Start date (inclusive), format `YYYY-MM-DD` (**required**).
-- `--to string`: End date (inclusive), format `YYYY-MM-DD` (**required**).
-- `--force`: Skip interactive confirmation.
-- `--include-wisps`: Also delete ephemeral Wisp issues in the range.
+- `--from string`: Start date (inclusive), format `YYYY-MM-DD`.
+- `--to string`: End date (inclusive), format `YYYY-MM-DD`.
+- `--force`: Skip interactive confirmation (for date-range).
+- `--include-wisps`: Also delete ephemeral Wisp issues (for date-range).
 
-**Example:**
+**Modes:**
+
+1. **Purge Archived (Default):**
+   Running `grava clear` without date flags permanently deletes all issues with `archived` status. Tombstone records are recorded in the `deletions` table before hard delete.
+   ```bash
+   grava clear
+   # Output: 🗑️  Purged 5 archived issue(s).
+   ```
+
+2. **Date-range Soft-delete:**
+   Marks issues in the range as `tombstone`.
+   ```bash
+   grava clear --from 2026-01-01 --to 2026-01-31
+   ```
+
+**Examples:**
 ```bash
-grava clear --from 2026-01-01 --to 2026-01-31
+# Clean up the archive
+grava clear
+
+# Clear issues from last month
+grava clear --from 2026-03-01 --to 2026-03-31 --force
 ```
 
 ---
 
 ### `comment`
 
-Appends a comment to an existing issue. Comments are stored as a JSON array in the issue's `metadata` column. Each entry records the text, timestamp, and actor.
+Appends a timestamped comment to an existing issue. Comments are stored in the `issue_comments` table with actor and timestamp metadata.
 
 **Usage:**
 ```bash
-grava comment <id> <text>
+grava comment <id> --message <text>
+grava comment <id> -m <text>
+grava comment <id> <text>       # backward-compatible positional
 ```
 
 **Arguments:**
 - `<id>`: The issue ID to comment on.
-- `<text>`: The comment text (quote if it contains spaces).
 
-**Example:**
+**Flags:**
+- `--message, -m <text>`: The comment text (preferred).
+- `--last-commit <hash>`: Store the last session's commit hash in metadata.
+
+**Examples:**
 ```bash
-grava comment grava-abc "Investigated root cause, see PR #42"
+grava comment grava-abc --message "Investigated root cause, see PR #42"
+# Output: 💬 Comment added to grava-abc
+
+grava comment grava-abc -m "Fix confirmed on macOS ARM"
+# Output: 💬 Comment added to grava-abc
+
+# Backward-compatible positional text
+grava comment grava-abc "Quick note"
 # Output: 💬 Comment added to grava-abc
 ```
 
@@ -470,51 +555,64 @@ grava dep clear grava-abc
 
 ### `label`
 
-Adds a label to an existing issue. Labels are stored as a JSON array in the issue's `metadata` column. Adding a label that already exists is a **no-op** (idempotent).
+Adds or removes labels on an existing issue. Labels are stored in the `issue_labels` table. Adding an existing label is a **no-op** (idempotent). Removing a non-existent label is a graceful no-op.
 
 **Usage:**
 ```bash
-grava label <id> <label>
+grava label <id> --add <label> [--add <label>...] [--remove <label>...]
 ```
 
 **Arguments:**
 - `<id>`: The issue ID to label.
-- `<label>`: The label string to add (e.g., `needs-review`, `priority:high`).
+
+**Flags:**
+- `--add <label>`: Label(s) to add (repeatable).
+- `--remove <label>`: Label(s) to remove (repeatable).
 
 **Examples:**
 ```bash
-grava label grava-abc "needs-review"
-# Output: 🏷️  Label "needs-review" added to grava-abc
+grava label grava-abc --add bug --add critical
+# Output: 🏷️  Labels added to grava-abc: [bug critical]
+#         🏷️  Current labels: [bug critical]
 
-# Adding an existing label is safe
-grava label grava-abc "needs-review"
-# Output: 🏷️  Label "needs-review" already present on grava-abc
+grava label grava-abc --remove bug
+# Output: 🏷️  Labels removed from grava-abc: [bug]
+#         🏷️  Current labels: [critical]
+
+grava label grava-abc --add urgent --remove critical
+# Output: 🏷️  Labels added to grava-abc: [urgent]
+#         🏷️  Labels removed from grava-abc: [critical]
+#         🏷️  Current labels: [urgent]
 ```
 
 ---
 
 ### `assign`
 
-Sets the `assignee` field on an existing issue. The assignee can be a human username or an agent identity string. Passing an empty string clears the assignee.
+Sets or clears the `assignee` field on an existing issue. The assignee can be a human username or an agent identity string. Use `--unassign` to clear the assignee.
 
 **Usage:**
 ```bash
-grava assign <id> <user>
+grava assign <id> --actor <user>
+grava assign <id> --unassign
 ```
 
 **Arguments:**
 - `<id>`: The issue ID to assign.
-- `<user>`: The username or agent identity. Pass `""` to unassign.
+
+**Flags:**
+- `--actor <user>`: The username or agent identity to assign.
+- `--unassign`: Clear the assignee field.
 
 **Examples:**
 ```bash
-grava assign grava-abc alice
+grava assign grava-abc --actor alice
 # Output: 👤 Assigned grava-abc to alice
 
-grava assign grava-abc "agent:planner-v2"
+grava assign grava-abc --actor "agent:planner-v2"
 # Output: 👤 Assigned grava-abc to agent:planner-v2
 
-grava assign grava-abc ""
+grava assign grava-abc --unassign
 # Output: 👤 Assignee cleared on grava-abc
 ```
 
@@ -757,27 +855,41 @@ grava import --file legacy.jsonl --skip-existing
 
 ### `history`
 
-Displays the modification history of a specific issue using Dolt's version control capabilities. It shows commit hashes, authors, dates, and status changes.
+Displays the event progression log of a specific issue from the audit trail. Shows status changes, claims, wisp writes, comments, label changes, and all other tracked mutations in chronological order.
 
 **Usage:**
 ```bash
-grava history <id>
+grava history <issue-id> [--since DATE] [--json]
 ```
 
-**Example:**
+**Flags:**
+- `--since`: Filter events after this date (YYYY-MM-DD or RFC3339).
+- `--json`: Output result as a JSON array.
+
+**Examples:**
 ```bash
-grava history grava-123
+# Full history
+grava history grava-abc123
+
+# JSON output
+grava history grava-abc123 --json
+
+# Events since a date
+grava history grava-abc123 --since "2026-03-01"
 ```
 
-**Output:**
+**Output (human-readable):**
 ```
-History for Issue grava-123:
+History for grava-abc123 (3 events):
 
-COMMIT     AUTHOR               DATE                      STATUS          TITLE
-------------------------------------------------------------------------------------------------
-a1b2c3d4   alice                2026-02-19T14:47:24+07:00 open            Fix bug
-e5f6g7h8   bob                  2026-02-18T10:00:00+07:00 backlog         Init task
+  2026-03-20 10:00:00  create          agent-01              {"status":"open"}
+  2026-03-20 11:00:00  claim           agent-02              {"status":"in_progress","old_status":"open"}
+  2026-03-20 12:00:00  wisp_write      agent-02              {"key":"checkpoint","value":"step-1"}
 ```
+
+**Error Codes:**
+- `ISSUE_NOT_FOUND` — the target issue does not exist.
+- `INVALID_DATE` — the `--since` value could not be parsed.
 
 ---
 
@@ -871,6 +983,57 @@ grava resolve issues.jsonl
 #         [R] Remote (Theirs): "Fix login bug"
 #         Keep [L]ocal, [R]emote, or [S]kip?
 ```
+
+---
+
+### `wisp`
+
+Read and write ephemeral key-value state on an issue. Wisp entries persist in the database (not in memory) so agents can resume after a crash. Writing also updates the issue's `wisp_heartbeat_at` timestamp for stale-agent detection.
+
+#### `wisp write`
+
+**Usage:**
+```bash
+grava wisp write <issue-id> <key> <value> [--actor <name>] [--json]
+```
+
+**Flags:**
+- `--actor`: Override the actor identity for this write (defaults to global `--actor`).
+- `--json`: Output result as JSON.
+
+**Example:**
+```bash
+grava wisp write grava-abc123 checkpoint "step-3-complete" --actor agent-01 --json
+# {"issue_id":"grava-abc123","key":"checkpoint","value":"step-3-complete","written_by":"agent-01"}
+```
+
+**Error Codes:**
+- `ISSUE_NOT_FOUND` — the target issue does not exist.
+
+#### `wisp read`
+
+**Usage:**
+```bash
+grava wisp read <issue-id> [key] [--json]
+```
+
+- If `key` is provided, returns a single entry.
+- If `key` is omitted, returns all entries for the issue (empty array `[]` if none).
+
+**Examples:**
+```bash
+# Read a single key
+grava wisp read grava-abc123 checkpoint --json
+# {"key":"checkpoint","value":"step-3-complete","written_by":"agent-01","written_at":"..."}
+
+# Read all keys
+grava wisp read grava-abc123 --json
+# [{"key":"checkpoint","value":"step-3-complete",...}, ...]
+```
+
+**Error Codes:**
+- `ISSUE_NOT_FOUND` — the target issue does not exist.
+- `WISP_NOT_FOUND` — the specified key does not exist on the issue (single-key read only).
 
 ---
 
