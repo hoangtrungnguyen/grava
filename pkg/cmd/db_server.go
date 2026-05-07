@@ -91,11 +91,17 @@ It uses the repository in .grava/dolt and the port specified in .grava.yaml.`,
 }
 
 func newDBStopCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "db-stop",
 		Short: "Stop the Dolt SQL server",
-		Long: `Stop the Dolt SQL server running on the port configured for this repository.`,
+		Long: `Stop the Dolt SQL server running on the port configured for this repository.
+
+Refuses to stop while any non-ephemeral issues are status=in_progress
+(claimed by an active /ship run). Stopping mid-flight breaks the
+pipeline: the orchestrator's next 'grava signal' write fails and the
+issue is left in an inconsistent state. Pass --force to override.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			force, _ := cmd.Flags().GetBool("force")
 			dbURL := viper.GetString("db_url")
 			if dbURL == "" {
 				dbURL = "root@tcp(127.0.0.1:3306)/dolt?parseTime=true"
@@ -103,6 +109,28 @@ func newDBStopCmd() *cobra.Command {
 
 			port := 3306
 			fmt.Sscanf(dbURL, "root@tcp(127.0.0.1:%d)", &port)
+
+			// Concurrency guard (concurrency-matrix #4): refuse to stop
+			// while any /ship run might be writing wisps. Best-effort —
+			// if the DB is unreachable (already down), skip the check.
+			if !force {
+				if store, err := connectDBFn(); err == nil {
+					var inFlight int
+					row := store.QueryRow(
+						"SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'in_progress'",
+					)
+					if scanErr := row.Scan(&inFlight); scanErr == nil && inFlight > 0 {
+						_ = store.Close() //nolint:errcheck
+						return fmt.Errorf(
+							"refusing to stop: %d issue(s) are status=in_progress "+
+								"(active /ship runs would lose state). "+
+								"Wait for them to finish, or pass --force to override",
+							inFlight,
+						)
+					}
+					_ = store.Close() //nolint:errcheck
+				}
+			}
 
 			cmd.Printf("🛑 Stopping Dolt server on port %d...\n", port)
 
@@ -136,4 +164,6 @@ func newDBStopCmd() *cobra.Command {
 			return fmt.Errorf("failed to stop server within timeout")
 		},
 	}
+	cmd.Flags().Bool("force", false, "Stop even if issues are in_progress (DANGEROUS — breaks active /ship runs)")
+	return cmd
 }
