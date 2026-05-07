@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,6 +130,37 @@ func TestListCmd_MultipleFilters(t *testing.T) {
 }
 
 // Test list with empty results
+func TestListCmd_HeaderSeparator(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	var s dolt.Store = dolt.NewClientFromDB(db)
+	outputJSON := false
+	actor := "test"
+	model := ""
+	deps := &cmddeps.Deps{Store: &s, Actor: &actor, AgentModel: &model, OutputJSON: &outputJSON}
+
+	expectedQuery := regexp.QuoteMeta(`SELECT id, title, issue_type, priority, status, created_at FROM issues WHERE ephemeral = 0 AND status != 'tombstone' AND status != 'archived' ORDER BY priority ASC, created_at DESC, id ASC`)
+	mock.ExpectQuery(expectedQuery).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "issue_type", "priority", "status", "created_at"}).
+			AddRow("task-1", "Task 1", "task", 1, "open", time.Now()))
+
+	buf := &bytes.Buffer{}
+	listCmd := newListCmd(deps)
+	listCmd.SetOut(buf)
+
+	err = listCmd.ExecuteContext(context.Background())
+	require.NoError(t, err)
+
+	output := buf.String()
+	lines := strings.Split(output, "\n")
+	require.True(t, len(lines) >= 3, "expected at least header, separator, and data lines")
+	// The second line should be the separator containing dashes
+	assert.Contains(t, lines[1], "----", "second line should be a dash separator")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestListCmd_EmptyResults(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)

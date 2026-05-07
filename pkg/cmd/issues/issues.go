@@ -508,6 +508,7 @@ You can filter by status or type, and sort by various criteria.`,
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			if !*d.OutputJSON {
 				_, _ = fmt.Fprintln(w, "ID\tTitle\tType\tPriority\tStatus\tCreated")
+				_, _ = fmt.Fprintln(w, strings.Repeat("-", 12)+"\t"+strings.Repeat("-", 50)+"\t"+strings.Repeat("-", 6)+"\t"+strings.Repeat("-", 8)+"\t"+strings.Repeat("-", 12)+"\t"+strings.Repeat("-", 10))
 			}
 
 			for rows.Next() {
