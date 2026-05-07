@@ -62,9 +62,18 @@ vars stay unset and the agent transparently falls back to the operator's
 
 When bot identity IS configured, rewrite the author of every commit on
 this branch since `origin/main` to the bot. We do this via
-`git rebase --exec` with `-c user.{name,email}` overrides so the bot
-shows up on every commit line in the PR — not just the HEAD commit. The
-rewrite is a no-op if all commits already match the bot author.
+`git rebase --exec` so the bot shows up on every commit line in the PR
+— not just the HEAD commit. The rewrite is a no-op if all commits
+already match the bot author.
+
+> **grava-b3f2 contract:** the `-c user.name=…` overrides MUST go on
+> the inner `git commit` invocation (the one `--exec` runs), NOT on the
+> outer `git rebase`. `--exec` shells out to a fresh `sh -c 'git commit
+> --amend …'` subprocess — `-c` flags on the outer rebase do not
+> propagate, and `--reset-author` falls back to whatever
+> `git config user.email` resolves at runtime (i.e. the operator's
+> identity). Putting the overrides on the inner command is the only way
+> the bot identity actually lands.
 
 ```bash
 # Source helper — sets GRAVA_AGENT_BOT_TOKEN/USER/EMAIL if configured.
@@ -77,9 +86,11 @@ FEATURE_BRANCH="grava/$ISSUE_ID"
 if [ -n "${GRAVA_AGENT_BOT_USER:-}" ] && [ -n "${GRAVA_AGENT_BOT_EMAIL:-}" ]; then
   MERGE_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
   if [ -n "$MERGE_BASE" ]; then
-    git -c user.name="$GRAVA_AGENT_BOT_USER" \
-        -c user.email="$GRAVA_AGENT_BOT_EMAIL" \
-        rebase --exec 'git commit --amend --no-edit --reset-author' \
+    # The inner `git commit` runs in a fresh subprocess that does NOT
+    # inherit `-c` overrides from the outer `rebase`. Pass the bot
+    # identity to the inner command instead. See grava-b3f2.
+    git rebase --exec \
+        "git -c user.name='$GRAVA_AGENT_BOT_USER' -c user.email='$GRAVA_AGENT_BOT_EMAIL' commit --amend --no-edit --reset-author" \
         "$MERGE_BASE" || {
           ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "author rewrite failed" )
           exit 1
@@ -203,14 +214,24 @@ call is:
 
 The `grava signal PR_CREATED` call in Step 6 already wrote `pr_url`. These
 extra wisps + label + comment + commit are bookkeeping the watcher and
-operator tooling rely on:
+operator tooling rely on.
+
+> **Ordering matters (grava-6dd0):** write `pr_number` and
+> `pr_awaiting_merge_since` BEFORE adding the `pr-created` label. The
+> watcher polls `grava list --label pr-created` every 5 minutes; if its
+> cron fires between the label add and the wisp writes, it sees a new
+> awaiting-merge issue without the timestamp wisp it needs to compute
+> stale-age, falling back to "now" and resetting the 72h clock every
+> iteration. Compounds with grava-6ac8.
 
 ```bash
 NOW=$(date -u +%s)
 ( cd "$REPO_ROOT" && grava comment "$ISSUE_ID" -m "PR created: $PR_URL" )
-( cd "$REPO_ROOT" && grava label   "$ISSUE_ID" --add pr-created )
+# Write the wisps the watcher reads BEFORE the label that triggers polling.
 ( cd "$REPO_ROOT" && grava wisp write "$ISSUE_ID" pr_number "$PR_NUMBER" )
 ( cd "$REPO_ROOT" && grava wisp write "$ISSUE_ID" pr_awaiting_merge_since "$NOW" )
+# Now the label — watcher's next poll will find a fully-populated record.
+( cd "$REPO_ROOT" && grava label   "$ISSUE_ID" --add pr-created )
 ( cd "$REPO_ROOT" && grava commit -m "pr created for $ISSUE_ID" )
 ```
 

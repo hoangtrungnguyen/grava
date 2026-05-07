@@ -991,6 +991,16 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 		Use:   "stats",
 		Short: "Show usage statistics",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Validate --format BEFORE running DB queries so typos fail fast
+			// without burning a query budget (grava-55d3). --json shorthand
+			// is resolved later, after we've confirmed --format is sane.
+			switch statsFormat {
+			case "json", "table", "csv":
+				// known
+			default:
+				return fmt.Errorf("invalid --format %q: must be one of json, table, csv", statsFormat)
+			}
+
 			stats := StatsResult{
 				ByStatus:      make(map[string]int),
 				ByPriority:    make(map[int]int),
@@ -1113,6 +1123,7 @@ func newStatsCmd(d *cmddeps.Deps) *cobra.Command {
 			}
 
 			// Resolve output format: --json is shorthand for --format json
+			// (--format already validated at the top of RunE for grava-55d3).
 			format := statsFormat
 			if *d.OutputJSON && format == "table" {
 				format = "json"

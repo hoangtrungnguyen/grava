@@ -179,6 +179,26 @@ func TestResolveTargetPhase_ForwardOnly(t *testing.T) {
 			wantWrite: true,
 		},
 		{
+			// Pins the documented behaviour for grava-2e3d: pr_awaiting_merge is
+			// in terminalPhases as a "rearm" marker, so overrides any prior
+			// phase including pr_merged. Watcher writes pr_merged then closes
+			// the issue + PIPELINE_COMPLETE, so this race shouldn't happen in
+			// practice — but if it does (e.g. operator force-rearm), the write
+			// must succeed.
+			name:      "rearm: PR_AWAITING_MERGE on pr_merged (terminal-class allows)",
+			current:   "pr_merged",
+			kind:      SignalPRAwaitingMerge,
+			wantPhase: "pr_awaiting_merge",
+			wantWrite: true,
+		},
+		{
+			name:      "rearm: PR_AWAITING_MERGE on complete is allowed (terminal-class)",
+			current:   "complete",
+			kind:      SignalPRAwaitingMerge,
+			wantPhase: "pr_awaiting_merge",
+			wantWrite: true,
+		},
+		{
 			name:      "bookkeeping: PLANNER_DONE has no phase",
 			current:   "",
 			kind:      SignalPlannerDone,
