@@ -458,7 +458,18 @@ Agent({
   subagent_type: "pr-creator",
   prompt: "Create PR for $ISSUE_ID.
     Approved SHA: $APPROVED_SHA.
-    Output PR_CREATED: <url> or PR_FAILED: <reason> as the LAST non-empty line."
+
+    HARD CONTRACT (per .claude/agents/pr-creator.md Steps 6-8): after
+    `gh pr create` succeeds, you MUST also call `grava signal PR_CREATED`
+    with the PR url, write the auxiliary wisps (pr_number,
+    pr_awaiting_merge_since), apply the `pr-created` label, run
+    `grava commit`, AND read back pipeline_phase + pr_url to verify the
+    state actually landed before returning. Returning early with just the
+    PR URL leaves the watcher unable to find the PR — this is the failure
+    mode tracked in grava-adfb.
+
+    Output PR_CREATED: <url> or PR_FAILED: <reason> as the LAST non-empty
+    line. Only emit PR_CREATED if Step 8 verification passed."
 })
 
 PARSED=$(read_signal_state "$PR_RESULT" "$ISSUE_ID" pr)

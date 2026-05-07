@@ -170,12 +170,40 @@ PR_URL=$(GH_TOKEN="$GH_TOKEN_FOR_PR" gh pr view "$FEATURE_BRANCH" --json url -q 
 PR_NUMBER=$(GH_TOKEN="$GH_TOKEN_FOR_PR" gh pr view "$FEATURE_BRANCH" --json number -q '.number')
 ```
 
-### 6. Record state
+### 6. Signal — atomic phase + pr_url write
 
-The `grava signal PR_CREATED` call in step 7 records `pr_url` automatically as
-its auxiliary wisp. The two extra wisps (`pr_number`, `pr_awaiting_merge_since`)
-are still written here because the watcher needs them and `signal` only owns
-`pr_url`.
+> **Hard contract:** Step 6 MUST run before any later step. `grava signal` is
+> the source of truth for `pipeline_phase` + `pr_url`. If you skip it, the
+> orchestrator and watcher have no way to find the PR you just opened —
+> they poll wisps, not GitHub directly.
+
+Call `grava signal` from the repo root — it advances `pipeline_phase` to
+`pr_created`, records `pr_url` as the auxiliary wisp atomically, and prints
+`PR_CREATED: <url>` as the final stdout line so the orchestrator's
+read_signal_state resolver picks it up:
+
+```bash
+( cd "$REPO_ROOT" && grava signal PR_CREATED --issue "$ISSUE_ID" --payload "$PR_URL" ) || {
+  # Signal write failed — the PR exists on GitHub but state is inconsistent.
+  # Emit PR_FAILED so the orchestrator routes to the recovery path instead
+  # of silently leaving stale state behind.
+  ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "post-create signal write failed (PR is open at $PR_URL but pipeline_phase did not advance)" )
+  exit 1
+}
+```
+
+On any earlier failure path (push failed, gh pr create failed) the equivalent
+call is:
+
+```bash
+( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "<one-line reason>" )
+```
+
+### 7. Record auxiliary state
+
+The `grava signal PR_CREATED` call in Step 6 already wrote `pr_url`. These
+extra wisps + label + comment + commit are bookkeeping the watcher and
+operator tooling rely on:
 
 ```bash
 NOW=$(date -u +%s)
@@ -186,29 +214,55 @@ NOW=$(date -u +%s)
 ( cd "$REPO_ROOT" && grava commit -m "pr created for $ISSUE_ID" )
 ```
 
-### 7. Signal
+### 8. Self-verification — MUST run before returning
 
-Call `grava signal` from the repo root — it advances `pipeline_phase` to
-`pr_created`, records `pr_url`, and prints `PR_CREATED: <url>` as the final
-stdout line so existing last-line parsers continue to work:
+> **Hard contract:** before emitting your FINAL `PR_CREATED: <url>` stdout
+> line, READ THE STATE BACK from grava and verify the agent's bookkeeping
+> actually landed. If any of the following is wrong, you cannot return
+> success — emit `PR_FAILED` with a specific reason so the orchestrator
+> handles the recovery path properly.
+>
+> This guards against a known failure mode where pr-creator agents call
+> `gh pr create` successfully, return early with the PR URL in their
+> summary text, and skip Steps 6 + 7 — leaving the watcher unable to
+> find the PR (`grava-adfb`).
 
 ```bash
-( cd "$REPO_ROOT" && grava signal PR_CREATED --issue "$ISSUE_ID" --payload "$PR_URL" )
+# Read back the canonical state.
+PHASE=$(  ( cd "$REPO_ROOT" && grava wisp read "$ISSUE_ID" pipeline_phase 2>/dev/null ) )
+WISP_URL=$( ( cd "$REPO_ROOT" && grava wisp read "$ISSUE_ID" pr_url        2>/dev/null ) )
+HAS_LABEL=$( ( cd "$REPO_ROOT" && grava show "$ISSUE_ID" --json | jq -r '.labels // [] | contains(["pr-created"])' ) )
+
+VERIFY_FAIL=""
+[ "$PHASE" != "pr_created" ] && [ "$PHASE" != "pr_awaiting_merge" ] && VERIFY_FAIL="pipeline_phase=$PHASE (expected pr_created)"
+[ -z "$WISP_URL" ]    && VERIFY_FAIL="${VERIFY_FAIL:+$VERIFY_FAIL; }pr_url wisp empty"
+[ "$HAS_LABEL" != "true" ] && VERIFY_FAIL="${VERIFY_FAIL:+$VERIFY_FAIL; }pr-created label missing"
+
+if [ -n "$VERIFY_FAIL" ]; then
+  ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "post-create verification failed: $VERIFY_FAIL (PR was opened at $PR_URL but state is inconsistent)" )
+  exit 1
+fi
 ```
 
-On any failure path the equivalent call is:
-
-```bash
-( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "<one-line reason>" )
-```
-
-The CLI's stdout naturally produces the legacy `PR_CREATED: <url>` /
-`PR_FAILED: <reason>` line as the final line of your message.
+The `grava signal` call's stdout is your FINAL line — the CLI naturally
+produces `PR_CREATED: <url>` (or `PR_FAILED: <reason>` on the failure path)
+as the last non-empty line of your message.
 
 ## Anti-Patterns
 
 - Do NOT modify code. Tools are `Bash, Read` only — no Edit/Write.
 - Do NOT skip the pre-merge probe when the script exists (story 2B.13).
-- Do NOT label without `pr-created` — the watcher (story 2B.12) discovers awaiting-merge issues by that label.
-- Do NOT close the issue. Issue stays `in_progress` until the watcher detects merge.
-- Do NOT hand-craft the signal line with `echo` — call `grava signal PR_CREATED|PR_FAILED ...` so `pipeline_phase` and the auxiliary `pr_url` / `pr_failed_reason` wisps are written atomically.
+- Do NOT return after `gh pr create` succeeds. Steps 6, 7, 8 are MANDATORY
+  before your final message. Returning early with just the PR URL leaves
+  the pipeline silently stalled — the watcher polls `grava list --label
+  pr-created` and never sees the new PR. This is the failure mode tracked
+  in `grava-adfb`.
+- Do NOT label without `pr-created` — the watcher discovers awaiting-merge
+  issues by that label.
+- Do NOT close the issue. Issue stays `in_progress` until the watcher
+  detects merge.
+- Do NOT hand-craft the signal line with `echo` — call `grava signal
+  PR_CREATED|PR_FAILED ...` so `pipeline_phase` and the auxiliary `pr_url`
+  / `pr_failed_reason` wisps are written atomically.
+- Do NOT emit `PR_CREATED` if Step 8 verification fails. Emit `PR_FAILED`
+  instead so the orchestrator's recovery path engages.
