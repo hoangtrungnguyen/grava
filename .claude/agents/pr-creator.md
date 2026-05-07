@@ -203,14 +203,24 @@ call is:
 
 The `grava signal PR_CREATED` call in Step 6 already wrote `pr_url`. These
 extra wisps + label + comment + commit are bookkeeping the watcher and
-operator tooling rely on:
+operator tooling rely on.
+
+> **Ordering matters (grava-6dd0):** write `pr_number` and
+> `pr_awaiting_merge_since` BEFORE adding the `pr-created` label. The
+> watcher polls `grava list --label pr-created` every 5 minutes; if its
+> cron fires between the label add and the wisp writes, it sees a new
+> awaiting-merge issue without the timestamp wisp it needs to compute
+> stale-age, falling back to "now" and resetting the 72h clock every
+> iteration. Compounds with grava-6ac8.
 
 ```bash
 NOW=$(date -u +%s)
 ( cd "$REPO_ROOT" && grava comment "$ISSUE_ID" -m "PR created: $PR_URL" )
-( cd "$REPO_ROOT" && grava label   "$ISSUE_ID" --add pr-created )
+# Write the wisps the watcher reads BEFORE the label that triggers polling.
 ( cd "$REPO_ROOT" && grava wisp write "$ISSUE_ID" pr_number "$PR_NUMBER" )
 ( cd "$REPO_ROOT" && grava wisp write "$ISSUE_ID" pr_awaiting_merge_since "$NOW" )
+# Now the label — watcher's next poll will find a fully-populated record.
+( cd "$REPO_ROOT" && grava label   "$ISSUE_ID" --add pr-created )
 ( cd "$REPO_ROOT" && grava commit -m "pr created for $ISSUE_ID" )
 ```
 
