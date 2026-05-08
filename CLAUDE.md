@@ -63,13 +63,15 @@ This project uses Dolt as its database substrate. The database directory is `.gr
 
 > **Signal protocol version: v2.** Agents call `grava signal <KIND> --issue $ID [--payload $V]` which writes `pipeline_phase` and any auxiliary triage wisps atomically inside one transaction. The orchestrator (`/ship`) reads canonical state via `grava wisp read` / `grava show --json`. The CLI also prints `<KIND>: <payload>` as its final stdout line so the orchestrator's stdout-fallback parser still resolves the kind in case of a wisp-write failure.
 
+> **Signal preconditions (grava-fddd):** `PR_CREATED` requires `pr_number` and `pr_awaiting_merge_since` wisps to be written first; CLI rejects with `SIGNAL_PRECONDITION_UNMET` otherwise. Use `scripts/agent-bot/finalize-pr.sh` which sets all four (`pr_number`, `pr_url`, `pr_awaiting_merge_since`, then signal + label + commit) atomically. Other signal kinds have no preconditions.
+
 | Signal | Emitter | Meaning |
 |--------|---------|---------|
 | `CODER_DONE: <sha>` | coder | grava-dev-task completed, code_review label set |
 | `CODER_HALTED: <reason>` | coder | TDD or context loading hit blocker |
 | `REVIEWER_APPROVED` | reviewer | grava-code-review verdict APPROVED |
 | `REVIEWER_BLOCKED: <findings>` | reviewer | grava-code-review verdict CHANGES_REQUESTED |
-| `PR_CREATED: <url>` | pr-creator agent | PR opened |
+| `PR_CREATED: <url>` | pr-creator agent (via `finalize-pr.sh`) | PR opened. Requires `pr_number` + `pr_awaiting_merge_since` wisps. |
 | `PR_FAILED: <reason>` | pr-creator agent | Push or `gh pr create` failed |
 | `PR_COMMENTS_RESOLVED: <round>` | orchestrator | Coder fixed PR feedback, pushed to branch |
 | `PR_MERGED` | pr-merge-watcher | PR merged on GitHub; watcher closed the grava issue |

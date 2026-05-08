@@ -279,6 +279,31 @@ Not required for migration; nice cleanup when scope allows.
 
 ---
 
+## Addendum — Signal Preconditions (grava-fddd, May 2026)
+
+After Phase 5 landed, the prose-only contract requiring pr-creator to write
+`pr_number`/`pr_awaiting_merge_since` wisps before signaling `PR_CREATED`
+regressed (grava-cd50 needed manual backfill). Fixed by adding
+**CLI-side precondition enforcement**:
+
+- `signalPreconditions` map in `pkg/cmd/issues/signal.go` declares required
+  wisps per signal kind. Currently only `PR_CREATED` has preconditions
+  (`pr_number`, `pr_awaiting_merge_since`).
+- Missing wisps → `SIGNAL_PRECONDITION_UNMET` error, exit 1, message points
+  operators at `scripts/agent-bot/finalize-pr.sh`.
+- Other signals (`CODER_DONE`, `REVIEWER_APPROVED`, etc.) are unaffected.
+
+`scripts/agent-bot/finalize-pr.sh` is the canonical caller — atomic 7-step
+helper (3 wisps → signal → label → commit → self-verify) that pr-creator
+invokes after `gh pr create` succeeds. Replaces the prior "Steps 6-8"
+prose contract.
+
+This makes the regression mode structurally impossible: an agent that
+forgets the wisps can no longer silently leave `pipeline_phase` stale —
+the CLI rejects loudly.
+
+---
+
 ## Rollback Strategy
 
 Every phase is independently reversible. The legacy text path **never
