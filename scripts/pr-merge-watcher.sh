@@ -140,11 +140,12 @@ EOF
   esac
 
   # State is OPEN. Check stale cap.
-  # grava-6ac8: `grava wisp read` exits 0 even when the wisp is missing
-  # (just empty stdout per current CLI behavior), so the `|| echo "$NOW"`
-  # fallback never fires. Without an explicit emptiness check, SINCE
-  # becomes "" and the arithmetic below errors silently — PRs >72h never
-  # get the needs-human label. Default explicitly when SINCE is empty.
+  # grava-6ac8 / re PR #42: empirical re-test (May 2026) found `grava wisp
+  # read` actually exits 1 on a missing wisp (not 0 as PR #42 assumed).
+  # The `[ -n "$SINCE" ] || SINCE="$NOW"` fallback below works correctly
+  # in either case — stdout is empty either way, so `[ -n ]` catches it —
+  # but the original PR #42 rationale ("|| echo never fires") was wrong.
+  # Leaving the fallback in place as harmless defensive style.
   SINCE=$(grava wisp read "$ID" pr_awaiting_merge_since 2>/dev/null)
   [ -n "$SINCE" ] || SINCE="$NOW"
   AGE_HRS=$(( (NOW - SINCE) / 3600 ))
@@ -157,15 +158,42 @@ EOF
 
   # Check for new review comments + CHANGES_REQUESTED
   COMMENTS_JSON=$(gh api "repos/{owner}/{repo}/pulls/$PR_NUMBER/comments" 2>/dev/null)
-  # Same empty-wisp class as grava-6ac8: `grava wisp read` exits 0 with
-  # empty stdout when the wisp is missing, so `|| echo 0` never fires.
-  # Default explicitly so the jq --argjson + arithmetic below don't error.
+
+  # grava-431b: validate gh's response is a JSON array before piping it to
+  # the comment-diff jq. When gh fails (rate-limited, network blip, auth
+  # expiry, deleted PR) it commonly prints an error string to stdout
+  # instead of valid JSON, or returns malformed/object-shaped output. The
+  # downstream `jq -c '[.[] | ...]'` then errors with
+  # "Cannot index string with string", NEW becomes empty, NEW_COUNT
+  # becomes empty, and `[ "$NEW_COUNT" -gt 0 ]` errors with
+  # "integer expression expected" — corrupting the iteration. Guard
+  # explicitly and skip this iteration's comment check on bad input.
+  if [ -z "$COMMENTS_JSON" ] \
+     || ! echo "$COMMENTS_JSON" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    echo "[$(date -u +%FT%TZ)] watcher: gh api returned non-array for $ID PR_NUMBER=$PR_NUMBER — skipping comment check this tick" >&2
+    continue
+  fi
+
+  # Note re grava-6ac8 / PR #42: that PR added the `[ -n "$X" ] || X=0`
+  # fallback under the (incorrect) belief that `grava wisp read` exits 0
+  # on a missing wisp. Empirical re-test (May 2026): the CLI exits 1 on
+  # missing wisp with empty stdout. The fallback is still correct — `$VAR`
+  # ends up empty either way, the `[ -n ]` guard catches that — but the
+  # original PR #42 rationale was wrong. Leaving the fallbacks in place as
+  # belt-and-suspenders defensive style.
   LAST_SEEN=$(grava wisp read "$ID" pr_last_seen_comment_id 2>/dev/null)
   [ -n "$LAST_SEEN" ] || LAST_SEEN=0
   NEW=$(echo "$COMMENTS_JSON" | jq -c --argjson last "$LAST_SEEN" '
     [.[] | select(.in_reply_to_id == null) | select(.id > $last)]
   ')
-  NEW_COUNT=$(echo "$NEW" | jq 'length')
+  # Belt-and-suspenders: even with the array-shape gate above, defend
+  # against any future jq path that could yield a non-numeric NEW_COUNT
+  # (e.g. an upstream filter regression). An empty or non-numeric value
+  # would otherwise blow up the `[ "$NEW_COUNT" -gt 0 ]` test below.
+  NEW_COUNT=$(echo "$NEW" | jq 'length' 2>/dev/null)
+  case "$NEW_COUNT" in
+    ''|*[!0-9]*) NEW_COUNT=0 ;;
+  esac
   REVIEW_DECISION=$(gh pr view "$PR_NUMBER" --json reviewDecision -q '.reviewDecision' 2>/dev/null)
 
   if [ "$NEW_COUNT" -gt 0 ] || [ "$REVIEW_DECISION" = "CHANGES_REQUESTED" ]; then
