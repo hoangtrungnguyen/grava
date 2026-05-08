@@ -26,4 +26,6 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Test merged result
+        env:
+          GRAVA_SKIP_PREFLIGHT: "1"
         run: go test -race ./...
