@@ -24,7 +24,8 @@ Worktree lifecycle:
   setup helpers.
 
 Preflight & resolution:
-- `CheckClaudeInstalled` (skippable via `GRAVA_SKIP_CLAUDE_CHECK=1`).
+- `CheckClaudeInstalled` (skippable via `GRAVA_SKIP_PREFLIGHT=1` or the
+  legacy `GRAVA_SKIP_CLAUDE_CHECK=1`).
 - `CheckGitVersion`, `ParseAndCheckGitVersion`, `MinGitMajor`,
   `MinGitMinor`.
 - `ResolveDoltBinary`, `LocalDoltBinDir`, `LocalDoltBinaryPath`.

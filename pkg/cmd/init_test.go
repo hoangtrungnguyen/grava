@@ -35,6 +35,10 @@ func initGitRepo(t *testing.T, dir string) {
 // This test is deliberately failing until grava-4136.3 wires the
 // SyncClaudeSettings call in initCmd's worktree branch.
 func TestInitCmd_WorktreeSyncsSettings(t *testing.T) {
+	// Bypass the claude-CLI preflight: this test exercises worktree sync, not
+	// the preflight gate, and CI runners don't have claude installed.
+	t.Setenv("GRAVA_SKIP_PREFLIGHT", "1")
+
 	// 1. Create a real main git repo with an initial commit.
 	mainRepo := t.TempDir()
 	initGitRepo(t, mainRepo)
@@ -77,6 +81,9 @@ func TestInitCmd_WorktreeSyncsSettings(t *testing.T) {
 // This variant is expected to pass now; the primary TestInitCmd_WorktreeSyncsSettings
 // is the deliberately-failing TDD test (passes after grava-4136.3 wires the call).
 func TestInitCmd_WorktreeSyncsSettings_AbsentSource(t *testing.T) {
+	// Bypass the claude-CLI preflight (CI runners don't have claude installed).
+	t.Setenv("GRAVA_SKIP_PREFLIGHT", "1")
+
 	mainRepo := t.TempDir()
 	initGitRepo(t, mainRepo)
 	// No settings.json — source absent
