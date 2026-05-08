@@ -334,20 +334,36 @@ else
   fi
 
   # Concurrency-matrix #11: refuse to ship an issue with unresolved
-  # blockers. `grava blocked $ID --json` returns the direct upstream
-  # blockers; non-empty array means at least one dep is open. Operator
-  # can either resolve the blocker, or `/ship --force` to override.
+  # blockers. Delegated to scripts/ship/dep-check.sh so we can unit-test
+  # it (see scripts/test/test-dep-check.sh). Exit codes:
+  #   0 — clean, proceed
+  #   1 — fail-safe abort (grava errored, malformed JSON) — see grava-223a
+  #   2 — open blocker(s); summary on stderr
   #
-  # Defensive jq filter (grava-cd50, layer 5): the `grava blocked` SQL
-  # also filters status NOT IN ('closed','tombstone') by default, but
-  # if a future caller passes --all (archaeology mode) we must NOT halt
-  # on already-resolved deps. Belt-and-suspenders: filter here too.
+  # The previous inline `... 2>/dev/null || echo "[]"` swallowed errors
+  # silently (DB down → empty array → gate passed). Script now propagates
+  # CLI failures so /ship halts instead of fail-opening.
   if [ -z "$PRECOND_FAIL" ]; then
-    BLOCKERS_JSON=$(grava blocked "$ISSUE_ID" --json 2>/dev/null || echo "[]")
-    BLOCKER_COUNT=$(echo "$BLOCKERS_JSON" | jq '[.[] | select(.status != "closed" and .status != "tombstone")] | length')
-    if [ "$BLOCKER_COUNT" -gt 0 ]; then
-      PRECOND_FAIL="$BLOCKER_COUNT unresolved blocker(s): $(echo "$BLOCKERS_JSON" | jq -r '[.[] | select(.status != "closed" and .status != "tombstone") | .id] | join(", ")')"
-    fi
+    DEP_CHECK_STDERR=$(./scripts/ship/dep-check.sh "$ISSUE_ID" 2>&1 >/dev/null)
+    DEP_RC=$?
+    case "$DEP_RC" in
+      0)
+        : # no blockers, fall through
+        ;;
+      2)
+        # Strip the "BLOCKED: " prefix; what's left is the human summary.
+        PRECOND_FAIL="${DEP_CHECK_STDERR#BLOCKED: }"
+        ;;
+      *)
+        # rc=1 (or anything unexpected) — propagate verbatim and bail. The
+        # script already prints "PIPELINE_FAILED: ..." on stderr, so just
+        # echo it and exit. We do NOT fall through to PIPELINE_HALTED here
+        # because dep-check failure is an infrastructure problem, not a
+        # spec problem — operator can't fix it by editing the issue.
+        echo "$DEP_CHECK_STDERR"
+        exit 1
+        ;;
+    esac
   fi
 
   if [ -n "$PRECOND_FAIL" ]; then
