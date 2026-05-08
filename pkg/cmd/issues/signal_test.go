@@ -472,6 +472,214 @@ func TestSignalRun_UnknownKind_Errors(t *testing.T) {
 	assert.Equal(t, "INVALID_SIGNAL", gerr.Code)
 }
 
+// ─── PR_CREATED precondition (grava-fddd) ──────────────────────────────────
+//
+// PR_CREATED has a structural precondition: the auxiliary wisps `pr_number`
+// and `pr_awaiting_merge_since` MUST already be present on the issue before
+// the signal advances pipeline_phase to `pr_created`. This forces agents to
+// write the watcher's bookkeeping state FIRST, eliminating the regression
+// tracked by grava-fddd / grava-adfb where the agent emitted PR_CREATED but
+// skipped the aux-wisp writes, leaving the watcher unable to find the PR.
+//
+// Failure mode: SIGNAL_PRECONDITION_UNMET error, no phase write, no aux
+// write. Other signals are unaffected.
+//
+// expectPreconditionRead sets up the SELECT id + SELECT key probe for ONE
+// precondition key. Returns rows when present=true, ErrNoRows when false.
+func expectPreconditionRead(mock sqlmock.Sqlmock, issueID, key string, present bool) {
+	mock.ExpectQuery("SELECT id FROM issues WHERE id").
+		WithArgs(issueID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(issueID))
+	q := mock.ExpectQuery("SELECT key_name, value, written_by, written_at").
+		WithArgs(issueID, key)
+	if present {
+		q.WillReturnRows(sqlmock.NewRows([]string{"key_name", "value", "written_by", "written_at"}).
+			AddRow(key, "set", "agent-pr-creator", nowStub()))
+	} else {
+		q.WillReturnError(sqlMock_ErrNoRows())
+	}
+}
+
+func TestSignalRun_PRCreated_RejectsWhenPRNumberMissing(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	const issueID = "abc123def456"
+
+	// Current phase: review_approved (legitimate predecessor).
+	mock.ExpectQuery("SELECT id FROM issues WHERE id").
+		WithArgs(issueID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(issueID))
+	mock.ExpectQuery("SELECT key_name, value, written_by, written_at").
+		WithArgs(issueID, "pipeline_phase").
+		WillReturnRows(sqlmock.NewRows([]string{"key_name", "value", "written_by", "written_at"}).
+			AddRow("pipeline_phase", "review_approved", "agent-reviewer", nowStub()))
+
+	// Precondition probes — pr_number MISSING, pr_awaiting_merge_since present.
+	expectPreconditionRead(mock, issueID, "pr_number", false)
+	expectPreconditionRead(mock, issueID, "pr_awaiting_merge_since", true)
+
+	store := dolt.NewClientFromDB(db)
+	_, err = signalRun(context.Background(), store, SignalParams{
+		IssueID: issueID,
+		Kind:    SignalPRCreated,
+		Payload: "https://github.com/x/y/pull/1",
+		Actor:   "agent-pr-creator",
+	})
+	require.Error(t, err)
+	var gerr *gravaerrors.GravaError
+	require.True(t, errors.As(err, &gerr))
+	assert.Equal(t, "SIGNAL_PRECONDITION_UNMET", gerr.Code)
+	assert.Contains(t, gerr.Error(), "pr_number")
+	assert.Contains(t, gerr.Error(), "finalize-pr.sh")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSignalRun_PRCreated_RejectsWhenAwaitingMergeSinceMissing(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	const issueID = "abc123def456"
+
+	mock.ExpectQuery("SELECT id FROM issues WHERE id").
+		WithArgs(issueID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(issueID))
+	mock.ExpectQuery("SELECT key_name, value, written_by, written_at").
+		WithArgs(issueID, "pipeline_phase").
+		WillReturnRows(sqlmock.NewRows([]string{"key_name", "value", "written_by", "written_at"}).
+			AddRow("pipeline_phase", "review_approved", "agent-reviewer", nowStub()))
+
+	// Precondition probes — pr_number present, pr_awaiting_merge_since MISSING.
+	expectPreconditionRead(mock, issueID, "pr_number", true)
+	expectPreconditionRead(mock, issueID, "pr_awaiting_merge_since", false)
+
+	store := dolt.NewClientFromDB(db)
+	_, err = signalRun(context.Background(), store, SignalParams{
+		IssueID: issueID,
+		Kind:    SignalPRCreated,
+		Payload: "https://github.com/x/y/pull/1",
+		Actor:   "agent-pr-creator",
+	})
+	require.Error(t, err)
+	var gerr *gravaerrors.GravaError
+	require.True(t, errors.As(err, &gerr))
+	assert.Equal(t, "SIGNAL_PRECONDITION_UNMET", gerr.Code)
+	assert.Contains(t, gerr.Error(), "pr_awaiting_merge_since")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSignalRun_PRCreated_RejectsWhenBothMissing(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	const issueID = "abc123def456"
+
+	mock.ExpectQuery("SELECT id FROM issues WHERE id").
+		WithArgs(issueID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(issueID))
+	mock.ExpectQuery("SELECT key_name, value, written_by, written_at").
+		WithArgs(issueID, "pipeline_phase").
+		WillReturnRows(sqlmock.NewRows([]string{"key_name", "value", "written_by", "written_at"}).
+			AddRow("pipeline_phase", "review_approved", "agent-reviewer", nowStub()))
+
+	// Both preconditions missing.
+	expectPreconditionRead(mock, issueID, "pr_number", false)
+	expectPreconditionRead(mock, issueID, "pr_awaiting_merge_since", false)
+
+	store := dolt.NewClientFromDB(db)
+	_, err = signalRun(context.Background(), store, SignalParams{
+		IssueID: issueID,
+		Kind:    SignalPRCreated,
+		Payload: "https://github.com/x/y/pull/1",
+		Actor:   "agent-pr-creator",
+	})
+	require.Error(t, err)
+	var gerr *gravaerrors.GravaError
+	require.True(t, errors.As(err, &gerr))
+	assert.Equal(t, "SIGNAL_PRECONDITION_UNMET", gerr.Code)
+	assert.Contains(t, gerr.Error(), "pr_number")
+	assert.Contains(t, gerr.Error(), "pr_awaiting_merge_since")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSignalRun_PRCreated_AcceptsWhenPreconditionsSatisfied(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	const issueID = "abc123def456"
+
+	// Current phase: review_approved.
+	mock.ExpectQuery("SELECT id FROM issues WHERE id").
+		WithArgs(issueID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(issueID))
+	mock.ExpectQuery("SELECT key_name, value, written_by, written_at").
+		WithArgs(issueID, "pipeline_phase").
+		WillReturnRows(sqlmock.NewRows([]string{"key_name", "value", "written_by", "written_at"}).
+			AddRow("pipeline_phase", "review_approved", "agent-reviewer", nowStub()))
+
+	// Both preconditions present.
+	expectPreconditionRead(mock, issueID, "pr_number", true)
+	expectPreconditionRead(mock, issueID, "pr_awaiting_merge_since", true)
+
+	// Phase write: pr_created (forward from review_approved).
+	expectWispWrite(mock, issueID, "pipeline_phase", "pr_created", "agent-pr-creator")
+	// Auxiliary wisp: pr_url.
+	expectWispWrite(mock, issueID, "pr_url", "https://github.com/x/y/pull/1", "agent-pr-creator")
+
+	store := dolt.NewClientFromDB(db)
+	res, err := signalRun(context.Background(), store, SignalParams{
+		IssueID: issueID,
+		Kind:    SignalPRCreated,
+		Payload: "https://github.com/x/y/pull/1",
+		Actor:   "agent-pr-creator",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "pr_created", res.Phase)
+	assert.True(t, res.PhaseWrote)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Other signal kinds are NOT subject to the PR_CREATED precondition. Pin
+// CODER_DONE and REVIEWER_APPROVED happy-paths so a future regression that
+// over-broadly applied the precondition would be caught here.
+
+func TestSignalRun_OtherSignals_NotAffectedByPRCreatedPrecondition(t *testing.T) {
+	t.Run("REVIEWER_APPROVED ignores precondition", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer db.Close() //nolint:errcheck
+
+		const issueID = "abc123def456"
+
+		// Current phase = review_blocked → REVIEWER_APPROVED moves forward.
+		mock.ExpectQuery("SELECT id FROM issues WHERE id").
+			WithArgs(issueID).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(issueID))
+		mock.ExpectQuery("SELECT key_name, value, written_by, written_at").
+			WithArgs(issueID, "pipeline_phase").
+			WillReturnRows(sqlmock.NewRows([]string{"key_name", "value", "written_by", "written_at"}).
+				AddRow("pipeline_phase", "review_blocked", "agent-reviewer", nowStub()))
+
+		// NO precondition probes — neither pr_number nor pr_awaiting_merge_since.
+		expectWispWrite(mock, issueID, "pipeline_phase", "review_approved", "agent-reviewer")
+
+		store := dolt.NewClientFromDB(db)
+		res, err := signalRun(context.Background(), store, SignalParams{
+			IssueID: issueID,
+			Kind:    SignalReviewerApproved,
+			Actor:   "agent-reviewer",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "review_approved", res.Phase)
+		assert.True(t, res.PhaseWrote)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
 func TestSignalRun_BookkeepingSignal_NoPhaseWrite(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
