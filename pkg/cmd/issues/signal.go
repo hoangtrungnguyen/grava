@@ -224,6 +224,20 @@ func signalRun(ctx context.Context, store dolt.Store, params SignalParams) (Sign
 		return SignalResult{}, gravaerrors.New("INVALID_SIGNAL", err.Error(), err)
 	}
 
+	// Structural preconditions for specific signals (grava-fddd).
+	//
+	// PR_CREATED requires the watcher's bookkeeping wisps (pr_number,
+	// pr_awaiting_merge_since) to already exist on the issue. This forces
+	// agents to write them BEFORE signalling, eliminating the regression
+	// where pr-creator emitted PR_CREATED but skipped the aux-wisp writes,
+	// leaving the watcher unable to find the PR (grava-adfb / grava-fddd).
+	//
+	// scripts/agent-bot/finalize-pr.sh wraps the correct ordering in a single
+	// command — the error message points operators there.
+	if err := checkSignalPreconditions(ctx, store, params); err != nil {
+		return SignalResult{}, err
+	}
+
 	if writePhase {
 		if _, err := wispWrite(ctx, store, WispWriteParams{
 			IssueID: params.IssueID,
@@ -255,6 +269,52 @@ func signalRun(ctx context.Context, store dolt.Store, params SignalParams) (Sign
 		PhaseWrote: writePhase,
 		Payload:    params.Payload,
 	}, nil
+}
+
+// signalPreconditions maps SignalKinds to the wisp keys that MUST exist on
+// the issue before the signal is allowed to advance pipeline_phase. Only
+// PR_CREATED currently has structural preconditions — see grava-fddd.
+var signalPreconditions = map[SignalKind][]string{
+	SignalPRCreated: {"pr_number", "pr_awaiting_merge_since"},
+}
+
+// checkSignalPreconditions enforces the precondition set declared in
+// signalPreconditions. Returns SIGNAL_PRECONDITION_UNMET listing every
+// missing key — operators get a single error covering all gaps rather
+// than fixing one and re-tripping on the next.
+func checkSignalPreconditions(ctx context.Context, store dolt.Store, params SignalParams) error {
+	keys, ok := signalPreconditions[params.Kind]
+	if !ok || len(keys) == 0 {
+		return nil
+	}
+	var missing []string
+	for _, k := range keys {
+		entry, err := wispRead(ctx, store, params.IssueID, k)
+		if err != nil {
+			gerr, isGrava := err.(*gravaerrors.GravaError)
+			if isGrava && gerr.Code == "WISP_NOT_FOUND" {
+				missing = append(missing, k)
+				continue
+			}
+			// ISSUE_NOT_FOUND / DB_UNREACHABLE bubble up unchanged — they
+			// are independent failure modes worth surfacing distinctly.
+			return err
+		}
+		// Empty wisp value is treated as missing (defensive — a cleared
+		// wisp should not satisfy a precondition).
+		if e, ok := entry.(*WispEntry); !ok || e == nil || e.Value == "" {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	msg := fmt.Sprintf(
+		"%s signal requires %v wisps to be written first. Missing: %v. "+
+			"Use scripts/agent-bot/finalize-pr.sh which sets these atomically.",
+		params.Kind, keys, missing,
+	)
+	return gravaerrors.New("SIGNAL_PRECONDITION_UNMET", msg, nil)
 }
 
 // auxiliaryKey returns the wisp key used to record contextual payload for
