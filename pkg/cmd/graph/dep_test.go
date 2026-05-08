@@ -252,3 +252,127 @@ func TestRemoveDependency_NotFound(t *testing.T) {
 	assert.Contains(t, buf.String(), "No dependency found")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// --- grava-cd50: filter CLOSED/tombstone blockers by default ---
+
+// qBlockersForIssueActive matches the default (active-only) query: includes a
+// status filter so closed and tombstoned upstream issues are excluded.
+var qBlockersForIssueActive = regexp.QuoteMeta(
+	`SELECT DISTINCT i.id, i.title, i.status, COALESCE(i.assignee, '') as assignee
+			FROM issues i
+			INNER JOIN dependencies dep ON
+				(dep.from_id = i.id AND dep.to_id = ? AND dep.type = 'blocks')
+				OR (dep.to_id = i.id AND dep.from_id = ? AND dep.type = 'blocked-by')
+			WHERE i.status NOT IN ('closed', 'tombstone')
+			ORDER BY i.priority ASC`,
+)
+
+// qBlockersForIssueAll matches the --all variant: no status filter (includes
+// closed and tombstoned blockers, for archaeology).
+var qBlockersForIssueAll = regexp.QuoteMeta(
+	`SELECT DISTINCT i.id, i.title, i.status, COALESCE(i.assignee, '') as assignee
+			FROM issues i
+			INNER JOIN dependencies dep ON
+				(dep.from_id = i.id AND dep.to_id = ? AND dep.type = 'blocks')
+				OR (dep.to_id = i.id AND dep.from_id = ? AND dep.type = 'blocked-by')
+			ORDER BY i.priority ASC`,
+)
+
+// TestShowBlockers_ExcludesClosedByDefault verifies grava-cd50 AC#1: a closed
+// upstream blocker is filtered out by default, so /ship Phase 0.2 will not
+// halt on already-resolved dependencies.
+func TestShowBlockers_ExcludesClosedByDefault(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	d := newDepDeps(dolt.NewClientFromDB(db), true)
+
+	mock.ExpectQuery(qIssueExists).
+		WithArgs("task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	// Active-only query (status filter applied) — A is closed so DB returns
+	// no rows; the array is empty.
+	mock.ExpectQuery(qBlockersForIssueActive).
+		WithArgs("task-B", "task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "assignee"}))
+
+	buf := &bytes.Buffer{}
+	cmd := newBlockedCmd(d)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"task-B"})
+	err = cmd.ExecuteContext(context.Background())
+	require.NoError(t, err)
+
+	var result []BlockerItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	assert.Len(t, result, 0, "closed blockers must be filtered out by default")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestShowBlockers_AllFlagIncludesClosed verifies grava-cd50 layer 2: passing
+// --all omits the status filter so archaeologists can see closed/tombstoned
+// upstream issues.
+func TestShowBlockers_AllFlagIncludesClosed(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	d := newDepDeps(dolt.NewClientFromDB(db), true)
+
+	mock.ExpectQuery(qIssueExists).
+		WithArgs("task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	// --all variant: no status filter, closed A is returned.
+	mock.ExpectQuery(qBlockersForIssueAll).
+		WithArgs("task-B", "task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "assignee"}).
+			AddRow("task-A", "Closed Blocker", "closed", "alice"))
+
+	buf := &bytes.Buffer{}
+	cmd := newBlockedCmd(d)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"task-B", "--all"})
+	err = cmd.ExecuteContext(context.Background())
+	require.NoError(t, err)
+
+	var result []BlockerItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	require.Len(t, result, 1, "--all must include closed blockers")
+	assert.Equal(t, "task-A", result[0].ID)
+	assert.Equal(t, "closed", result[0].Status)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestShowBlockers_OpenBlockersStillReported is the regression guard for
+// grava-cd50: an open upstream blocker must still show up in the default
+// (active-only) query. /ship Phase 0.2 must continue to halt on real blockers.
+func TestShowBlockers_OpenBlockersStillReported(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	d := newDepDeps(dolt.NewClientFromDB(db), true)
+
+	mock.ExpectQuery(qIssueExists).
+		WithArgs("task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(qBlockersForIssueActive).
+		WithArgs("task-B", "task-B").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "assignee"}).
+			AddRow("task-A", "Open Blocker", "open", "alice"))
+
+	buf := &bytes.Buffer{}
+	cmd := newBlockedCmd(d)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"task-B"})
+	err = cmd.ExecuteContext(context.Background())
+	require.NoError(t, err)
+
+	var result []BlockerItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	require.Len(t, result, 1, "open blockers must still be reported")
+	assert.Equal(t, "task-A", result[0].ID)
+	assert.Equal(t, "open", result[0].Status)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

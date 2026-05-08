@@ -337,11 +337,16 @@ else
   # blockers. `grava blocked $ID --json` returns the direct upstream
   # blockers; non-empty array means at least one dep is open. Operator
   # can either resolve the blocker, or `/ship --force` to override.
+  #
+  # Defensive jq filter (grava-cd50, layer 5): the `grava blocked` SQL
+  # also filters status NOT IN ('closed','tombstone') by default, but
+  # if a future caller passes --all (archaeology mode) we must NOT halt
+  # on already-resolved deps. Belt-and-suspenders: filter here too.
   if [ -z "$PRECOND_FAIL" ]; then
     BLOCKERS_JSON=$(grava blocked "$ISSUE_ID" --json 2>/dev/null || echo "[]")
-    BLOCKER_COUNT=$(echo "$BLOCKERS_JSON" | jq 'length')
+    BLOCKER_COUNT=$(echo "$BLOCKERS_JSON" | jq '[.[] | select(.status != "closed" and .status != "tombstone")] | length')
     if [ "$BLOCKER_COUNT" -gt 0 ]; then
-      PRECOND_FAIL="$BLOCKER_COUNT unresolved blocker(s): $(echo "$BLOCKERS_JSON" | jq -r '[.[] | .id] | join(", ")')"
+      PRECOND_FAIL="$BLOCKER_COUNT unresolved blocker(s): $(echo "$BLOCKERS_JSON" | jq -r '[.[] | select(.status != "closed" and .status != "tombstone") | .id] | join(", ")')"
     fi
   fi
 

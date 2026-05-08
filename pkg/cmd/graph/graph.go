@@ -27,6 +27,7 @@ var (
 	depType       string
 	batchFile     string
 	blockedDepth  int
+	blockedAll    bool
 	searchWisp    bool
 	searchLabels  []string
 	statsDays     int
@@ -678,10 +679,14 @@ With an issue ID: lists the direct blockers for that specific issue
 	}
 
 	cmd.Flags().IntVarP(&blockedDepth, "depth", "d", 1, "Depth of transitive blockers to show")
+	cmd.Flags().BoolVar(&blockedAll, "all", false, "Include closed and tombstoned blockers (default: active only)")
 	return cmd
 }
 
-// showBlockersForIssue lists what blocks a specific issue (AC: Story 4.3).
+// showBlockersForIssue lists ACTIVE blockers (status not in {closed, tombstone})
+// for a specific issue. Pass --all to include closed/tombstoned dependencies
+// (useful for archaeology). Filtering closed/tombstoned by default keeps
+// /ship Phase 0.2 from halting on already-resolved blockers (grava-cd50).
 func showBlockersForIssue(cmd *cobra.Command, d *cmddeps.Deps, issueID string) error {
 	// Validate issue exists
 	var exists int
@@ -694,16 +699,28 @@ func showBlockersForIssue(cmd *cobra.Command, d *cmddeps.Deps, issueID string) e
 		return fmt.Errorf("ISSUE_NOT_FOUND: issue %q does not exist", issueID)
 	}
 
-	// Find blockers via both dependency directions
-	rows, err := (*d.Store).Query(
-		`SELECT DISTINCT i.id, i.title, i.status, COALESCE(i.assignee, '') as assignee
-		FROM issues i
-		INNER JOIN dependencies dep ON
-			(dep.from_id = i.id AND dep.to_id = ? AND dep.type = 'blocks')
-			OR (dep.to_id = i.id AND dep.from_id = ? AND dep.type = 'blocked-by')
-		ORDER BY i.priority ASC`,
-		issueID, issueID,
-	)
+	// Find blockers via both dependency directions. By default, exclude
+	// closed and tombstoned upstream issues so /ship and other workflow
+	// callers do not halt on already-resolved blockers (grava-cd50).
+	// --all opts back into the unfiltered view.
+	var query string
+	if blockedAll {
+		query = `SELECT DISTINCT i.id, i.title, i.status, COALESCE(i.assignee, '') as assignee
+			FROM issues i
+			INNER JOIN dependencies dep ON
+				(dep.from_id = i.id AND dep.to_id = ? AND dep.type = 'blocks')
+				OR (dep.to_id = i.id AND dep.from_id = ? AND dep.type = 'blocked-by')
+			ORDER BY i.priority ASC`
+	} else {
+		query = `SELECT DISTINCT i.id, i.title, i.status, COALESCE(i.assignee, '') as assignee
+			FROM issues i
+			INNER JOIN dependencies dep ON
+				(dep.from_id = i.id AND dep.to_id = ? AND dep.type = 'blocks')
+				OR (dep.to_id = i.id AND dep.from_id = ? AND dep.type = 'blocked-by')
+			WHERE i.status NOT IN ('closed', 'tombstone')
+			ORDER BY i.priority ASC`
+	}
+	rows, err := (*d.Store).Query(query, issueID, issueID)
 	if err != nil {
 		return fmt.Errorf("failed to query blockers: %w", err)
 	}

@@ -232,12 +232,17 @@ func TestBlockedCmd_ShowsEphemeralTasks(t *testing.T) {
 
 // --- Per-issue blocker queries (Story 4.3) ---
 
+// qBlockersForIssue matches the default (active-only) query used by
+// showBlockersForIssue when --all is NOT set. Closed and tombstoned upstream
+// issues are filtered out so /ship Phase 0.2 does not halt on already-resolved
+// blockers (grava-cd50).
 var qBlockersForIssue = regexp.QuoteMeta(
 	`SELECT DISTINCT i.id, i.title, i.status, COALESCE(i.assignee, '') as assignee
 		FROM issues i
 		INNER JOIN dependencies dep ON
 			(dep.from_id = i.id AND dep.to_id = ? AND dep.type = 'blocks')
 			OR (dep.to_id = i.id AND dep.from_id = ? AND dep.type = 'blocked-by')
+		WHERE i.status NOT IN ('closed', 'tombstone')
 		ORDER BY i.priority ASC`,
 )
 
