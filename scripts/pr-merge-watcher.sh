@@ -9,11 +9,27 @@ cd "$REPO_ROOT" || exit 1
 
 PIDFILE=".grava/pr-merge-watcher.pid"
 mkdir -p .grava
-if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-  # concurrency-matrix #5: log the skip so cron logs surface long-running
-  # iterations rather than silently dropping every overlapping tick.
-  echo "[$(date -u +%FT%TZ)] watcher: previous run (pid $(cat "$PIDFILE")) still active — skipping this tick" >&2
-  exit 0
+# grava-24fa: `kill -0 $(cat PIDFILE)` succeeds for ANY live PID, including a
+# recycled-and-reassigned one (browser, daemon, …) on long-uptime hosts where
+# PIDs have wrapped. That false-positive silently disables the watcher
+# indefinitely. Verify the PID's command actually looks like our watcher
+# before treating it as a live previous run. flock would be cleaner but is
+# not present on macOS by default; a `ps`-based check is portable across
+# macOS/Linux/busybox.
+if [ -f "$PIDFILE" ]; then
+  OLD_PID=$(cat "$PIDFILE" 2>/dev/null)
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    if ps -o command= -p "$OLD_PID" 2>/dev/null | grep -q "pr-merge-watcher"; then
+      # concurrency-matrix #5: log the skip so cron logs surface long-running
+      # iterations rather than silently dropping every overlapping tick.
+      echo "[$(date -u +%FT%TZ)] watcher: previous run (pid $OLD_PID) still active — skipping this tick" >&2
+      exit 0
+    fi
+    # PID is live but belongs to an unrelated process — recycled PID. Log it
+    # so operators can spot pathological wrap scenarios, then fall through
+    # and overwrite the stale PIDFILE.
+    echo "[$(date -u +%FT%TZ)] watcher: PIDFILE pid $OLD_PID is an unrelated process; treating as stale and overwriting" >&2
+  fi
 fi
 echo $$ > "$PIDFILE"
 trap 'rm -f "$PIDFILE"' EXIT
