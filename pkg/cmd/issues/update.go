@@ -111,11 +111,34 @@ func updateIssue(ctx context.Context, store dolt.Store, params UpdateParams) (Up
 	}
 
 	// Guard: archived/tombstone issues are read-only.
-	// Exception: status changes are allowed so users can un-archive via --status open.
+	// Exception: archived → open is the un-archive path. Tombstone is terminal —
+	// no transitions allowed (drop is irreversible).
+	// Any other write — non-status fields, or status moves to closed/blocked/
+	// in_progress — is rejected with ISSUE_READ_ONLY pointing the operator at
+	// the un-archive path. (grava-08ea: previously, an archived issue could be
+	// flipped to any status because the guard only checked "is status the only
+	// changed field" without inspecting the target value.)
 	if cur.status == "archived" || cur.status == "tombstone" {
-		if !changedSet["status"] || len(nonStatusFieldsIn(params.ChangedFields)) > 0 {
+		nonStatus := nonStatusFieldsIn(params.ChangedFields)
+		readOnly := false
+		switch {
+		case len(nonStatus) > 0:
+			// Any non-status field write on an archive is rejected.
+			readOnly = true
+		case !changedSet["status"]:
+			// No fields changed at all (defensive — reached only with empty input).
+			readOnly = true
+		case cur.status == "tombstone":
+			// Tombstone is terminal; no status transitions permitted.
+			readOnly = true
+		case params.Status != "open":
+			// Archived issues may only un-archive (target=open). Closed,
+			// blocked, in_progress are all rejected here.
+			readOnly = true
+		}
+		if readOnly {
 			return UpdateResult{}, gravaerrors.New("ISSUE_READ_ONLY",
-				fmt.Sprintf("cannot modify issue %s: status is %s", params.ID, cur.status), nil)
+				fmt.Sprintf("cannot modify issue %s: status is %s; un-archive via 'grava update %s --status open' first", params.ID, cur.status, params.ID), nil)
 		}
 	}
 

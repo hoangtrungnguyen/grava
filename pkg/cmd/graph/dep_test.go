@@ -19,7 +19,8 @@ import (
 var (
 	qDepLoadIssues = regexp.QuoteMeta("SELECT id, title, issue_type, status, priority, created_at, updated_at, await_type, await_id, ephemeral, metadata FROM issues WHERE status != 'tombstone'")
 	qDepLoadDeps   = regexp.QuoteMeta("SELECT from_id, to_id, type, metadata FROM dependencies")
-	qDepLockIssues = regexp.QuoteMeta("SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE")
+	qDepLockIssues             = regexp.QuoteMeta("SELECT id, status FROM issues WHERE id IN (?, ?) FOR UPDATE")
+	qDepLockIssuesIDOnly       = regexp.QuoteMeta("SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE") // legacy — removeDependency still uses id-only
 	qDepInsert     = regexp.QuoteMeta("INSERT INTO dependencies")
 	qDepDelete     = regexp.QuoteMeta("DELETE FROM dependencies WHERE from_id = ? AND to_id = ? AND type = ?")
 	qDepEvent      = regexp.QuoteMeta("INSERT INTO events (issue_id, event_type, actor, old_value, new_value, created_by, updated_by, agent_model, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -87,7 +88,9 @@ func TestAddDependency_HappyPath(t *testing.T) {
 	// WithAuditedTx
 	mock.ExpectBegin()
 	mock.ExpectQuery(qDepLockIssues).WithArgs("ISSUE-1", "ISSUE-2").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ISSUE-1").AddRow("ISSUE-2"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).
+			AddRow("ISSUE-1", "open").
+			AddRow("ISSUE-2", "open"))
 	mock.ExpectExec(qDepInsert).
 		WithArgs("ISSUE-1", "ISSUE-2", "blocks", "test-actor", "test-actor", "test-model").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -120,7 +123,9 @@ func TestAddDependency_HappyPath_JSON(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows(depCols()))
 	mock.ExpectBegin()
 	mock.ExpectQuery(qDepLockIssues).WithArgs("ISSUE-1", "ISSUE-2").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ISSUE-1").AddRow("ISSUE-2"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).
+			AddRow("ISSUE-1", "open").
+			AddRow("ISSUE-2", "open"))
 	mock.ExpectExec(qDepInsert).
 		WithArgs("ISSUE-1", "ISSUE-2", "blocks", "test-actor", "test-actor", "test-model").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -161,7 +166,7 @@ func TestAddDependency_NodeNotFound(t *testing.T) {
 	// Transaction starts, lock query returns only ISSUE-1 (ISSUE-MISSING absent)
 	mock.ExpectBegin()
 	mock.ExpectQuery(qDepLockIssues).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ISSUE-1"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow("ISSUE-1", "open"))
 	mock.ExpectRollback()
 
 	err = addDependency(cmd, d, "ISSUE-1", "ISSUE-MISSING")
@@ -193,7 +198,9 @@ func TestAddDependency_CircularDependency(t *testing.T) {
 	// Transaction: lock both, then cycle check fails
 	mock.ExpectBegin()
 	mock.ExpectQuery(qDepLockIssues).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ISSUE-1").AddRow("ISSUE-2"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).
+			AddRow("ISSUE-1", "open").
+			AddRow("ISSUE-2", "open"))
 	mock.ExpectRollback()
 
 	// Try to add ISSUE-1 → ISSUE-2 (would create cycle: 1→2→1)
@@ -214,7 +221,7 @@ func TestRemoveDependency_Flag(t *testing.T) {
 	cmd, buf := newDepTestCmd(d)
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(qDepLockIssues).WithArgs("ISSUE-1", "ISSUE-2").
+	mock.ExpectQuery(qDepLockIssuesIDOnly).WithArgs("ISSUE-1", "ISSUE-2").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ISSUE-1").AddRow("ISSUE-2"))
 	mock.ExpectExec(qDepDelete).WithArgs("ISSUE-1", "ISSUE-2", "blocks").
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -240,7 +247,7 @@ func TestRemoveDependency_NotFound(t *testing.T) {
 	cmd, buf := newDepTestCmd(d)
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(qDepLockIssues).WithArgs("ISSUE-1", "ISSUE-2").
+	mock.ExpectQuery(qDepLockIssuesIDOnly).WithArgs("ISSUE-1", "ISSUE-2").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("ISSUE-1").AddRow("ISSUE-2"))
 	mock.ExpectExec(qDepDelete).WithArgs("ISSUE-1", "ISSUE-2", "blocks").
 		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
