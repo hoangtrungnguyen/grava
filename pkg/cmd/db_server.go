@@ -53,15 +53,51 @@ var killPidFn = func(pid string) error {
 	return exec.Command("kill", "-TERM", pid).Run()
 }
 
+// staleClaimTTLSQL is the SQL fragment that defines "fresh" for an
+// in_progress claim, in MySQL/Dolt syntax. It mirrors the 1-hour TTL
+// hard-coded in pkg/cmd/issues/claim.go (see `time.Since(heartbeat.Time)
+// > 1*time.Hour`) and the stale-detection query in pkg/cmd/graph/graph.go.
+//
+// Keeping it as a fragment (rather than a Go time.Duration constant) lets
+// the same source-of-truth string flow into both the live query below and
+// the SQL-level test in db_server_test.go. If you change the TTL here,
+// update claim.go's time.Since check and graph.go's matching SQL in lock
+// step — there is no automated cross-file enforcement of these three.
+const staleClaimTTLSQL = "DATE_SUB(NOW(), INTERVAL 1 HOUR)"
+
+// inFlightCountQuery is the exact SQL inFlightCountFn issues. Pulled out
+// as a named constant so tests can pin the contract without duplicating
+// the string literal (which would silently drift on refactor).
+//
+// The COALESCE(wisp_heartbeat_at, updated_at) clause matches the
+// stale-in-progress count in graph.go: a freshly-claimed row whose first
+// orchestrator_heartbeat wisp hasn't been written yet falls back to
+// updated_at (set to NOW() by claimIssue), so it stays inside the 1h
+// window and still blocks db-stop. False-positive blocks are preferable
+// to false-negative unblocks — losing a fresh /ship run mid-bootstrap is
+// strictly worse than waiting an hour for the TTL.
+var inFlightCountQuery = "SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'in_progress' AND COALESCE(wisp_heartbeat_at, updated_at) > " + staleClaimTTLSQL
+
 // inFlightCountFn returns the number of non-ephemeral issues currently
-// status=in_progress. Used by db-stop to refuse teardown while /ship runs
-// are mid-flight. Returns (count, true) on success, (0, false) when the
-// DB is unreachable (best-effort: if Dolt is already down, the check is
-// skipped because there's nothing to corrupt).
+// status=in_progress whose last heartbeat (or updated_at fallback) lies
+// inside the 1h staleness window. Used by db-stop to refuse teardown
+// while /ship runs are actively mid-flight. Returns (count, true) on
+// success, (0, false) when the DB is unreachable (best-effort: if Dolt
+// is already down, the check is skipped because there's nothing to
+// corrupt).
+//
+// grava-ad3b: previously this counted every status=in_progress row,
+// including rows abandoned by crashed agents. claimIssue itself ignores
+// stale claims past the 1h heartbeat TTL (claim.go), so the operator
+// could not even reclaim the issue cleanly while db-stop refused to let
+// the server be restarted. The COALESCE filter mirrors claimIssue's
+// staleness contract so the two stay in sync: if claim would treat a row
+// as reclaimable-stale, db-stop's guard treats it as no-longer-blocking.
 //
 // Defined as a function variable so tests can simulate "claim happened
 // between the early check and the kill" (TOCTOU window) by returning
-// different counts on successive calls.
+// different counts on successive calls — the SQL-level test in
+// db_server_test.go separately pins the actual query string.
 var inFlightCountFn = func() (int, bool) {
 	store, err := connectDBFn()
 	if err != nil {
@@ -69,9 +105,7 @@ var inFlightCountFn = func() (int, bool) {
 	}
 	defer store.Close() //nolint:errcheck
 	var n int
-	row := store.QueryRow(
-		"SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'in_progress'",
-	)
+	row := store.QueryRow(inFlightCountQuery)
 	if scanErr := row.Scan(&n); scanErr != nil {
 		return 0, false
 	}
