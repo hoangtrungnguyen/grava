@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/hoangtrungnguyen/grava/pkg/dolt"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -336,4 +339,120 @@ func TestDBStop_NoPIDs(t *testing.T) {
 	assert.Empty(t, killed)
 	assert.True(t, strings.Contains(buf.String(), "No process found"),
 		"should print the no-process message")
+}
+
+// --- inFlightCountFn SQL filter tests (grava-ad3b) ---
+//
+// These tests pin the SQL the live inFlightCountFn issues against the
+// database. They verify the heartbeat-freshness filter is part of the
+// query so that crashed agents (status=in_progress with stale heartbeat)
+// no longer block db-stop. The earlier withStubs-based tests stub the
+// function variable wholesale and therefore can't observe the SQL — that's
+// why we go through connectDBFn here, the same pattern used in
+// sync_status_test.go.
+//
+// The SQL must mirror the stale-detection semantics in claim.go (1h TTL)
+// and the existing graph.go stale-in_progress count. Both use
+// COALESCE(wisp_heartbeat_at, updated_at) so a row with NULL heartbeat
+// (newly claimed, no wisp written yet) falls back to updated_at — which
+// is set to NOW() by the claim — keeping the conservative behavior of
+// blocking db-stop while a fresh claim hasn't yet emitted its first
+// heartbeat.
+
+// expectedInFlightSQL is the exact statement inFlightCountFn must
+// execute, written out in full (not bound to inFlightCountQuery) so this
+// test acts as an independent contract pin: a refactor that silently
+// changes the live SQL — e.g. dropping the ephemeral=0 filter or swapping
+// the COALESCE order — is caught here, not just in code review. Update
+// this literal in lock step with db_server.go *and* claim.go's 1h TTL
+// (see comment on staleClaimTTLSQL).
+const expectedInFlightSQL = `SELECT COUNT(*) FROM issues WHERE ephemeral = 0 AND status = 'in_progress' AND COALESCE(wisp_heartbeat_at, updated_at) > DATE_SUB(NOW(), INTERVAL 1 HOUR)`
+
+// withSQLMockedInflight points connectDBFn at a sqlmock-backed Store and
+// restores it on cleanup. Returns the mock so the caller can program
+// expected queries / responses.
+func withSQLMockedInflight(t *testing.T) sqlmock.Sqlmock {
+	t.Helper()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() }) //nolint:errcheck
+
+	orig := connectDBFn
+	connectDBFn = func() (dolt.Store, error) { return dolt.NewClientFromDB(db), nil }
+	t.Cleanup(func() { connectDBFn = orig })
+	return mock
+}
+
+// TestInFlightCount_StaleClaimDoesNotBlock asserts the freshness filter
+// applies: when the only in_progress row has a heartbeat older than 1h,
+// the SQL filter excludes it and inFlightCountFn returns 0. db-stop will
+// then proceed without --force, which is the whole point of grava-ad3b.
+func TestInFlightCount_StaleClaimDoesNotBlock(t *testing.T) {
+	mock := withSQLMockedInflight(t)
+
+	// Mock returns 0: the SQL filter excluded the stale row.
+	// The SQL itself does the time math via DATE_SUB(NOW(), INTERVAL 1 HOUR);
+	// we can't fake "now" inside sqlmock so we trust the SQL filter and
+	// just observe what the query returns. The query string assertion is
+	// the load-bearing check.
+	mock.ExpectQuery(regexp.QuoteMeta(expectedInFlightSQL)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	n, ok := inFlightCountFn()
+	require.True(t, ok, "ok=true expected when DB query succeeds")
+	assert.Equal(t, 0, n, "stale in_progress rows must be excluded by the SQL filter")
+	assert.NoError(t, mock.ExpectationsWereMet(),
+		"inFlightCountFn must execute the heartbeat-filtered SQL exactly")
+}
+
+// TestInFlightCount_FreshClaimBlocks: an active /ship run keeps wisp
+// heartbeats fresh, so the SQL filter includes that row and the count is
+// non-zero. db-stop then refuses (without --force).
+func TestInFlightCount_FreshClaimBlocks(t *testing.T) {
+	mock := withSQLMockedInflight(t)
+
+	mock.ExpectQuery(regexp.QuoteMeta(expectedInFlightSQL)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	n, ok := inFlightCountFn()
+	require.True(t, ok)
+	assert.Equal(t, 1, n, "fresh in_progress claim must be counted, blocking db-stop")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestInFlightCount_NullHeartbeatBlocks pins the conservative semantics
+// for newly-claimed issues that haven't yet written their first
+// orchestrator_heartbeat wisp. claim.go sets updated_at=NOW(), so the
+// COALESCE branch falls through to updated_at and the row is still inside
+// the 1h window. The mock simulates that "row matches the filter" outcome
+// (count=1). False-positive blocks are preferable to false-negative
+// unblocks here — losing a freshly-claimed run mid-bootstrap is worse
+// than waiting an hour to db-stop.
+func TestInFlightCount_NullHeartbeatBlocks(t *testing.T) {
+	mock := withSQLMockedInflight(t)
+
+	mock.ExpectQuery(regexp.QuoteMeta(expectedInFlightSQL)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	n, ok := inFlightCountFn()
+	require.True(t, ok)
+	assert.Equal(t, 1, n,
+		"row with NULL heartbeat but recent updated_at must still be counted "+
+			"(COALESCE fallback keeps the conservative behavior)")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestInFlightCount_DBUnreachable preserves the best-effort contract:
+// when the DB is down (connectDBFn errors), inFlightCountFn returns
+// (0,false) and the caller skips the guard. This test guards against a
+// regression where the SQL filter rewrite accidentally changes the
+// failure-mode return tuple.
+func TestInFlightCount_DBUnreachable(t *testing.T) {
+	orig := connectDBFn
+	connectDBFn = func() (dolt.Store, error) { return nil, assert.AnError }
+	t.Cleanup(func() { connectDBFn = orig })
+
+	n, ok := inFlightCountFn()
+	assert.False(t, ok, "ok=false when DB unreachable, so guard is skipped")
+	assert.Equal(t, 0, n)
 }
