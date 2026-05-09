@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -129,6 +130,45 @@ func TestShowCmd(t *testing.T) {
 	assert.Contains(t, output, "Title:       My Issue")
 	assert.Contains(t, output, "Type:        bug")
 	assert.Contains(t, output, "Priority:    high (1)")
+}
+
+// TestShowCmd_NonexistentIDReturnsFriendlyError is the regression guard for
+// grava-7aef: `grava show <missing>` previously surfaced the raw
+// `sql: no rows in result set` error. It must now wrap the miss into the same
+// ISSUE_NOT_FOUND GravaError that `grava update` uses, with a "Issue X not
+// found" message — no raw SQL leakage.
+func TestShowCmd_NonexistentIDReturnsFriendlyError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+
+	Store = dolt.NewClientFromDB(db)
+
+	// The first SELECT returns sql.ErrNoRows for the missing id.
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT title, description, issue_type, priority, status, created_at, updated_at, created_by, updated_by, agent_model, affected_files, COALESCE(assignee, ''), COALESCE(metadata, '{}')") + `\s+` + regexp.QuoteMeta("FROM issues WHERE id = ?")).
+		WithArgs("grava-NONEXIST").
+		WillReturnError(sql.ErrNoRows)
+
+	output, err := executeCommand(rootCmd, "show", "grava-NONEXIST")
+
+	// Must error and the error must be the friendly ISSUE_NOT_FOUND GravaError.
+	require.Error(t, err)
+	var gravaErr *gravaerrors.GravaError
+	require.True(t, errors.As(err, &gravaErr),
+		"expected *gravaerrors.GravaError, got %T: %v", err, err)
+	assert.Equal(t, "ISSUE_NOT_FOUND", gravaErr.Code,
+		"show must use ISSUE_NOT_FOUND code (matching update.go pattern)")
+	assert.Contains(t, gravaErr.Message, "grava-NONEXIST",
+		"error message should reference the missing id")
+	assert.Contains(t, strings.ToLower(gravaErr.Message), "not found",
+		"error message should be the user-friendly 'not found' form")
+
+	// Negative regression: must not leak raw sql.ErrNoRows text into the message.
+	assert.NotContains(t, gravaErr.Message, "sql: no rows",
+		"raw SQL error must not leak through to the user")
+	assert.NotContains(t, output, "sql: no rows",
+		"raw SQL error must not leak to stdout/stderr either")
+
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestCreateEphemeralCmd(t *testing.T) {
