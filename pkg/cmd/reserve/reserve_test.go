@@ -187,6 +187,89 @@ func TestDeclareReservation_MissingPathPattern(t *testing.T) {
 	assert.Equal(t, "MISSING_REQUIRED_FIELD", gerr.Code)
 }
 
+// TestDeclareReservation_RejectsTTLZero is a regression for grava-399b: passing
+// TTLMinutes=0 must be rejected with INVALID_TTL rather than silently falling
+// back to the 30-minute default. No DB interaction should occur — validation
+// happens before BeginTx.
+func TestDeclareReservation_RejectsTTLZero(t *testing.T) {
+	store, mock := newMock(t)
+
+	p := DeclareParams{
+		PathPattern: "src/cmd/issues/*.go",
+		AgentID:     "agent-01",
+		ProjectID:   "default",
+		Exclusive:   true,
+		TTLMinutes:  0,
+	}
+	_, err := DeclareReservation(context.Background(), store, p)
+
+	require.Error(t, err, "TTL=0 must be rejected, not silently defaulted")
+	var gerr *gravaerrors.GravaError
+	require.ErrorAs(t, err, &gerr)
+	assert.Equal(t, "INVALID_TTL", gerr.Code)
+	assert.Contains(t, gerr.Message, "TTL", "error message should mention TTL")
+	// No DB calls should have been made — guard against a regression where the
+	// validation moves below BeginTx and we waste a transaction on bad input.
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDeclareReservation_RejectsTTLNegative is a regression for grava-399b:
+// negative TTLMinutes must also be rejected (defensive against integer
+// over/underflow paths from flag parsing).
+func TestDeclareReservation_RejectsTTLNegative(t *testing.T) {
+	store, mock := newMock(t)
+
+	p := DeclareParams{
+		PathPattern: "src/cmd/issues/*.go",
+		AgentID:     "agent-01",
+		ProjectID:   "default",
+		Exclusive:   true,
+		TTLMinutes:  -5,
+	}
+	_, err := DeclareReservation(context.Background(), store, p)
+
+	require.Error(t, err)
+	var gerr *gravaerrors.GravaError
+	require.ErrorAs(t, err, &gerr)
+	assert.Equal(t, "INVALID_TTL", gerr.Code)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDeclareReservation_PositiveTTLAccepted is a regression for grava-399b:
+// after the TTL<=0 rejection guard, valid positive TTL values must continue to
+// reach the INSERT path. Pairs with TestDeclareReservation_RejectsTTLZero to
+// ensure the validation is strictly `<= 0`, not over-broad.
+func TestDeclareReservation_PositiveTTLAccepted(t *testing.T) {
+	store, mock := newMock(t)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(qCheckConflict).
+		WithArgs("default", "agent-01").
+		WillReturnRows(sqlmock.NewRows([]string{"agent_id", "path_pattern", "expires_ts"}))
+	mock.ExpectExec(qInsertReservation).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	future := time.Now().Add(5 * time.Minute)
+	mock.ExpectQuery(qGetReservation).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "project_id", "agent_id", "path_pattern", "exclusive", "reason",
+			"created_ts", "expires_ts", "released_ts",
+		}).AddRow("res-mock", "default", "agent-01", "src/cmd/issues/*.go", true, "", time.Now(), future, nil))
+
+	p := DeclareParams{
+		PathPattern: "src/cmd/issues/*.go",
+		AgentID:     "agent-01",
+		ProjectID:   "default",
+		Exclusive:   true,
+		TTLMinutes:  5,
+	}
+	result, err := DeclareReservation(context.Background(), store, p)
+
+	require.NoError(t, err)
+	assert.Equal(t, "src/cmd/issues/*.go", result.Reservation.PathPattern)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 // TestListReservations_ReturnsActiveOnly verifies that ListReservations only
 // returns non-expired, non-released rows.
 func TestListReservations_ReturnsActiveOnly(t *testing.T) {
