@@ -383,3 +383,123 @@ func TestShowBlockers_OpenBlockersStillReported(t *testing.T) {
 	assert.Equal(t, "open", result[0].Status)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// --- grava-9fda: validate dependency type against the documented set ---
+
+// TestDepCmd_RejectsInvalidType verifies grava-9fda AC#1: passing --type with a
+// value outside the allowed set fails fast with an error before any DB work.
+// The error message must list the documented valid types so the operator knows
+// what to use instead.
+func TestDepCmd_RejectsInvalidType(t *testing.T) {
+	resetFlags()
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close() //nolint:errcheck
+
+	d := newDepDeps(dolt.NewClientFromDB(db), false)
+	cmd, _ := newDepTestCmd(d)
+	cmd.SetContext(context.Background())
+
+	// Set depType AFTER newDepCmd: cobra's PersistentFlags().StringVar registers
+	// the flag with default "blocks" and writes that default into &depType,
+	// clobbering anything we set before construction. Simulate `--type bogus`
+	// by overriding here.
+	depType = "bogus"
+
+	// Validation must reject before any DB query — no mock expectations.
+	err = addDependency(cmd, d, "ISSUE-1", "ISSUE-2")
+	require.Error(t, err)
+	msg := err.Error()
+	assert.Contains(t, msg, "invalid dependency type")
+	assert.Contains(t, msg, "bogus", "error must echo the offending value")
+	// AC#2: error lists each documented valid type so the operator can recover.
+	for _, validType := range []string{"blocks", "relates-to", "duplicates", "parent-child", "subtask-of"} {
+		assert.Contains(t, msg, validType, "error must list valid type %q", validType)
+	}
+	// No DB calls should have happened.
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDepCmd_AcceptsAllValidTypes is table-driven over the five documented
+// valid types from the help text. Blocking types ("blocks", "blocked-by") run
+// LoadGraphFromDB for cycle detection; non-blocking types skip that path and
+// go straight into the audited transaction.
+func TestDepCmd_AcceptsAllValidTypes(t *testing.T) {
+	cases := []struct {
+		name     string
+		depType  string
+		blocking bool
+	}{
+		{"blocks", "blocks", true},
+		{"relates-to", "relates-to", false},
+		{"duplicates", "duplicates", false},
+		{"parent-child", "parent-child", false},
+		{"subtask-of", "subtask-of", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetFlags()
+
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer db.Close() //nolint:errcheck
+
+			d := newDepDeps(dolt.NewClientFromDB(db), false)
+			cmd, buf := newDepTestCmd(d)
+			cmd.SetContext(context.Background())
+
+			// IMPORTANT: set depType AFTER newDepCmd. cobra's
+			// PersistentFlags().StringVar writes the default "blocks" into
+			// &depType during command construction, overriding any value
+			// set earlier in the test setup.
+			depType = tc.depType
+
+			// Blocking types load the graph for cycle detection first.
+			if tc.blocking {
+				mock.ExpectQuery(qDepLoadIssues).
+					WillReturnRows(sqlmock.NewRows(issueCols()).
+						AddRow("ISSUE-1", "Task 1", "task", "open", 1, time.Now(), time.Now(), nil, nil, 0, nil).
+						AddRow("ISSUE-2", "Task 2", "task", "open", 2, time.Now(), time.Now(), nil, nil, 0, nil))
+				mock.ExpectQuery(qDepLoadDeps).
+					WillReturnRows(sqlmock.NewRows(depCols()))
+			}
+
+			// Audited transaction: lock, insert, audit-log event, commit.
+			mock.ExpectBegin()
+			mock.ExpectQuery(qDepLockIssues).WithArgs("ISSUE-1", "ISSUE-2").
+				WillReturnRows(sqlmock.NewRows([]string{"id"}).
+					AddRow("ISSUE-1").AddRow("ISSUE-2"))
+			mock.ExpectExec(qDepInsert).
+				WithArgs("ISSUE-1", "ISSUE-2", tc.depType, "test-actor", "test-actor", "test-model").
+				WillReturnResult(sqlmock.NewResult(1, 1))
+			mock.ExpectExec(qDepEvent).
+				WillReturnResult(sqlmock.NewResult(1, 1))
+			mock.ExpectCommit()
+
+			err = addDependency(cmd, d, "ISSUE-1", "ISSUE-2")
+			require.NoError(t, err, "valid type %q must be accepted", tc.depType)
+			assert.Contains(t, buf.String(), tc.depType,
+				"output must reference the dep type %q", tc.depType)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// TestDepCmd_DefaultTypeBlocks verifies that omitting --type defaults to
+// "blocks" — the same default the help text advertises. This guards against a
+// regression where the flag default drifts away from the documented value.
+func TestDepCmd_DefaultTypeBlocks(t *testing.T) {
+	resetFlags() // sets depType = "blocks"
+
+	d := newDepDeps(nil, false)
+	cmd := newDepCmd(d)
+
+	flag := cmd.PersistentFlags().Lookup("type")
+	require.NotNil(t, flag, "--type flag must exist on dep command")
+	assert.Equal(t, "blocks", flag.DefValue,
+		"--type default must be \"blocks\" to match documented behavior")
+	assert.Equal(t, "blocks", depType,
+		"resetFlags()/no --type must leave depType == \"blocks\"")
+}
