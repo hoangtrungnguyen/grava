@@ -82,7 +82,7 @@ func updateIssue(ctx context.Context, store dolt.Store, params UpdateParams) (Up
 	if changedSet["status"] {
 		if err := validation.ValidateStatus(params.Status); err != nil {
 			return UpdateResult{}, gravaerrors.New("INVALID_STATUS",
-				fmt.Sprintf("invalid status: '%s'. Allowed: open, in_progress, closed, blocked", params.Status), err)
+				fmt.Sprintf("invalid status: '%s'. Allowed: open, in_progress, closed, blocked, archived", params.Status), err)
 		}
 	}
 
@@ -142,15 +142,36 @@ func updateIssue(ctx context.Context, store dolt.Store, params UpdateParams) (Up
 		}
 	}
 
-	// Guard: update --status must follow valid transitions.
+	// Guard: update --status must follow valid transitions (grava-ce52).
+	//
+	// Hard rejections (target-status):
+	//   - in_progress  : must go through 'grava start' / 'grava claim' (claim record + worktree)
+	//   - tombstone    : must go through 'grava drop' (audit + cascade)
+	//   - archived     : must go through 'grava archive' / 'grava drop --archive'
+	//
+	// Source-status restrictions:
+	//   - closed → {in_progress, blocked} : closed must re-open (--status open) before transitioning
+	//                                        (in_progress already caught by blanket gate above)
+	//
+	// Archived/tombstone source is already handled by the read-only guard above
+	// (grava-08ea), which permits only --status=open as the un-archive bypass.
 	if changedSet["status"] {
 		if params.Status == "in_progress" {
 			return UpdateResult{}, gravaerrors.New("INVALID_STATUS_TRANSITION",
-				fmt.Sprintf("cannot set status to in_progress via update; use 'grava start' or 'grava claim'"), nil)
+				"cannot set status to in_progress via update; use 'grava start' or 'grava claim'", nil)
 		}
 		if params.Status == "tombstone" {
 			return UpdateResult{}, gravaerrors.New("INVALID_STATUS_TRANSITION",
 				"cannot set status to tombstone via update; use 'grava drop'", nil)
+		}
+		if params.Status == "archived" {
+			return UpdateResult{}, gravaerrors.New("INVALID_STATUS_TRANSITION",
+				"cannot set status to archived via update; use 'grava archive' or 'grava drop --archive'", nil)
+		}
+		// Closed must re-open before any other transition.
+		if cur.status == "closed" && params.Status != "open" && params.Status != "closed" {
+			return UpdateResult{}, gravaerrors.New("INVALID_STATUS_TRANSITION",
+				fmt.Sprintf("cannot transition closed issue to %q via update; re-open first with --status open", params.Status), nil)
 		}
 	}
 
