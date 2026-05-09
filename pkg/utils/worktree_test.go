@@ -632,6 +632,156 @@ func TestIsWorktreeDirty(t *testing.T) {
 	}
 }
 
+// TestIsWorktreeDirty_StagedAdd verifies grava-bf3e regression coverage:
+// staging a brand-new file (porcelain "A ") must be reported as dirty —
+// the untracked-only filter (?? ) must NOT swallow staged additions.
+func TestIsWorktreeDirty_StagedAdd(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	if err := runCmd(tmpdir, "git", "init"); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.email", "t@t.com"); err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.name", "T"); err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpdir, "seed.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "add", "seed.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "commit", "-m", "init"); err != nil {
+		t.Fatal(err)
+	}
+
+	issueID := "grava-staged-add"
+	if err := ProvisionWorktree(tmpdir, issueID); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	wtDir := filepath.Join(tmpdir, ".worktree", issueID)
+
+	// Add a new file and stage it — porcelain emits "A  newfile.txt".
+	if err := os.WriteFile(filepath.Join(wtDir, "newfile.txt"), []byte("z"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(wtDir, "git", "add", "newfile.txt"); err != nil {
+		t.Fatalf("git add: %v", err)
+	}
+
+	dirty, err := IsWorktreeDirty(tmpdir, issueID)
+	if err != nil {
+		t.Fatalf("IsWorktreeDirty (staged add): %v", err)
+	}
+	if !dirty {
+		t.Error("expected dirty worktree (staged addition must block close)")
+	}
+}
+
+// TestIsWorktreeDirty_DeletedTracked verifies grava-bf3e regression coverage:
+// removing a tracked file (porcelain " D") must be reported as dirty.
+func TestIsWorktreeDirty_DeletedTracked(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	if err := runCmd(tmpdir, "git", "init"); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.email", "t@t.com"); err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.name", "T"); err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpdir, "doomed.txt"), []byte("bye"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "add", "doomed.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "commit", "-m", "init"); err != nil {
+		t.Fatal(err)
+	}
+
+	issueID := "grava-deleted-tracked"
+	if err := ProvisionWorktree(tmpdir, issueID); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	wtDir := filepath.Join(tmpdir, ".worktree", issueID)
+
+	// Delete the tracked file from the worktree (no `git rm`, just unlink).
+	// Porcelain emits " D doomed.txt" (leading space, then D).
+	if err := os.Remove(filepath.Join(wtDir, "doomed.txt")); err != nil {
+		t.Fatalf("remove tracked file: %v", err)
+	}
+
+	dirty, err := IsWorktreeDirty(tmpdir, issueID)
+	if err != nil {
+		t.Fatalf("IsWorktreeDirty (deleted tracked): %v", err)
+	}
+	if !dirty {
+		t.Error("expected dirty worktree (deleted tracked file must block close)")
+	}
+}
+
+// TestIsWorktreeDirty_UntrackedAndStagedMixed verifies that the untracked filter
+// does not swallow real changes when both untracked AND staged files exist.
+// Pre-fix bug: a worktree with only untracked files was incorrectly flagged dirty.
+// Post-fix: untracked alone is clean; mixing untracked + staged must still be dirty.
+func TestIsWorktreeDirty_UntrackedAndStagedMixed(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	if err := runCmd(tmpdir, "git", "init"); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.email", "t@t.com"); err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+	if err := runCmd(tmpdir, "git", "config", "user.name", "T"); err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpdir, "seed.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "add", "seed.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(tmpdir, "git", "commit", "-m", "init"); err != nil {
+		t.Fatal(err)
+	}
+
+	issueID := "grava-mixed-state"
+	if err := ProvisionWorktree(tmpdir, issueID); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	wtDir := filepath.Join(tmpdir, ".worktree", issueID)
+
+	// Untracked file (simulates .claude/ provisioning artifact).
+	if err := os.MkdirAll(filepath.Join(wtDir, ".claude"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtDir, ".claude", "config.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Plus a staged add — must still be dirty.
+	if err := os.WriteFile(filepath.Join(wtDir, "real.go"), []byte("package x\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(wtDir, "git", "add", "real.go"); err != nil {
+		t.Fatalf("git add: %v", err)
+	}
+
+	dirty, err := IsWorktreeDirty(tmpdir, issueID)
+	if err != nil {
+		t.Fatalf("IsWorktreeDirty (mixed): %v", err)
+	}
+	if !dirty {
+		t.Error("expected dirty worktree (untracked + staged add must block close)")
+	}
+}
+
 // TestRemoveWorktreeOnly verifies worktree directory removal while keeping the branch.
 func TestRemoveWorktreeOnly(t *testing.T) {
 	tmpdir := t.TempDir()
