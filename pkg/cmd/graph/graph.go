@@ -150,25 +150,35 @@ func addDependency(cmd *cobra.Command, d *cmddeps.Deps, fromID, toID string) err
 			ids := []string{fromID, toID}
 			sort.Strings(ids)
 
-			// 2. Lock issues and verify existence
-			rows, err := tx.QueryContext(cmd.Context(), `SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE`, ids[0], ids[1])
+			// 2. Lock issues and verify existence + writability.
+			// We pull status alongside id so an archived/tombstoned endpoint
+			// can be rejected here without a second round-trip (grava-08ea —
+			// archived issues must be read-only except via the un-archive
+			// path on the issues table itself).
+			rows, err := tx.QueryContext(cmd.Context(), `SELECT id, status FROM issues WHERE id IN (?, ?) FOR UPDATE`, ids[0], ids[1])
 			if err != nil {
 				return fmt.Errorf("failed to lock issues: %w", err)
 			}
-			found := make(map[string]bool)
+			statuses := make(map[string]string, 2)
 			for rows.Next() {
-				var id string
-				if err := rows.Scan(&id); err == nil {
-					found[id] = true
+				var id, status string
+				if err := rows.Scan(&id, &status); err == nil {
+					statuses[id] = status
 				}
 			}
 			rows.Close() //nolint:errcheck
 
-			if !found[fromID] {
+			if _, ok := statuses[fromID]; !ok {
 				return gravaerrors.New("NODE_NOT_FOUND", fmt.Sprintf("issue %s not found", fromID), nil)
 			}
-			if !found[toID] {
+			if _, ok := statuses[toID]; !ok {
 				return gravaerrors.New("NODE_NOT_FOUND", fmt.Sprintf("issue %s not found", toID), nil)
+			}
+			for _, endpoint := range []string{fromID, toID} {
+				if s := statuses[endpoint]; s == "archived" || s == "tombstone" {
+					return gravaerrors.New("ISSUE_READ_ONLY",
+						fmt.Sprintf("cannot modify issue %s: status is %s; un-archive via 'grava update %s --status open' first", endpoint, s, endpoint), nil)
+				}
 			}
 
 			if dt.IsBlockingType() {

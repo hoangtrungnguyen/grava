@@ -672,9 +672,11 @@ func TestDepCmd(t *testing.T) {
 
 	// WithAuditedTx
 	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, status FROM issues WHERE id IN (?, ?) FOR UPDATE")).
 		WithArgs("grava-abc", "grava-def").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc").AddRow("grava-def"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).
+			AddRow("grava-abc", "open").
+			AddRow("grava-def", "open"))
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
 		WithArgs("grava-abc", "grava-def", "blocks", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -704,9 +706,11 @@ func TestDepCmdCustomType(t *testing.T) {
 
 	// WithAuditedTx
 	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM issues WHERE id IN (?, ?) FOR UPDATE")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, status FROM issues WHERE id IN (?, ?) FOR UPDATE")).
 		WithArgs("grava-abc", "grava-def").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("grava-abc").AddRow("grava-def"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).
+			AddRow("grava-abc", "open").
+			AddRow("grava-def", "open"))
 	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO dependencies (from_id, to_id, type, created_by, updated_by, agent_model) VALUES (?, ?, ?, ?, ?, ?)`)).
 		WithArgs("grava-abc", "grava-def", "relates-to", "unknown", "unknown", "").
 		WillReturnResult(sqlmock.NewResult(1, 1))
