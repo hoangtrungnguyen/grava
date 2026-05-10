@@ -21,6 +21,7 @@ Per-package documentation in [`detail-impl/`](./detail-impl/index.md):
 
 ### Guides
 Operational and integration guides in [`guides/`](./guides):
+- [`INSTALL_AGENT_TEAM.md`](./guides/INSTALL_AGENT_TEAM.md) — **first-time setup**: prerequisites, Dolt, hooks, cron, agent-bot, smoke test
 - [`AGENT_TEAM.md`](./guides/AGENT_TEAM.md) — **multi-agent pipeline (`/ship`, `/plan`, `/hunt`)**: phases, signals, wisps, recovery
 - [`AGENT_WORKFLOWS.md`](./guides/AGENT_WORKFLOWS.md) — single-agent workflows (`/are-u-ready`, `/landing-the-plane`)
 - [`CLI_REFERENCE.md`](./guides/CLI_REFERENCE.md) — full command reference
