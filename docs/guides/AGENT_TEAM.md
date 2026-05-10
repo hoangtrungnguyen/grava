@@ -22,6 +22,8 @@ Three entry-point skills:
 
 ---
 
+> **First time?** Read [INSTALL_AGENT_TEAM.md](INSTALL_AGENT_TEAM.md) — covers prerequisites, Dolt setup, hooks, cron, agent-bot, smoke test, and troubleshooting. The summary below assumes the install guide has already been run.
+
 ## Prerequisites
 
 ```bash
