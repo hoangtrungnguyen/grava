@@ -1,10 +1,19 @@
 # Installing the Agent Team
 
-End-to-end setup for the grava agent pipeline on a fresh clone.
+End-to-end setup for the grava agent pipeline.
 
 > Usage docs live in [AGENT_TEAM.md](AGENT_TEAM.md). This guide covers
-> first-time install only. Run it once per machine; once done, jump to the
+> first-time install only. Run it once per project; once done, jump to the
 > usage guide.
+
+## Two install paths
+
+| Path | Use when |
+|------|----------|
+| **A — Working on grava itself** | You cloned this repo to develop grava. Steps 1-8 below. |
+| **B — Using the agent team in your own project** | You have a separate project (foo-app, my-service, anything) and want grava + the agent pipeline working inside it. Jump to [Path B](#path-b--installing-into-your-own-project). |
+
+Both paths share the same prerequisites; the difference is whether you're cloning grava as the primary repo or layering the agent team on top of an existing project.
 
 ---
 
@@ -165,6 +174,145 @@ alias ghunt='claude -p "/hunt since-last-tag"'
 alias glist='grava list --status open'
 alias gready='grava ready --json | jq -r ".[] | \"\(.Node.ID) — \(.Node.Title)\""'
 ```
+
+---
+
+## Path B — Installing into your own project
+
+You want to use grava's agent team inside `your-project/`, not in a clone of grava itself. The agents and skills are project-scoped under `.claude/`, so they need to be copied. The grava CLI itself is global.
+
+### B.1 — Install grava CLI globally
+
+```bash
+# Same as Path A Step 1, but installed once globally instead of per-clone
+go install github.com/hoangtrungnguyen/grava/cmd/grava@latest
+grava version    # confirm ≥ 0.2.0 on PATH
+```
+
+Or download a release binary and put it on PATH.
+
+### B.2 — Init grava in your project
+
+```bash
+cd /path/to/your-project
+grava init       # creates .grava/, .worktree/, .claude/settings.json
+grava db-start
+grava doctor
+```
+
+This sets up the per-project Dolt DB. `your-project/.grava/` is gitignored by default.
+
+### B.3 — Copy agent-team assets from a grava clone
+
+You need a local clone of grava to source the assets from:
+
+```bash
+# Once, anywhere on disk
+git clone https://github.com/hoangtrungnguyen/grava.git ~/src/grava
+```
+
+Then from your project root:
+
+```bash
+GRAVA_SRC=~/src/grava
+PROJECT=$(pwd)
+
+# 1. Agents — sub-agents Claude Code spawns
+mkdir -p "$PROJECT/.claude/agents"
+cp "$GRAVA_SRC"/.claude/agents/{bug-hunter,coder,planner,pr-creator,reviewer,golang-pro}.md \
+   "$PROJECT/.claude/agents/"
+
+# 2. Skills — entry points + workflow primitives
+mkdir -p "$PROJECT/.claude/skills"
+cp -r "$GRAVA_SRC"/.claude/skills/{ship,hunt,plan,grava-bug-hunt,grava-cli,grava-claim,grava-code-review,grava-complete-dev-story,grava-dev-epic,grava-dev-task,grava-gen-issues,grava-next-issue} \
+      "$PROJECT/.claude/skills/"
+
+# 3. Pipeline scripts
+mkdir -p "$PROJECT/scripts/agent-bot" "$PROJECT/scripts/ship" "$PROJECT/scripts/hooks"
+cp "$GRAVA_SRC"/scripts/install-hooks.sh "$PROJECT/scripts/"
+cp "$GRAVA_SRC"/scripts/pr-merge-watcher.sh "$PROJECT/scripts/"
+cp "$GRAVA_SRC"/scripts/preflight-gh.sh "$PROJECT/scripts/"
+cp "$GRAVA_SRC"/scripts/agent-bot-token.sh "$PROJECT/scripts/"
+cp "$GRAVA_SRC"/scripts/setup-agent-bot.sh "$PROJECT/scripts/"
+cp "$GRAVA_SRC"/scripts/agent-bot/finalize-pr.sh "$PROJECT/scripts/agent-bot/"
+cp "$GRAVA_SRC"/scripts/ship/dep-check.sh "$PROJECT/scripts/ship/"
+chmod +x "$PROJECT"/scripts/*.sh "$PROJECT"/scripts/*/*.sh
+
+# 4. Optional — regression test suite
+cp -r "$GRAVA_SRC"/scripts/test "$PROJECT/scripts/"
+```
+
+### B.4 — Set up `CLAUDE.md` for your project
+
+Create or extend `your-project/CLAUDE.md` with the agent-team contract. Minimum required: signal protocol, wisp keys, agent map. Easiest path is to copy the relevant sections from grava's [CLAUDE.md](../../CLAUDE.md):
+
+- `## Agent Team` (skill ↔ agent map)
+- `## Pipeline Signals` (v2 protocol + preconditions)
+- `## Wisp Keys` (canonical state vocabulary)
+- `## Operator Hazards` (concurrency pitfalls)
+
+Adapt project-specific details: paths to `.grava/dolt/`, test commands, build commands.
+
+### B.5 — Install hooks + cron in your project
+
+```bash
+cd "$PROJECT"
+./scripts/install-hooks.sh
+
+# Cron (replace /path/to/your-project with absolute path)
+crontab -l | { cat; cat <<EOF
+*/5 * * * * cd /path/to/your-project && ./scripts/pr-merge-watcher.sh >> .grava/watcher.log 2>&1
+EOF
+} | crontab -
+```
+
+### B.6 — Verify
+
+```bash
+cd "$PROJECT"
+claude --list-agents | grep -E "coder|reviewer|pr-creator|planner|bug-hunter"
+claude --list-skills | grep -E "ship|hunt|plan|grava-"
+
+# Optional: run portable regression suite to confirm scripts work
+bash scripts/test/test-finalize-pr.sh
+bash scripts/test/test-watcher-pidfile.sh
+bash scripts/test/test-dep-check.sh
+```
+
+### B.7 — Smoke test — first ship in your project
+
+```bash
+cd "$PROJECT"
+grava create --type task --title "smoke test" \
+  --desc "## Acceptance Criteria
+- [ ] noop"
+
+SMOKE_ID=$(grava list --limit 1 --json | jq -r '.[0].id')
+/ship "$SMOKE_ID" --dry-run
+```
+
+If the dry-run prints wisp state without errors, the install is wired correctly.
+
+### Updating later
+
+To pull in upstream agent / skill / script changes after a grava release:
+
+```bash
+cd ~/src/grava && git pull origin main
+# Re-run B.3 to overwrite. Diff first to see what changed:
+diff -ru ~/src/grava/.claude/agents your-project/.claude/agents
+```
+
+A future `grava bootstrap --copy-agent-team` flag will automate this — for now, the manual `cp` block above is the canonical path.
+
+### What does NOT need copying
+
+| Asset | Why |
+|-------|-----|
+| `.grava/dolt/` | Per-project DB; created by `grava init` |
+| `pkg/` Go code | Built into the grava CLI binary; not project-scoped |
+| `Dockerfile`, `Makefile`, etc. | grava-internal build infra; your project keeps its own |
+| `docs/` | Reference docs live in grava itself; link to them, don't fork |
 
 ---
 
