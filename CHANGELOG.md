@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [v0.2.1] - 2026-05-10
+
+### Fixed
+
+* fix(grava-ce52): `update --status` now enforces the issue state machine (8a39328)
+* fix(grava-08ea): make archived issues read-only at write boundaries (8fbdfdc)
+* fix(grava-ad3b): `db-stop` guard filters stale `in_progress` claims (7c765d9)
+* fix(grava-431b): validate `gh` comments response is a JSON array before piping to `jq` (5af7236)
+* fix(grava-223a): `/ship` dep precondition fails open on `grava blocked` errors (ce0195f)
+* fix(grava-6015): add `GRAVA_SKIP_PREFLIGHT` bypass for CI tests (cd719ff)
+* fix(db-stop): close TOCTOU window + handle multi-PID `lsof` output (96bf301)
+* fix(watcher): verify PIDFILE owner is actually `pr-merge-watcher` (grava-24fa) (41c62cf)
+* fix(grava-fddd): enforce `PR_CREATED` signal preconditions + add `finalize-pr.sh` helper (186e5da, 877aa87)
+* fix(grava-cd50): filter closed/tombstone blockers from `grava blocked` by default (73d0eaf)
+* fix(concurrency): `/ship` dep precondition + UX improvements (matrix #11, #3, #5, #9) (64b5154)
+* fix(db-stop): refuse to stop while issues `in_progress` (concurrency-matrix #4) (b81ee14)
+* fix(watcher): `pr_last_seen_comment_id` empty-wisp fallback (sibling of grava-6ac8) (2f03018)
+
+### Tests
+
+* test(grava-399b): regression tests for `--ttl 0` `INVALID_TTL` rejection (9975eee)
+* test(grava-9fda): cover dep type validation against documented set (7a94ab7)
+* test(grava-7aef): regression test for friendly `ISSUE_NOT_FOUND` on `show` (7178ccf)
+* test(grava-f5a7): regression coverage for glob-overlap reservation conflicts (b1e0eb9)
+* test(grava-bf3e): regression coverage for staged/deleted/mixed dirty states (fead398)
+* test(claim): regression tests for grava-985d assignee/claim guard separation (0040cc4)
+* test(grava-37c8): pin `--json` regression for all graph subcommands (5d600e8)
+
+### Chores
+
+* docs(grava-fddd): document `PR_CREATED` signal preconditions (a9b2b04)
+* chore(watcher): port `pr-merge-watcher` to Python alongside bash (b149153)
+
+
 ## [v0.0.8] - 2026-04-11
 
 * feat(blocked): add per-issue blocker query to grava blocked (grava-722b.3) (713348f)
