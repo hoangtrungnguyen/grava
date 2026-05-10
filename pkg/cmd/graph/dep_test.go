@@ -468,9 +468,14 @@ func TestDepCmd_AcceptsAllValidTypes(t *testing.T) {
 
 			// Audited transaction: lock, insert, audit-log event, commit.
 			mock.ExpectBegin()
+			// addDependency now selects (id, status) so it can reject
+			// archived/tombstone endpoints (grava-08ea). Mock both columns —
+			// returning only id makes the silent Scan failure surface as a
+			// spurious NODE_NOT_FOUND.
 			mock.ExpectQuery(qDepLockIssues).WithArgs("ISSUE-1", "ISSUE-2").
-				WillReturnRows(sqlmock.NewRows([]string{"id"}).
-					AddRow("ISSUE-1").AddRow("ISSUE-2"))
+				WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).
+					AddRow("ISSUE-1", "open").
+					AddRow("ISSUE-2", "open"))
 			mock.ExpectExec(qDepInsert).
 				WithArgs("ISSUE-1", "ISSUE-2", tc.depType, "test-actor", "test-actor", "test-model").
 				WillReturnResult(sqlmock.NewResult(1, 1))
