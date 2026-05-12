@@ -377,6 +377,14 @@ else
       echo "  • Pick a different issue: /ship <other-id>"
     fi
     echo "  • Bypass the gate (only if you've verified the spec): /ship $ISSUE_ID --force"
+
+    # Persist the halt event to the issue's history so later operators (and
+    # `grava show <id>` readers) can see WHEN and WHY a /ship attempt halted.
+    # Especially useful for blocker halts: the operator running /ship on B may
+    # not have realised A was still open. Best-effort: a comment-write failure
+    # must NOT mask the halt itself (DB transient, stash-only sandbox, etc.).
+    grava comment "$ISSUE_ID" -m "/ship halted at $(date -u +%FT%TZ): $PRECOND_FAIL" >/dev/null 2>&1 || true
+
     exit 0
   fi
 fi
