@@ -200,8 +200,23 @@ PR_NUMBER=$(GH_TOKEN="$GH_TOKEN_FOR_PR" gh pr view "$FEATURE_BRANCH" --json numb
   # finalize-pr.sh prints which step failed and exits non-zero.
   # The PR is already open on GitHub, so route to the recovery path.
   ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "finalize-pr.sh failed (PR open at $PR_URL but bookkeeping incomplete)" )
+  # Best-effort Plane mirror — non-fatal.
+  python3 "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/agents/task-generator/cli/grava_plane_sync.py" \
+      "$ISSUE_ID" \
+      --project-id "${PLANE_PROJECT_ID:-8af0f117-1dd0-4bfe-8db8-ff131d865534}" \
+      --grava-repo "${GRAVA_REPO:-/Users/trungnguyenhoang/IdeaProjects/grava}" \
+      --system-yaml "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/systems/SportBuddies/system.yaml" \
+      || true
   exit 1
 }
+
+# Success path — finalize-pr.sh emitted PR_CREATED. Mirror to Plane (non-fatal).
+python3 "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/agents/task-generator/cli/grava_plane_sync.py" \
+    "$ISSUE_ID" \
+    --project-id "${PLANE_PROJECT_ID:-8af0f117-1dd0-4bfe-8db8-ff131d865534}" \
+    --grava-repo "${GRAVA_REPO:-/Users/trungnguyenhoang/IdeaProjects/grava}" \
+    --system-yaml "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/systems/SportBuddies/system.yaml" \
+    || true
 ```
 
 What `finalize-pr.sh` does, in order — atomically from the agent's view:
@@ -222,10 +237,16 @@ reads canonical state from wisps (set in step 4) — last-line parsing is
 only a fallback.
 
 On any earlier failure path (pre-flight, push, `gh pr create`) emit
-`PR_FAILED` directly:
+`PR_FAILED` directly, then mirror to Plane:
 
 ```bash
 ( cd "$REPO_ROOT" && grava signal PR_FAILED --issue "$ISSUE_ID" --payload "<one-line reason>" )
+python3 "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/agents/task-generator/cli/grava_plane_sync.py" \
+    "$ISSUE_ID" \
+    --project-id "${PLANE_PROJECT_ID:-8af0f117-1dd0-4bfe-8db8-ff131d865534}" \
+    --grava-repo "${GRAVA_REPO:-/Users/trungnguyenhoang/IdeaProjects/grava}" \
+    --system-yaml "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/systems/SportBuddies/system.yaml" \
+    || true
 ```
 
 ## Anti-Patterns
