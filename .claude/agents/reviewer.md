@@ -65,6 +65,14 @@ else
     head -c 1024)
   grava signal REVIEWER_BLOCKED --issue "$ISSUE_ID" --payload "$FINDINGS"
 fi
+
+# Best-effort Plane mirror — non-fatal, never blocks the pipeline.
+python3 "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/agents/task-generator/cli/grava_plane_sync.py" \
+    "$ISSUE_ID" \
+    --project-id "${PLANE_PROJECT_ID:-8af0f117-1dd0-4bfe-8db8-ff131d865534}" \
+    --grava-repo "${GRAVA_REPO:-/Users/trungnguyenhoang/IdeaProjects/grava}" \
+    --system-yaml "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/systems/SportBuddies/system.yaml" \
+    || true
 ```
 
 > If the findings exceed 2 KB, the orchestrator writes them to `.worktree/$ISSUE_ID/.review-round-N.md`

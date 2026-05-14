@@ -86,6 +86,19 @@ Once `grava-dev-task` completes Step 7 (commit + label `code_review`):
 
   When invoked from inside `.worktree/$ISSUE_ID/` you may omit `--issue`; the CLI auto-detects it from the cwd. But signal **must** still run from a context with DB access (i.e. the repo root cwd via the subshell pattern), otherwise it fails with the dolt-config error.
 
+  After EITHER signal (DONE or HALTED), best-effort mirror the new status to Plane. Non-fatal — Plane sync failure must never block the pipeline:
+
+  ```bash
+  python3 "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/agents/task-generator/cli/grava_plane_sync.py" \
+      "$ISSUE_ID" \
+      --project-id "${PLANE_PROJECT_ID:-8af0f117-1dd0-4bfe-8db8-ff131d865534}" \
+      --grava-repo "${GRAVA_REPO:-/Users/trungnguyenhoang/IdeaProjects/grava}" \
+      --system-yaml "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/systems/SportBuddies/system.yaml" \
+      || true
+  ```
+
+  Exit code is ignored (`|| true`). Sync silently no-ops when Plane is not configured, the issue is not Plane-linked, or the internet is unreachable — it retries on the next agent signal.
+
   The CLI's stdout naturally ends with the `CODER_DONE: <sha>` / `CODER_HALTED: <reason>` line — let it flow into your final message rather than duplicating it manually.
 
 ## HALT Conditions
@@ -97,6 +110,12 @@ Once `grava-dev-task` completes Step 7 (commit + label `code_review`):
 - After either HALT, emit the signal from the repo root — the `grava signal CODER_HALTED` call below records the `coder_halted` triage wisp atomically AND writes `pipeline_phase=coding_halted`, replacing the previous two-step (manual `wisp write` + `echo`) sequence:
   ```bash
   ( cd /path/to/repo-root && grava signal CODER_HALTED --issue "$ISSUE_ID" --payload "<specific reason>" )
+  python3 "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/agents/task-generator/cli/grava_plane_sync.py" \
+      "$ISSUE_ID" \
+      --project-id "${PLANE_PROJECT_ID:-8af0f117-1dd0-4bfe-8db8-ff131d865534}" \
+      --grava-repo "${GRAVA_REPO:-/Users/trungnguyenhoang/IdeaProjects/grava}" \
+      --system-yaml "${STELLAR_ENGINE_HOME:-/Users/trungnguyenhoang/IdeaProjects/stellar-engine}/systems/SportBuddies/system.yaml" \
+      || true
   ```
 - The CLI's stdout ends with `CODER_HALTED: <reason>` — that line flows into your final message as the last non-empty line. Stop.
 
