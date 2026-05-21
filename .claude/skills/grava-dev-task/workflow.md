@@ -286,6 +286,14 @@ COMMIT_HASH=$(git rev-parse HEAD)
 grava update <issue-id> --last-commit "$COMMIT_HASH"
 ```
 
+### Emit CODER_DONE signal (advances pipeline_phase to coding_complete)
+
+```bash
+( cd "$REPO_ROOT" && grava signal CODER_DONE --issue <issue-id> --payload "$COMMIT_HASH" )
+```
+
+Run from the main repo root (not the worktree) — grava commands need `.grava.yaml`.
+
 ### Label for code review (the hand-off signal)
 
 ```bash

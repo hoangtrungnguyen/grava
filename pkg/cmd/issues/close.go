@@ -21,12 +21,16 @@ type CloseResult struct {
 
 func newCloseCmd(d *cmddeps.Deps) *cobra.Command {
 	var force bool
+	var pruneBranch bool
 
 	cmd := &cobra.Command{
 		Use:   "close <issue-id>",
 		Short: "Close an issue and tear down its worktree",
-		Long: `Close an issue by removing its Git worktree (.worktree/<id>), deleting the
-branch (grava/<id>), cleaning up any Claude symlink, and setting status to closed.
+		Long: `Close an issue by removing its Git worktree (.worktree/<id>), cleaning up
+any Claude symlink, and setting status to closed.
+
+The branch (grava/<id>) is kept so sibling tasks that depend on this issue's
+work can still merge from it. Pass --prune-branch to delete it explicitly.
 
 Blocks if the worktree has uncommitted changes unless --force is used.`,
 		Args: cobra.ExactArgs(1),
@@ -59,9 +63,17 @@ Blocks if the worktree has uncommitted changes unless --force is used.`,
 					}
 				}
 
-				// AC#1 + AC#2: Remove worktree and branch
-				if err := utils.DeleteWorktree(cwd, issueID); err != nil {
-					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Worktree cleanup warning: %v\n", err)
+				// Remove worktree directory; keep the branch by default so
+				// sibling tasks that block on this one can still merge from it.
+				// Pass --prune-branch to also delete the branch.
+				var cleanErr error
+				if pruneBranch {
+					cleanErr = utils.DeleteWorktree(cwd, issueID)
+				} else {
+					cleanErr = utils.RemoveWorktreeOnly(cwd, issueID)
+				}
+				if cleanErr != nil {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  Worktree cleanup warning: %v\n", cleanErr)
 				}
 			}
 
@@ -82,6 +94,17 @@ Blocks if the worktree has uncommitted changes unless --force is used.`,
 					fmt.Sprintf("failed to close issue: %v", err), err)
 			}
 
+			// Advance pipeline_phase to "complete" so wisps stay consistent
+			// with issue status. Soft failure: a stale phase is bad UX but
+			// not worth blocking the close.
+			if _, sigErr := signalRun(cmd.Context(), *d.Store, SignalParams{
+				IssueID: issueID,
+				Kind:    SignalPipelineComplete,
+				Actor:   *d.Actor,
+			}); sigErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  pipeline_phase update skipped: %v\n", sigErr)
+			}
+
 			result := CloseResult{ID: issueID, Status: "closed"}
 			if *d.OutputJSON {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
@@ -92,5 +115,6 @@ Blocks if the worktree has uncommitted changes unless --force is used.`,
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "Force close even with uncommitted changes")
+	cmd.Flags().BoolVar(&pruneBranch, "prune-branch", false, "Also delete the grava/<id> branch (default: keep for sibling merges)")
 	return cmd
 }

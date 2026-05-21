@@ -261,6 +261,13 @@ func initConfig() {
 
 		viper.AddConfigPath(home)
 		viper.AddConfigPath(".")
+		// When invoked from inside a worktree (.worktree/<id>/), viper's "."
+		// search misses .grava.yaml in the main repo root. Walk up to find it.
+		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			if mainRepo, mrErr := utils.FindMainRepo(cwd); mrErr == nil && mainRepo != cwd {
+				viper.AddConfigPath(mainRepo)
+			}
+		}
 		viper.SetConfigType("yaml")
 		viper.SetConfigName(".grava")
 	}
