@@ -4,8 +4,8 @@ Path: `github.com/hoangtrungnguyen/grava/pkg/idgen`
 
 ## Purpose
 
-Generate grava issue IDs: top-level hash IDs like `grava-a1b2` and
-hierarchical child IDs like `grava-a1b2.1`.
+Generate grava issue IDs: top-level hash IDs like `grava-a1b2c3d4` and
+hierarchical child IDs like `grava-a1b2c3d4.1`.
 
 ## Key Types & Functions
 
@@ -15,8 +15,9 @@ hierarchical child IDs like `grava-a1b2.1`.
   prefix `grava`.
 - `NewStandardGenerator(store dolt.Store) *StandardGenerator`.
 - `(*StandardGenerator).GenerateBaseID()` — SHA-256 over
-  `nanoseconds-randomInt`, returns `<prefix>-<first 4 hex chars>` (~65k
-  combinations).
+  `nanoseconds-randomInt`, returns `<prefix>-<first 8 hex chars>`
+  (~4.29B combinations; pre-2026-05 was 4 hex / ~65k — legacy IDs still
+  valid).
 - `(*StandardGenerator).GenerateChildID(parentID)` — delegates to
   `Store.GetNextChildSequence(parentID)`; returns `<parentID>.<seq>`.
 
@@ -38,6 +39,6 @@ generator.
 
 ```go
 gen := idgen.NewStandardGenerator(store)
-parent := gen.GenerateBaseID()           // "grava-a1b2"
-child, err := gen.GenerateChildID(parent) // "grava-a1b2.1"
+parent := gen.GenerateBaseID()           // "grava-a1b2c3d4"
+child, err := gen.GenerateChildID(parent) // "grava-a1b2c3d4.1"
 ```

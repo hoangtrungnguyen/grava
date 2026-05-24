@@ -20,14 +20,15 @@ func TestStandardGenerator_GenerateBaseID(t *testing.T) {
 		t.Errorf("ID %s does not start with expected prefix grava-", id)
 	}
 
-	// Expecting "grava-" followed by 4 hex characters
-	// regex: ^grava-[0-9a-f]{4}$
-	matched, err := regexp.MatchString(`^grava-[0-9a-f]{4}$`, id)
+	// Expecting "grava-" followed by 8 hex characters
+	// regex: ^grava-[0-9a-f]{8}$
+	// (Pre-2026-05 emitted 4 hex; widened to 8 for ~65k× more headroom.)
+	matched, err := regexp.MatchString(`^grava-[0-9a-f]{8}$`, id)
 	if err != nil {
 		t.Fatalf("Regex error: %v", err)
 	}
 	if !matched {
-		t.Errorf("ID %s does not match expected format grava-XXXX", id)
+		t.Errorf("ID %s does not match expected format grava-XXXXXXXX", id)
 	}
 }
 

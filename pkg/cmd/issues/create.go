@@ -271,10 +271,11 @@ You can specify title, description, type, and priority.`,
 	cmd.Flags().String("parent", "", "Parent Issue ID for sub-tasks")
 	cmd.Flags().Bool("ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
 	cmd.Flags().StringSliceVar(&CreateAffectedFiles, "files", []string{}, "Affected files (comma separated)")
-	cmd.Flags().String("id", "", "Explicit issue id (e.g. 'grava-a1b2'). "+
+	cmd.Flags().String("id", "", "Explicit issue id (e.g. 'grava-a1b2c3d4'). "+
 		"Used by external mirrors (Plane sync, migrations) to preserve "+
 		"upstream IDs. Mutually exclusive with --parent. Must match "+
-		"grava-XXXX hex format. Skips the standard idgen path.")
+		"grava-XXXXXXXX (8 hex chars, current format) or grava-XXXX "+
+		"(4 hex, legacy). Skips the standard idgen path.")
 
 	return cmd
 }
