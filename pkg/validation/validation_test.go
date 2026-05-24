@@ -83,6 +83,72 @@ func TestValidatePriority(t *testing.T) {
 	}
 }
 
+func TestValidateIssueID(t *testing.T) {
+	tests := []struct {
+		input       string
+		expectedErr bool
+	}{
+		// Valid: legacy top-level IDs (4 lowercase hex chars after `grava-`).
+		// Pre-2026-05 grava emitted 4 hex; existing DBs still use this width.
+		{"grava-a1b2", false},
+		{"grava-0000", false},
+		{"grava-ffff", false},
+		{"grava-abcd", false},
+		{"  grava-a1b2  ", false}, // surrounding whitespace is trimmed
+		// Valid: current top-level IDs (8 lowercase hex chars after `grava-`).
+		// 2026-05+ grava emits 8 hex for ~4.29B combinations.
+		{"grava-a1b2c3d4", false},
+		{"grava-00000000", false},
+		{"grava-ffffffff", false},
+		{"grava-deadbeef", false},
+		{"  grava-a1b2c3d4  ", false}, // whitespace trim works on 8-hex too
+		// Valid: child IDs (both widths).
+		{"grava-a1b2.1", false},
+		{"grava-a1b2.1.3", false},
+		{"grava-a1b2.42.100.7", false},
+		{"grava-a1b2c3d4.1", false},
+		{"grava-a1b2c3d4.1.3", false},
+		{"grava-deadbeef.42.100.7", false},
+		// Invalid: empty / whitespace-only.
+		{"", true},
+		{"   ", true},
+		// Invalid: wrong prefix.
+		{"grava_a1b2", true},
+		{"a1b2", true},
+		{"plane-a1b2", true},
+		// Invalid: wrong hex length. Only exactly 4 OR exactly 8 hex chars
+		// are accepted — intermediate widths (5/6/7) and 9+ are rejected so
+		// we don't silently accept truncated or padded IDs.
+		{"grava-a1b", true},        // too short (3)
+		{"grava-a1b2c", true},      // 5 hex
+		{"grava-a1b2c3", true},     // 6 hex
+		{"grava-a1b2c3d", true},    // 7 hex
+		{"grava-a1b2c3d4e", true},  // 9 hex
+		{"grava-a1b2c3d4ef", true}, // 10 hex
+		// Invalid: uppercase hex (idgen always emits lowercase).
+		{"grava-A1B2", true},
+		{"grava-A1B2C3D4", true},
+		// Invalid: non-hex chars.
+		{"grava-zzzz", true},
+		{"grava-a1b!", true},
+		{"grava-zzzzzzzz", true},
+		{"grava-a1b2c3d!", true},
+		// Invalid: child segment is not a positive integer.
+		{"grava-a1b2.", true},
+		{"grava-a1b2.a", true},
+		{"grava-a1b2..1", true},
+		{"grava-a1b2.1.", true},
+	}
+
+	for _, tt := range tests {
+		err := ValidateIssueID(tt.input)
+		if (err != nil) != tt.expectedErr {
+			t.Errorf("ValidateIssueID(%q) expected error: %v, got: %v",
+				tt.input, tt.expectedErr, err)
+		}
+	}
+}
+
 func TestValidateDateRange(t *testing.T) {
 	tests := []struct {
 		from        string

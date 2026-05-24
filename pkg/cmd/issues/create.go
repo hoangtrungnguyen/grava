@@ -19,11 +19,18 @@ import (
 
 // CreateParams holds all inputs for the createIssue named function.
 type CreateParams struct {
-	Title         string
-	Description   string
-	IssueType     string
-	Priority      string
-	ParentID      string
+	Title       string
+	Description string
+	IssueType   string
+	Priority    string
+	ParentID    string
+	// ID is an OPTIONAL explicit issue id supplied by the caller.
+	// When non-empty the standard idgen path is skipped and the caller
+	// must guarantee the value matches validation.IssueIDPattern.
+	// Intended for external-mirror flows (Plane → grava sync, migrations,
+	// imports) where the id is already known. Mutually exclusive with
+	// ParentID — child ids derive from a parent in grava's idgen model.
+	ID            string
 	Ephemeral     bool
 	AffectedFiles []string
 	Actor         string
@@ -76,15 +83,32 @@ func createIssue(ctx context.Context, store dolt.Store, params CreateParams) (Cr
 			fmt.Sprintf("invalid priority: '%s'", params.Priority), err)
 	}
 
-	// Generate ID
-	generator := idgen.NewStandardGenerator(store)
+	// Resolve issue ID. Three paths:
+	//   1. Caller supplied an explicit ID (external-mirror flow).
+	//   2. Caller supplied ParentID → derive a sequential child ID.
+	//   3. Default → mint a fresh top-level ID from idgen.
+	//
+	// Explicit ID + ParentID is rejected up-front because the two ID-shaping
+	// rules conflict (child ids embed the parent prefix; an explicit id
+	// bypasses that derivation).
 	var id string
-	if params.ParentID != "" {
+	if params.ID != "" {
+		if params.ParentID != "" {
+			return CreateResult{}, gravaerrors.New("INVALID_INPUT",
+				"--id cannot be combined with --parent (child ids derive from the parent)", nil)
+		}
+		if err := validation.ValidateIssueID(params.ID); err != nil {
+			return CreateResult{}, gravaerrors.New("INVALID_ISSUE_ID", err.Error(), err)
+		}
+		id = strings.TrimSpace(params.ID)
+	} else if params.ParentID != "" {
+		generator := idgen.NewStandardGenerator(store)
 		id, err = generator.GenerateChildID(params.ParentID)
 		if err != nil {
 			return CreateResult{}, gravaerrors.New("DB_UNREACHABLE", "failed to generate child ID", err)
 		}
 	} else {
+		generator := idgen.NewStandardGenerator(store)
 		id = generator.GenerateBaseID()
 	}
 
@@ -129,6 +153,23 @@ func createIssue(ctx context.Context, store dolt.Store, params CreateParams) (Cr
 	}
 
 	err = dolt.WithAuditedTx(ctx, store, auditEvents, func(tx *sql.Tx) error {
+		// When the caller supplied an explicit ID, fail fast with a clean
+		// DUPLICATE_ID code instead of leaking the DB's UNIQUE constraint
+		// violation through DB_UNREACHABLE. Skipped for auto-generated IDs
+		// because idgen produces values with negligible collision risk and
+		// the extra round-trip would only add latency on the happy path.
+		if params.ID != "" {
+			var existing int
+			if err := tx.QueryRowContext(ctx,
+				"SELECT COUNT(*) FROM issues WHERE id = ?", id).Scan(&existing); err != nil {
+				return gravaerrors.New("DB_UNREACHABLE", "failed to check for duplicate id", err)
+			}
+			if existing > 0 {
+				return gravaerrors.New("DUPLICATE_ID",
+					fmt.Sprintf("issue id '%s' already exists", id), nil)
+			}
+		}
+
 		insertQuery := `INSERT INTO issues (id, title, description, issue_type, priority, status, ephemeral, created_at, updated_at, created_by, updated_by, agent_model, affected_files)
 		                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		_, err := tx.ExecContext(ctx, insertQuery,
@@ -187,6 +228,7 @@ You can specify title, description, type, and priority.`,
 			priority, _ := cmd.Flags().GetString("priority")
 			parentID, _ := cmd.Flags().GetString("parent")
 			ephemeral, _ := cmd.Flags().GetBool("ephemeral")
+			explicitID, _ := cmd.Flags().GetString("id")
 
 			result, err := createIssue(cmd.Context(), *d.Store, CreateParams{
 				Title:         title,
@@ -194,6 +236,7 @@ You can specify title, description, type, and priority.`,
 				IssueType:     issueType,
 				Priority:      priority,
 				ParentID:      parentID,
+				ID:            explicitID,
 				Ephemeral:     ephemeral,
 				AffectedFiles: CreateAffectedFiles,
 				Actor:         *d.Actor,
@@ -228,6 +271,11 @@ You can specify title, description, type, and priority.`,
 	cmd.Flags().String("parent", "", "Parent Issue ID for sub-tasks")
 	cmd.Flags().Bool("ephemeral", false, "Mark issue as ephemeral (Wisp) — excluded from normal queries")
 	cmd.Flags().StringSliceVar(&CreateAffectedFiles, "files", []string{}, "Affected files (comma separated)")
+	cmd.Flags().String("id", "", "Explicit issue id (e.g. 'grava-a1b2c3d4'). "+
+		"Used by external mirrors (Plane sync, migrations) to preserve "+
+		"upstream IDs. Mutually exclusive with --parent. Must match "+
+		"grava-XXXXXXXX (8 hex chars, current format) or grava-XXXX "+
+		"(4 hex, legacy). Skips the standard idgen path.")
 
 	return cmd
 }

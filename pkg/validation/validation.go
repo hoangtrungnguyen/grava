@@ -2,10 +2,36 @@ package validation
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// IssueIDPattern is the canonical regex for a grava issue ID.
+//
+// Format: "grava-" + EITHER 4 OR 8 lowercase hex chars, optionally followed by
+// dot-separated decimal segments for child IDs. The two widths coexist for
+// backward compatibility:
+//
+//   - 4 hex (legacy, pre-2026-05) — emitted by GenerateBaseID before the
+//     widening; existing rows in production databases still use this width.
+//   - 8 hex (current) — emitted by GenerateBaseID since 2026-05; gives
+//     ~4.29B combinations vs. the legacy ~65k, eliminating birthday-collision
+//     risk for cross-system mirror flows (Plane sync, JSONL imports).
+//
+// Intermediate widths (5/6/7 hex) are rejected so we don't silently accept
+// truncated or corrupted IDs.
+//
+// Examples:
+//   - grava-a1b2              (legacy top-level, 4 hex)
+//   - grava-a1b2.1            (legacy child)
+//   - grava-a1b2c3d4          (current top-level, 8 hex)
+//   - grava-a1b2c3d4.1        (current child)
+//   - grava-a1b2c3d4.1.3      (nested child)
+//
+// Kept in sync with pkg/idgen/generator.go's GenerateBaseID + GenerateChildID.
+var IssueIDPattern = regexp.MustCompile(`^grava-[a-f0-9]{4}([a-f0-9]{4})?(\.\d+)*$`)
 
 // Allowed values for issue types and statuses
 var (
@@ -73,6 +99,31 @@ func ValidatePriority(p string) (int, error) {
 	}
 
 	return -1, fmt.Errorf("invalid priority: '%s'. Allowed: critical (0), high (1), medium (2), low (3), backlog (4)", p)
+}
+
+// ValidateIssueID checks that an issue ID matches the canonical grava format.
+//
+// Used by callers that mint IDs outside the standard idgen path — e.g.
+// `grava create --id <value>`, where an external system (Plane mirror,
+// migration, etc.) supplies the ID.
+//
+// Whitespace is trimmed before validation; the input is NOT lower-cased
+// because the regex itself enforces lowercase hex.
+func ValidateIssueID(id string) error {
+	normalized := strings.TrimSpace(id)
+	if normalized == "" {
+		return fmt.Errorf("issue id is empty")
+	}
+	if !IssueIDPattern.MatchString(normalized) {
+		return fmt.Errorf(
+			"invalid issue id: '%s'. Expected format: grava-XXXXXXXX "+
+				"(8 lowercase hex chars, current format) or grava-XXXX (4 hex, legacy), "+
+				"optionally followed by '.<digit>' child segments "+
+				"(e.g. grava-a1b2c3d4.1.3)",
+			id,
+		)
+	}
+	return nil
 }
 
 // ValidateDateRange parses and validates a date range (inclusive).
