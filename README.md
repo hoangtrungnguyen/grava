@@ -31,6 +31,16 @@ go install github.com/hoangtrungnguyen/grava/cmd/grava@latest
 curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh | bash
 ```
 
+**From source** (clones repo, runs `go build`; needs Go ≥ 1.24 and `git`):
+```bash
+curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh \
+  | bash -s -- --from-source
+
+# Pin to a specific tag or branch:
+curl -sL https://raw.githubusercontent.com/hoangtrungnguyen/grava/main/scripts/install.sh \
+  | bash -s -- --from-source --ref=v0.2.1
+```
+
 **Docker sandbox:**
 ```bash
 docker run -it ghcr.io/hoangtrungnguyen/grava:latest
