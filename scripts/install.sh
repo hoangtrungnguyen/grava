@@ -9,6 +9,36 @@ BINARY="grava"
 # Users can override: INSTALL_DIR=/usr/local/bin bash install.sh
 INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/bin}"
 
+# Parse flags
+FROM_SOURCE=0
+SOURCE_REF="${GRAVA_REF:-main}"
+for arg in "$@"; do
+  case "$arg" in
+    --from-source)   FROM_SOURCE=1 ;;
+    --ref=*)         SOURCE_REF="${arg#--ref=}" ;;
+    --help|-h)
+      cat <<USAGE
+grava installer
+
+Usage:
+  curl -sL https://raw.githubusercontent.com/${OWNER}/${REPO}/main/scripts/install.sh | bash
+  curl -sL https://raw.githubusercontent.com/${OWNER}/${REPO}/main/scripts/install.sh | bash -s -- --from-source
+
+Flags:
+  --from-source        Clone the repo and build with 'go build' (needs Go ≥ 1.24, git)
+  --ref=<branch|tag>   With --from-source: ref to build (default: main; env GRAVA_REF)
+  -h, --help           Show this help
+
+Env:
+  INSTALL_DIR          Install location (default: \$HOME/.local/bin)
+  GRAVA_REF            Same as --ref
+USAGE
+      exit 0
+      ;;
+    *) echo "❌ Unknown flag: $arg (try --help)"; exit 1 ;;
+  esac
+done
+
 # Detect OS and Architecture
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
@@ -42,6 +72,49 @@ detect_shell_profile() {
         *)    echo "${HOME}/.profile" ;;
     esac
 }
+
+# ─── --from-source path ────────────────────────────────────────────────
+if [ "$FROM_SOURCE" = "1" ]; then
+  command -v go  >/dev/null 2>&1 || { echo "❌ go not found on PATH (need ≥ 1.24)"; exit 1; }
+  command -v git >/dev/null 2>&1 || { echo "❌ git not found on PATH"; exit 1; }
+
+  TMP_SRC=$(mktemp -d)
+  trap 'rm -rf "$TMP_SRC"' EXIT
+
+  echo "📥 Cloning ${OWNER}/${REPO}@${SOURCE_REF} into $TMP_SRC..."
+  git clone --depth 1 --branch "$SOURCE_REF" \
+    "https://github.com/${OWNER}/${REPO}.git" "$TMP_SRC/${REPO}" \
+    >/dev/null 2>&1 || {
+      echo "❌ Clone failed for ref '$SOURCE_REF'"; exit 1
+    }
+
+  cd "$TMP_SRC/${REPO}"
+  VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "source")
+  echo "🔨 Building ${BINARY} ${VERSION} (go build)..."
+  go build -ldflags "-X main.Version=$VERSION" -o "${TMP_SRC}/${BINARY}" ./cmd/grava
+
+  mkdir -p "$INSTALL_DIR"
+  echo "🔧 Installing to $INSTALL_DIR..."
+  mv "${TMP_SRC}/${BINARY}" "$INSTALL_DIR/${BINARY}"
+  chmod +x "$INSTALL_DIR/${BINARY}"
+
+  echo "✅ Installed ${BINARY} ${VERSION} to ${INSTALL_DIR}/${BINARY}"
+
+  # PATH warning (shared with release path below — extracted into a fn would be cleaner,
+  # but inlined here for the one extra usage to keep the script flat).
+  case ":${PATH}:" in
+    *":${INSTALL_DIR}:"*) ;;
+    *)
+      SHELL_PROFILE=$(detect_shell_profile)
+      echo ""
+      echo "⚠️  ${INSTALL_DIR} is not in your PATH. Add it to ${SHELL_PROFILE}."
+      ;;
+  esac
+
+  echo "🚀 Run '${BINARY} version' to verify."
+  exit 0
+fi
+# ────────────────────────────────────────────────────────────────────────
 
 echo "🔍 Detecting latest version..."
 # Get the latest release tag from GitHub API
