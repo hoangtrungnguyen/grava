@@ -60,7 +60,6 @@ __pycache__/
 
 # Benchmark results
 scripts/benchmark_results.json
-dist/.DS_Store
 notebooklm-py/
 notebooklm-skill/
 run-claude-zai.sh
@@ -71,10 +70,15 @@ skills-lock.json
 
 
 .venv/
-docs/.DS_Store
-.claude/worktrees/*grava_test_bin
 .worktree/
 
 plan/_bmad/
 plan/_bmad-output/
 plan/.claude/
+
+# macOS junk (global — supersedes earlier dist/, docs/ entries)
+.DS_Store
+**/.DS_Store
+
+# Local Claude Code worktree state — not project-scoped
+.claude/worktrees/
