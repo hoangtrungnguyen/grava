@@ -2,10 +2,24 @@ package validation
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// IssueIDPattern is the canonical regex for a grava issue ID.
+//
+// Format: "grava-" + 4 lowercase hex chars, optionally followed by
+// dot-separated decimal segments for child IDs.
+//
+// Examples:
+//   - grava-a1b2          (top-level, base ID from GenerateBaseID)
+//   - grava-a1b2.1        (first child)
+//   - grava-a1b2.1.3      (nested child)
+//
+// Kept in sync with pkg/idgen/generator.go's GenerateBaseID + GenerateChildID.
+var IssueIDPattern = regexp.MustCompile(`^grava-[a-f0-9]{4}(\.\d+)*$`)
 
 // Allowed values for issue types and statuses
 var (
@@ -73,6 +87,29 @@ func ValidatePriority(p string) (int, error) {
 	}
 
 	return -1, fmt.Errorf("invalid priority: '%s'. Allowed: critical (0), high (1), medium (2), low (3), backlog (4)", p)
+}
+
+// ValidateIssueID checks that an issue ID matches the canonical grava format.
+//
+// Used by callers that mint IDs outside the standard idgen path — e.g.
+// `grava create --id <value>`, where an external system (Plane mirror,
+// migration, etc.) supplies the ID.
+//
+// Whitespace is trimmed before validation; the input is NOT lower-cased
+// because the regex itself enforces lowercase hex.
+func ValidateIssueID(id string) error {
+	normalized := strings.TrimSpace(id)
+	if normalized == "" {
+		return fmt.Errorf("issue id is empty")
+	}
+	if !IssueIDPattern.MatchString(normalized) {
+		return fmt.Errorf(
+			"invalid issue id: '%s'. Expected format: grava-XXXX (4 lowercase hex chars), "+
+				"optionally followed by '.<digit>' child segments (e.g. grava-a1b2.1.3)",
+			id,
+		)
+	}
+	return nil
 }
 
 // ValidateDateRange parses and validates a date range (inclusive).

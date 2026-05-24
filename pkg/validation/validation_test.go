@@ -83,6 +83,53 @@ func TestValidatePriority(t *testing.T) {
 	}
 }
 
+func TestValidateIssueID(t *testing.T) {
+	tests := []struct {
+		input       string
+		expectedErr bool
+	}{
+		// Valid: top-level IDs (4 lowercase hex chars after `grava-`).
+		{"grava-a1b2", false},
+		{"grava-0000", false},
+		{"grava-ffff", false},
+		{"grava-abcd", false},
+		{"  grava-a1b2  ", false}, // surrounding whitespace is trimmed
+		// Valid: child IDs.
+		{"grava-a1b2.1", false},
+		{"grava-a1b2.1.3", false},
+		{"grava-a1b2.42.100.7", false},
+		// Invalid: empty / whitespace-only.
+		{"", true},
+		{"   ", true},
+		// Invalid: wrong prefix.
+		{"grava_a1b2", true},
+		{"a1b2", true},
+		{"plane-a1b2", true},
+		// Invalid: wrong hex length.
+		{"grava-a1b", true},
+		{"grava-a1b2c", true},
+		{"grava-a1b2c3", true},
+		// Invalid: uppercase hex (idgen always emits lowercase).
+		{"grava-A1B2", true},
+		// Invalid: non-hex chars.
+		{"grava-zzzz", true},
+		{"grava-a1b!", true},
+		// Invalid: child segment is not a positive integer.
+		{"grava-a1b2.", true},
+		{"grava-a1b2.a", true},
+		{"grava-a1b2..1", true},
+		{"grava-a1b2.1.", true},
+	}
+
+	for _, tt := range tests {
+		err := ValidateIssueID(tt.input)
+		if (err != nil) != tt.expectedErr {
+			t.Errorf("ValidateIssueID(%q) expected error: %v, got: %v",
+				tt.input, tt.expectedErr, err)
+		}
+	}
+}
+
 func TestValidateDateRange(t *testing.T) {
 	tests := []struct {
 		from        string
